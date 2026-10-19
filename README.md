@@ -74,6 +74,7 @@ Stock firmware parity target: `IBEX_FW_6A628345.fw`
 - [x] Haptics
 - [ ] Freefall detection
   - [ ] Wilhelm scream
+  - [ ] Meow sound
 - [x] Puck / Proteus / Nereid
   - [x] Puck detection/wired communication
   - [ ] Puck firmware reimplementation
