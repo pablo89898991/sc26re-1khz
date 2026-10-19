@@ -115,6 +115,17 @@ config IBEX_OLYMPUS
 	help
 	  Configure the Olympus touch controller and include touchpad data in HID reports.
 
+config IBEX_SHELL_ZMODEM
+	bool "ZMODEM shell downloads"
+	default y if IBEX_OLYMPUS
+	depends on SHELL
+	help
+	  Send binary dumps to a terminal's ZMODEM receiver. Enables the
+	  `olympus dump` command when Olympus is available.
+
+config SHELL_BACKEND_SERIAL_TX_RING_BUFFER_SIZE
+	default 256 if IBEX_SHELL_ZMODEM
+
 config HAPTICS_PWM_NRF
 	bool "nRF PWM button beep backend"
 	default y if BOARD_BBC_MICROBIT_V2
