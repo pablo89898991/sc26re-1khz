@@ -25,7 +25,6 @@ LOG_MODULE_REGISTER(olympus);
 
 #define OLYMPUS_NODE DT_NODELABEL(olympus)
 #define OLYMPUS_SENSOR_PAYLOAD_SIZE 76
-#define OLYMPUS_MAX_PAYLOAD_SIZE 200
 #define OLYMPUS_ELECTRODE_BASELINE 40
 #define OLYMPUS_TOUCH_THRESHOLD 1200
 #define OLYMPUS_RELEASE_THRESHOLD 1000
@@ -46,7 +45,6 @@ LOG_MODULE_REGISTER(olympus);
 #define OLYMPUS_GRIP_NO_SOURCE_SCALE_NUMERATOR 3
 #define OLYMPUS_GRIP_NO_SOURCE_SCALE_DENOMINATOR 2
 #define OLYMPUS_DESCRIPTOR_ADDRESS 0x20
-#define OLYMPUS_DESCRIPTOR_SIZE 30
 #define OLYMPUS_VENDOR_ID 0x0488
 #define OLYMPUS_PRODUCT_ID_A 0xd0c1
 #define OLYMPUS_PRODUCT_ID_B 0x1015
@@ -65,6 +63,8 @@ static const struct gpio_dt_spec olympus_reset = GPIO_DT_SPEC_GET(OLYMPUS_NODE, 
 static struct gpio_callback olympus_irq_callback;
 K_SEM_DEFINE(olympus_irq_sem, 0, 1);
 K_MUTEX_DEFINE(olympus_report_mutex);
+/* Keep shell queries from interleaving with the two reads of a sensor frame. */
+K_MUTEX_DEFINE(olympus_io_mutex);
 static atomic_t olympus_ready;
 static struct controller_report olympus_report;
 static bool olympus_report_valid;
@@ -342,10 +342,11 @@ static int olympus_write_register(uint32_t address, const uint8_t *data, uint8_t
 	return i2c_write_dt(&olympus_i2c, packet, size + 9);
 }
 
-static int olympus_read_register(uint32_t address, uint8_t *data, uint8_t size)
+static int olympus_read_register_mode(uint32_t address, uint8_t *data, uint8_t size, bool raw)
 {
+	/* 0x0901 uses CustomMeas virtual addresses; 0x0903 reads CPU memory. */
 	uint8_t request[8] = {
-		[0] = 0x01,
+		[0] = raw ? 0x03 : 0x01,
 		[1] = 0x09,
 	};
 	uint8_t response[3 + OLYMPUS_MAX_PAYLOAD_SIZE];
@@ -372,6 +373,11 @@ static int olympus_read_register(uint32_t address, uint8_t *data, uint8_t size)
 
 	memcpy(data, &response[2], size);
 	return 0;
+}
+
+static int olympus_read_register(uint32_t address, uint8_t *data, uint8_t size)
+{
+	return olympus_read_register_mode(address, data, size, false);
 }
 
 static int olympus_apply_factory_config(void)
@@ -441,15 +447,39 @@ static int olympus_apply_factory_config(void)
 	                              sizeof(olympus_active_config));
 }
 
-static int olympus_check_descriptor(void)
+int olympus_read_descriptor(uint8_t descriptor[OLYMPUS_DESCRIPTOR_SIZE])
 {
 	uint8_t address[2];
-	uint8_t descriptor[OLYMPUS_DESCRIPTOR_SIZE];
-	uint16_t product;
 	int err;
 
 	sys_put_le16(OLYMPUS_DESCRIPTOR_ADDRESS, address);
-	err = i2c_write_read_dt(&olympus_i2c, address, sizeof(address), descriptor, sizeof(descriptor));
+	k_mutex_lock(&olympus_io_mutex, K_FOREVER);
+	err = i2c_write_read_dt(&olympus_i2c, address, sizeof(address), descriptor,
+	                        OLYMPUS_DESCRIPTOR_SIZE);
+	k_mutex_unlock(&olympus_io_mutex);
+	return err;
+}
+
+int olympus_debug_read(uint32_t address, uint8_t *data, uint8_t size, bool raw)
+{
+	int err;
+
+	if(atomic_get(&olympus_ready) == 0)
+	{
+		return -ENODEV;
+	}
+	k_mutex_lock(&olympus_io_mutex, K_FOREVER);
+	err = olympus_read_register_mode(address, data, size, raw);
+	k_mutex_unlock(&olympus_io_mutex);
+	return err;
+}
+
+static int olympus_check_descriptor(void)
+{
+	uint8_t descriptor[OLYMPUS_DESCRIPTOR_SIZE];
+	uint16_t product;
+	int err = olympus_read_descriptor(descriptor);
+
 	if(err)
 	{
 		return err;
@@ -958,7 +988,9 @@ static void olympus_thread_entry(void *unused1, void *unused2, void *unused3)
 		(void)k_sem_take(&olympus_irq_sem, K_MSEC(20));
 		while(gpio_pin_get_dt(&olympus_irq) > 0)
 		{
+			k_mutex_lock(&olympus_io_mutex, K_FOREVER);
 			int err = olympus_read_frame();
+			k_mutex_unlock(&olympus_io_mutex);
 			if(err)
 			{
 				LOG_DBG("frame read failed: %d", err);

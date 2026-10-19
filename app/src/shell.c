@@ -2,10 +2,12 @@
 #include <errno.h>
 #include <limits.h>
 #include <stdint.h>
+#include <stdio.h>
 #include <string.h>
 
 #include <zephyr/kernel.h>
 #include <zephyr/shell/shell.h>
+#include <zephyr/sys/byteorder.h>
 #include <zephyr/sys/util.h>
 
 #include "battery.h"
@@ -16,6 +18,7 @@
 #include "olympus.h"
 #include "power.h"
 #include "rgbw_led.h"
+#include "shell_zmodem.h"
 #include "valve_identity.h"
 #include "valve_settings.h"
 
@@ -668,6 +671,179 @@ static int cmd_olympus_status(const struct shell *shell, size_t argc, char **arg
 	print_olympus_pad_debug(shell, "right", &snapshot.right);
 	return 0;
 }
+
+static int cmd_olympus_descriptor(const struct shell *shell, size_t argc, char **argv)
+{
+	uint8_t data[OLYMPUS_DESCRIPTOR_SIZE];
+	int err;
+
+	ARG_UNUSED(argc);
+	ARG_UNUSED(argv);
+	err = olympus_read_descriptor(data);
+	if(err)
+	{
+		shell_error(shell, "descriptor read failed: %d", err);
+		return err;
+	}
+	shell_hexdump(shell, data, sizeof(data));
+	shell_print(shell, "vendor=%04x product=%04x version=%04x", sys_get_le16(&data[20]),
+	            sys_get_le16(&data[22]), sys_get_le16(&data[24]));
+	return 0;
+}
+
+struct olympus_memory_range
+{
+	uint32_t address;
+	uint32_t length;
+	bool raw;
+};
+
+static int parse_olympus_range(const struct shell *shell, size_t argc, char **argv,
+                               unsigned int width, uint32_t default_count,
+                               struct olympus_memory_range *range)
+{
+	int err = 0;
+	unsigned long address;
+	unsigned long count = default_count;
+
+	address = shell_strtoul(argv[1], 0, &err);
+	if(argc > 2)
+	{
+		count = shell_strtoul(argv[2], 0, &err);
+	}
+	uint64_t length = (uint64_t)count * width;
+	if(err ||
+	   count == 0 ||
+	   length > UINT32_MAX ||
+	   (uint64_t)address + length > (uint64_t)UINT32_MAX + 1 ||
+	   address % width)
+	{
+		shell_error(shell, "invalid address/count or unaligned address");
+		return -EINVAL;
+	}
+	range->address = address;
+	range->length = length;
+	return 0;
+}
+
+static int read_olympus_memory(void *context, uint32_t offset, uint8_t *data, size_t size)
+{
+	const struct olympus_memory_range *range = context;
+
+	while(size)
+	{
+		uint8_t chunk = MIN(size, OLYMPUS_MAX_PAYLOAD_SIZE);
+		int err = olympus_debug_read(range->address + offset, data, chunk, range->raw);
+
+		if(err)
+		{
+			return err;
+		}
+		offset += chunk;
+		data += chunk;
+		size -= chunk;
+	}
+	return 0;
+}
+
+static int olympus_md(const struct shell *shell, size_t argc, char **argv, bool raw)
+{
+	struct olympus_memory_range range = { .raw = raw };
+	unsigned int width = argv[0][2] == 'w' ? 4 : argv[0][2] == 'h' ? 2 : 1;
+	int err = parse_olympus_range(shell, argc, argv, width, 1, &range);
+
+	if(err)
+	{
+		return err;
+	}
+	for(uint32_t offset = 0; offset < range.length;)
+	{
+		uint8_t data[16];
+		size_t size = MIN(sizeof(data), range.length - offset);
+
+		err = read_olympus_memory(&range, offset, data, size);
+		if(err)
+		{
+			shell_error(shell, "read failed at %08x: %d", range.address + offset, err);
+			return err;
+		}
+		if(width == 1)
+		{
+			shell_hexdump_line(shell, range.address + offset, data, size);
+		}
+		else
+		{
+			shell_fprintf_normal(shell, "%08x:", range.address + offset);
+			for(size_t i = 0; i < size; i += width)
+			{
+				uint32_t value = width == 4 ? sys_get_le32(&data[i]) : sys_get_le16(&data[i]);
+				shell_fprintf_normal(shell, " %0*x", width * 2, value);
+			}
+			shell_print(shell, "");
+		}
+		offset += size;
+	}
+	return 0;
+}
+
+static int cmd_olympus_md(const struct shell *shell, size_t argc, char **argv)
+{
+	return olympus_md(shell, argc, argv, true);
+}
+
+static int cmd_olympus_reg_md(const struct shell *shell, size_t argc, char **argv)
+{
+	return olympus_md(shell, argc, argv, false);
+}
+
+#if CONFIG_IBEX_SHELL_ZMODEM
+static int olympus_dump(const struct shell *shell, size_t argc, char **argv, bool raw)
+{
+	struct olympus_memory_range range = { .raw = raw };
+	char name[48];
+	int err = parse_olympus_range(shell, argc, argv, 1, 0, &range);
+
+	if(err)
+	{
+		return err;
+	}
+	snprintf(name, sizeof(name), "timp-%08x-%08x%s.bin", range.address, range.length,
+	         range.raw ? "" : "-virtual");
+	const struct zmodem_file file = {
+		.name = name,
+		.size = range.length,
+		.context = &range,
+		.read = read_olympus_memory,
+	};
+
+	shell_print(shell, "Sending %s via ZMODEM; start your receiver (Ctrl-C to cancel).", name);
+	err = shell_zmodem_send(shell, &file);
+	if(err == -EEXIST)
+	{
+		shell_print(shell, "Receiver skipped the dump.");
+	}
+	else if(err)
+	{
+		shell_error(shell, "ZMODEM download failed: %d", err);
+	}
+	else
+	{
+		shell_print(shell, "\nSent %u bytes.", range.length);
+	}
+	return err;
+}
+
+static int cmd_olympus_dump(const struct shell *shell, size_t argc, char **argv)
+{
+	return olympus_dump(shell, argc, argv, true);
+}
+
+static int cmd_olympus_reg_dump(const struct shell *shell, size_t argc, char **argv)
+{
+	return olympus_dump(shell, argc, argv, false);
+}
+#endif
+
 #endif
 
 SHELL_STATIC_SUBCMD_SET_CREATE(sub_battery,
@@ -787,10 +963,28 @@ SHELL_STATIC_SUBCMD_SET_CREATE(
     SHELL_SUBCMD_SET_END);
 
 #if CONFIG_IBEX_OLYMPUS
-SHELL_STATIC_SUBCMD_SET_CREATE(sub_olympus,
-                               SHELL_CMD(status, NULL, "Show last Olympus raw decode snapshot",
-                                         cmd_olympus_status),
-                               SHELL_SUBCMD_SET_END);
+SHELL_STATIC_SUBCMD_SET_CREATE(
+    sub_olympus_reg,
+    SHELL_CMD_ARG(mdb, NULL, "Display bytes <address> [count]", cmd_olympus_reg_md, 2, 1),
+    SHELL_CMD_ARG(mdh, NULL, "Display LE halfwords <address> [count]", cmd_olympus_reg_md, 2, 1),
+    SHELL_CMD_ARG(mdw, NULL, "Display LE words <address> [count]", cmd_olympus_reg_md, 2, 1),
+#if CONFIG_IBEX_SHELL_ZMODEM
+    SHELL_CMD_ARG(dump, NULL, "Send ZMODEM dump <address> <length>", cmd_olympus_reg_dump, 3, 0),
+#endif
+    SHELL_SUBCMD_SET_END);
+
+SHELL_STATIC_SUBCMD_SET_CREATE(
+    sub_olympus,
+    SHELL_CMD(status, NULL, "Show last Olympus raw decode snapshot", cmd_olympus_status),
+    SHELL_CMD(descriptor, NULL, "Read full Timp HID descriptor", cmd_olympus_descriptor),
+    SHELL_CMD_ARG(mdb, NULL, "Display CPU bytes <address> [count]", cmd_olympus_md, 2, 1),
+    SHELL_CMD_ARG(mdh, NULL, "Display CPU LE halfwords <address> [count]", cmd_olympus_md, 2, 1),
+    SHELL_CMD_ARG(mdw, NULL, "Display CPU LE words <address> [count]", cmd_olympus_md, 2, 1),
+#if CONFIG_IBEX_SHELL_ZMODEM
+    SHELL_CMD_ARG(dump, NULL, "Send CPU ZMODEM dump <address> <length>", cmd_olympus_dump, 3, 0),
+#endif
+    SHELL_CMD(reg, &sub_olympus_reg, "Read the Timp virtual register map", NULL),
+    SHELL_SUBCMD_SET_END);
 #endif
 
 SHELL_CMD_REGISTER(battery, &sub_battery, "Battery and charger commands", NULL);

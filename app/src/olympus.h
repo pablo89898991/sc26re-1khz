@@ -3,6 +3,9 @@
 
 #include "controller.h"
 
+#define OLYMPUS_DESCRIPTOR_SIZE 30
+#define OLYMPUS_MAX_PAYLOAD_SIZE 200
+
 struct olympus_pad_debug
 {
 	int16_t x;
@@ -38,3 +41,5 @@ struct olympus_debug_snapshot
 int olympus_init(void);
 void olympus_read_report(struct controller_report *report);
 void olympus_get_debug_snapshot(struct olympus_debug_snapshot *snapshot);
+int olympus_read_descriptor(uint8_t descriptor[OLYMPUS_DESCRIPTOR_SIZE]);
+int olympus_debug_read(uint32_t address, uint8_t *data, uint8_t size, bool raw);

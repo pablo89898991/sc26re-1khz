@@ -177,6 +177,30 @@ radio esb_bond <slot:0|1> <proteus_uuid> <ibex_uuid> [serial]
 
 `reboot_isp` is Ibex-only. It writes the flag words used by Valve's ISP reboot path and then performs a reboot.
 
+For Timp inspection, `olympus descriptor` prints the HID descriptor. `mdb`, `mdh`,
+and `mdw` display bytes, little-endian halfwords, and little-endian words; the count
+defaults to one and is measured in those units. Addresses select CPU memory:
+
+```text
+olympus mdb 0x21820 32
+olympus mdh 0x21820 8
+olympus mdw 0x21820 8
+olympus dump 0x20000 0x20000
+```
+
+`dump` takes a byte length and sends a binary file through ZMODEM. Start your
+terminal's ZMODEM receive action (for example, Ctrl-A R in minicom, then choose
+ZMODEM). The last example produces `timp-00020000-00020000.bin`. Ctrl-C cancels the
+transfer. This command is enabled by `CONFIG_IBEX_SHELL_ZMODEM` on Ibex.
+
+Use the same commands under `olympus reg` to access Timp's virtual register map.
+For example, to inspect or download SystemInfo:
+
+```text
+olympus reg mdb 0x20000808 29
+olympus reg dump 0x20000808 29
+```
+
 ## Radio
 
 The firmware includes BLE, ESB, and USB support. Bluetooth uses Zephyr's Host and Free `BT_LL_SW_SPLIT` controller. ESB uses a direct nRF RADIO backend. The build does not include NCS, MPSL, the SoftDevice Controller, nrfxlib, or any nonfree Nordic libraries.
