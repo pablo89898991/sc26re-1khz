@@ -4,6 +4,7 @@ import argparse
 import ctypes
 import json
 import os
+import stat
 import struct
 import sys
 import time
@@ -56,6 +57,8 @@ MESSAGE_FW_END = 0x1236
 MESSAGE_RESET = 0x1237
 FW_DATA_CHUNK_SIZE = 0x7FFC
 MAX_IGNORED_BOOTLOADER_FRAMES = 16
+APPLICATION_START = 0x8000
+APPLICATION_HEADER_ADDRESS = 0x7CFE0
 FW_BEGIN_ATTEMPTS = 3
 FW_BEGIN_RETRY_DELAY_SECONDS = 2
 MESSAGE_UICR_PROVISION = 0x1238
@@ -935,8 +938,114 @@ def check_ack(response: bytes) -> bytes:
     return response[1:]
 
 
+def _check_serial_port_holders(fd: int) -> None:
+    """Reject other visible descriptors for this Linux tty, including our own."""
+    device = os.fstat(fd).st_rdev
+    own_pid = str(os.getpid())
+    own_fd = str(fd)
+    for process in Path("/proc").iterdir():
+        if not process.name.isdecimal():
+            continue
+        try:
+            descriptors = list((process / "fd").iterdir())
+        except (FileNotFoundError, ProcessLookupError, PermissionError):
+            continue
+        for descriptor in descriptors:
+            if process.name == own_pid and descriptor.name == own_fd:
+                continue
+            try:
+                info = descriptor.stat()
+            except (FileNotFoundError, ProcessLookupError, PermissionError):
+                continue
+            if stat.S_ISCHR(info.st_mode) and info.st_rdev == device:
+                raise ToolError(
+                    f"ERROR: Bootloader serial port is already open by PID {process.name}, "
+                    "close the other client before retrying"
+                )
+
+
+class BootloaderConnection:
+    """Track whether FW_BEGIN succeeded on this serial connection."""
+
+    def __init__(self, serial_port: Any, *, kernel_exclusive: bool = False):
+        self.serial_port = serial_port
+        self.firmware_started = False
+        self._kernel_exclusive = False
+        if kernel_exclusive:
+            import fcntl
+            import termios
+
+            # Steam's hardwareupdater does not honor pyserial's advisory lock.
+            try:
+                fcntl.ioctl(serial_port.fileno(), termios.TIOCEXCL)
+                self._kernel_exclusive = True
+                # TIOCEXCL only blocks new opens. Check for existing holders
+                # after acquiring it so no new opener can race the check.
+                _check_serial_port_holders(serial_port.fileno())
+            except BaseException:
+                close_serial_port(self)
+                raise
+
+    def read(self, size: int) -> bytes:
+        return self.serial_port.read(size)
+
+    def write(self, data: bytes) -> int:
+        written = self.serial_port.write(data)
+        if written != len(data):
+            raise ToolError("ERROR: Short bootloader serial write")
+        return written
+
+    def reset_input_buffer(self) -> None:
+        self.serial_port.reset_input_buffer()
+
+    def close(self) -> None:
+        self.firmware_started = False
+        try:
+            if self._kernel_exclusive:
+                import fcntl
+                import termios
+
+                # Exclusive mode belongs to the tty, not this descriptor, so we have to release it manually.
+                self._kernel_exclusive = False
+                fcntl.ioctl(self.serial_port.fileno(), termios.TIOCNXCL)
+        finally:
+            self.serial_port.close()
+
+
 def bootloader_command(
     port: Any, message_id: int, body: bytes = b"", *, verbose: bool = False
+) -> bytes:
+    firmware_command = message_id in (MESSAGE_FW_BEGIN, MESSAGE_FW_DATA, MESSAGE_FW_END)
+    if firmware_command and not isinstance(port, BootloaderConnection):
+        raise ToolError("ERROR: Firmware commands require a connection from open_serial_port()")
+
+    started = isinstance(port, BootloaderConnection) and port.firmware_started
+    # FW_BEGIN initializes the loader's write cursor to 0x8000. FW_DATA has
+    # no lower-bound check, so sending it first can overwrite the bootloader.
+    if message_id in (MESSAGE_FW_DATA, MESSAGE_FW_END) and not started:
+        raise ToolError("ERROR: Firmware data/end requires a successful FW_BEGIN on this connection")
+
+    if isinstance(port, BootloaderConnection):
+        # Leave the session cleared if an exchange fails or is interrupted:
+        # the device may have advanced its cursor without returning an ACK.
+        port.firmware_started = False
+    response = _bootloader_exchange(
+        port, message_id, body, verbose=verbose, strict_ack=firmware_command
+    )
+    if isinstance(port, BootloaderConnection):
+        port.firmware_started = message_id == MESSAGE_FW_BEGIN or (
+            started and message_id not in (MESSAGE_FW_END, MESSAGE_RESET)
+        )
+    return response
+
+
+def _bootloader_exchange(
+    port: Any,
+    message_id: int,
+    body: bytes = b"",
+    *,
+    verbose: bool = False,
+    strict_ack: bool = False,
 ) -> bytes:
     payload = struct.pack("<H", message_id) + body
     tx = encode_frame(payload)
@@ -962,6 +1071,8 @@ def bootloader_command(
                 f"ERROR: Bootloader serial read failed for 0x{message_id:04X}: {exc}"
             ) from exc
         except BootloaderFrameError as exc:
+            if strict_ack:
+                raise
             ignored += 1
             if verbose:
                 out(
@@ -978,6 +1089,10 @@ def bootloader_command(
                 f"BL RX 0x{message_id:04X}: raw={len(raw)} decoded={len(response)} "
                 f"data={preview}{suffix}"
             )
+
+        # A delayed INFO reply also starts with zero, but is not a write ACK.
+        if strict_ack and response != b"\x00":
+            raise ToolError(f"ERROR: Invalid firmware acknowledgment {response.hex()}")
 
         if response == b"":
             if verbose:
@@ -1065,7 +1180,7 @@ def list_bootloader_ports(verbose: bool = False) -> list[tuple[str, str]]:
     return result
 
 
-def open_serial_port(port_name: str, *, verbose: bool = False) -> Any:
+def open_serial_port(port_name: str, *, verbose: bool = False) -> BootloaderConnection:
     try:
         import serial
     except ImportError as exc:
@@ -1073,7 +1188,13 @@ def open_serial_port(port_name: str, *, verbose: bool = False) -> Any:
     last_exc: Exception | None = None
     for _ in range(10):
         try:
-            return serial.Serial(port_name, timeout=60)
+            options = {"exclusive": True} if os.name == "posix" else {}
+            return BootloaderConnection(
+                serial.Serial(port_name, timeout=60, **options),
+                kernel_exclusive=sys.platform.startswith("linux"),
+            )
+        except ToolError:
+            raise
         except Exception as exc:
             last_exc = exc
             time.sleep(2)
@@ -1112,13 +1233,16 @@ def bootloader_begin_firmware(port_name: str, port: Any, *, verbose: bool = Fals
             bootloader_command(port, MESSAGE_FW_BEGIN, verbose=verbose)
             return port
         except BootloaderReadError as exc:
+            close_serial_port(port)
             if attempt >= FW_BEGIN_ATTEMPTS:
                 raise
             out(f"WARNING: {exc}; retrying erase " f"({attempt + 1}/{FW_BEGIN_ATTEMPTS})")
-            close_serial_port(port)
             time.sleep(FW_BEGIN_RETRY_DELAY_SECONDS)
             port = open_serial_port(port_name, verbose=verbose)
             reset_serial_input(port)
+        except BaseException:
+            close_serial_port(port)
+            raise
 
     return port
 
@@ -1153,6 +1277,8 @@ def discover_devices(*, verbose: bool = False) -> list[Device]:
 def flash_bootloader_port(
     port_name: str, firmware: FirmwareImage, *, verbose: bool = False
 ) -> None:
+    if len(firmware.payload) > APPLICATION_HEADER_ADDRESS - APPLICATION_START:
+        raise ToolError("ERROR: Firmware payload exceeds the application area; refusing to erase")
     port = open_serial_port(port_name, verbose=verbose)
     try:
         reset_serial_input(port)
