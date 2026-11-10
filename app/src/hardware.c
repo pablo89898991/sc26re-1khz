@@ -224,6 +224,11 @@ void hardware_read_report(struct controller_report *report)
 
 void hardware_wait_for_change(void)
 {
+	if(transport_usb_configured())
+	{
+		(void)k_sem_take(&input_changed, K_USEC(CONFIG_IBEX_USB_REPORT_POLL_US));
+		return;
+	}
 	(void)k_sem_take(&input_changed, K_MSEC(HARDWARE_REPORT_POLL_MS));
 }
 

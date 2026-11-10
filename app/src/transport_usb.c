@@ -71,6 +71,14 @@ static struct usb_input_queue_entry input_transfer __aligned(UDC_BUF_ALIGN);
 static const uint8_t *input_transfer_report;
 static bool input_transfer_active;
 static bool input_transfer_dequeue_on_completion;
+/*
+ * State reports are coalesced into one slot instead of the FIFO queue: at 1 kHz
+ * production a queued backlog would only add latency. The newest state wins; the
+ * sequence number is stamped when the report is actually handed to the UDC.
+ */
+static struct usb_input_queue_entry pending_state;
+static bool pending_state_valid;
+static uint8_t state_sequence;
 static atomic_t usb_initialized;
 static atomic_t usb_attached;
 static atomic_t usb_configured;
@@ -121,6 +129,7 @@ static void usb_input_queue_reset(void)
 	}
 	/* Keep an active buffer pinned, but its drained queue entry is retired. */
 	input_transfer_dequeue_on_completion = false;
+	pending_state_valid = false;
 	k_spin_unlock(&input_queue_lock, key);
 }
 
@@ -135,14 +144,29 @@ static int usb_submit_next_input(void)
 	}
 
 	key = k_spin_lock(&input_queue_lock);
-	if(input_transfer_active || k_msgq_peek(&input_queue, &input_transfer) != 0)
+	if(input_transfer_active)
+	{
+		k_spin_unlock(&input_queue_lock, key);
+		return 0;
+	}
+	if(k_msgq_peek(&input_queue, &input_transfer) == 0)
+	{
+		input_transfer_dequeue_on_completion = true;
+	}
+	else if(pending_state_valid)
+	{
+		memcpy(&input_transfer, &pending_state, sizeof(input_transfer));
+		input_transfer.data[1] = state_sequence++;
+		pending_state_valid = false;
+		input_transfer_dequeue_on_completion = false;
+	}
+	else
 	{
 		k_spin_unlock(&input_queue_lock, key);
 		return 0;
 	}
 	input_transfer_report = input_transfer.data;
 	input_transfer_active = true;
-	input_transfer_dequeue_on_completion = true;
 	k_spin_unlock(&input_queue_lock, key);
 
 	err = hid_device_submit_report(hid_dev, input_transfer.len, input_transfer.data);
@@ -201,7 +225,16 @@ static int usb_queue_input_report(uint8_t report_id, const uint8_t *data, size_t
 	memcpy(&entry.data[1], data, len);
 
 	key = k_spin_lock(&input_queue_lock);
-	err = k_msgq_put(&input_queue, &entry, K_NO_WAIT);
+	if(report_id == ID_TRITON_CONTROLLER_STATE)
+	{
+		memcpy(&pending_state, &entry, sizeof(pending_state));
+		pending_state_valid = true;
+		err = 0;
+	}
+	else
+	{
+		err = k_msgq_put(&input_queue, &entry, K_NO_WAIT);
+	}
 	k_spin_unlock(&input_queue_lock, key);
 	if(err)
 	{
@@ -445,7 +478,7 @@ static void usb_input_ready(const struct device *dev, const uint8_t *const repor
 		}
 		input_transfer_dequeue_on_completion = false;
 	}
-	submit_next = completion_matched && k_msgq_num_used_get(&input_queue) != 0;
+	submit_next = completion_matched && (k_msgq_num_used_get(&input_queue) != 0 || pending_state_valid);
 	k_spin_unlock(&input_queue_lock, key);
 
 	if(submit_next)

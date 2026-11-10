@@ -101,6 +101,22 @@ config IBEX_ACCELEROMETER
 	  asynchronous sensor API is used to consume accelerometer, gyroscope,
 	  game-rotation-vector, and gyroscope-bias frames.
 
+config IBEX_IMU_WAKES_REPORT
+	bool "Wake the report loop on every fresh gyro sample (USB only)"
+	default y
+	depends on IBEX_ACCELEROMETER
+	help
+	  Signal the input-changed semaphore after each FIFO batch that carried a
+	  gyro frame, so USB reports carry fresh IMU data at the IMU batch rate.
+
+config IBEX_USB_REPORT_POLL_US
+	int "Report loop poll period while USB is configured (us)"
+	default 1000
+	range 250 4000
+	help
+	  Upper bound on the time between report-loop iterations over USB. Stock
+	  sc26re uses 4000 us everywhere; wireless links keep 4000 us.
+
 config IBEX_ANALOG_INPUTS
 	bool "Include Ibex stick and trigger ADC inputs"
 	default y if BOARD_STEAM_CONTROLLER_IBEX

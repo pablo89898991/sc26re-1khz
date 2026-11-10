@@ -592,14 +592,27 @@ bool imu_ready(void)
 }
 
 #if IMU_HAS_DEVICE
+/*
+ * One FIFO batch can hold several frames per channel; only the newest one is used.
+ * Decode them in chunks with a single sensor_decode() call per chunk instead of one
+ * call per frame: each call rescans the batch, so per-frame decoding was O(n^2) and
+ * dominated the IMU thread's CPU time at high batch rates.
+ */
+#define IMU_DECODE_CHUNK 8
+
 static int decode_latest_three_axis(const struct sensor_decoder_api *decoder, const uint8_t *buf,
                                     enum sensor_channel channel, float value[3])
 {
 	struct sensor_chan_spec chan_spec = { channel, 0 };
 	struct sensor_decode_context ctx = SENSOR_DECODE_CONTEXT_INIT(decoder, buf, channel, 0);
-	struct sensor_three_axis_data data;
+	struct
+	{
+		struct sensor_three_axis_data data;
+		struct sensor_three_axis_sample_data more[IMU_DECODE_CHUNK - 1];
+	} out;
 	uint16_t frame_count;
 	int err;
+	int n = 0;
 
 	err = decoder->get_frame_count(buf, chan_spec, &frame_count);
 	if(err)
@@ -611,17 +624,18 @@ static int decode_latest_three_axis(const struct sensor_decoder_api *decoder, co
 		return -ENODATA;
 	}
 
-	for(uint16_t i = 0; i < frame_count; ++i)
+	while(frame_count > 0)
 	{
-		err = sensor_decode(&ctx, &data, 1);
-		if(err != 1)
+		n = sensor_decode(&ctx, &out.data, MIN(frame_count, IMU_DECODE_CHUNK));
+		if(n <= 0)
 		{
-			return err < 0 ? err : -EIO;
+			return n < 0 ? n : -EIO;
 		}
-		for(size_t axis = 0; axis < 3; ++axis)
-		{
-			value[axis] = q31_to_float(data.readings[0].values[axis], data.shift);
-		}
+		frame_count -= MIN(frame_count, (uint16_t)n);
+	}
+	for(size_t axis = 0; axis < 3; ++axis)
+	{
+		value[axis] = q31_to_float(out.data.readings[n - 1].values[axis], out.data.shift);
 	}
 
 	return 0;
@@ -633,9 +647,14 @@ static int decode_latest_quaternion(const struct sensor_decoder_api *decoder, co
 	struct sensor_chan_spec chan_spec = { SENSOR_CHAN_GAME_ROTATION_VECTOR, 0 };
 	struct sensor_decode_context ctx =
 	    SENSOR_DECODE_CONTEXT_INIT(decoder, buf, SENSOR_CHAN_GAME_ROTATION_VECTOR, 0);
-	struct sensor_game_rotation_vector_data data;
+	struct
+	{
+		struct sensor_game_rotation_vector_data data;
+		struct sensor_game_rotation_vector_sample_data more[IMU_DECODE_CHUNK - 1];
+	} out;
 	uint16_t frame_count;
 	int err;
+	int n = 0;
 
 	err = decoder->get_frame_count(buf, chan_spec, &frame_count);
 	if(err)
@@ -647,17 +666,18 @@ static int decode_latest_quaternion(const struct sensor_decoder_api *decoder, co
 		return -ENODATA;
 	}
 
-	for(uint16_t i = 0; i < frame_count; ++i)
+	while(frame_count > 0)
 	{
-		err = sensor_decode(&ctx, &data, 1);
-		if(err != 1)
+		n = sensor_decode(&ctx, &out.data, MIN(frame_count, IMU_DECODE_CHUNK));
+		if(n <= 0)
 		{
-			return err < 0 ? err : -EIO;
+			return n < 0 ? n : -EIO;
 		}
-		for(size_t component = 0; component < 4; ++component)
-		{
-			value[component] = q31_to_float(data.readings[0].values[component], data.shift);
-		}
+		frame_count -= MIN(frame_count, (uint16_t)n);
+	}
+	for(size_t component = 0; component < 4; ++component)
+	{
+		value[component] = q31_to_float(out.data.readings[n - 1].values[component], out.data.shift);
 	}
 
 	return 0;
@@ -669,9 +689,14 @@ static int decode_latest_fifo_timestamp(const struct sensor_decoder_api *decoder
 	struct sensor_chan_spec chan_spec = { SENSOR_CHAN_LSM6DSV16X_FIFO_TIMESTAMP, 0 };
 	struct sensor_decode_context ctx =
 	    SENSOR_DECODE_CONTEXT_INIT(decoder, buf, SENSOR_CHAN_LSM6DSV16X_FIFO_TIMESTAMP, 0);
-	struct sensor_uint64_data data;
+	struct
+	{
+		struct sensor_uint64_data data;
+		struct sensor_uint64_sample_data more[IMU_DECODE_CHUNK - 1];
+	} out;
 	uint16_t frame_count;
 	int err;
+	int n = 0;
 
 	err = decoder->get_frame_count(buf, chan_spec, &frame_count);
 	if(err)
@@ -683,15 +708,16 @@ static int decode_latest_fifo_timestamp(const struct sensor_decoder_api *decoder
 		return -ENODATA;
 	}
 
-	for(uint16_t i = 0; i < frame_count; ++i)
+	while(frame_count > 0)
 	{
-		err = sensor_decode(&ctx, &data, 1);
-		if(err != 1)
+		n = sensor_decode(&ctx, &out.data, MIN(frame_count, IMU_DECODE_CHUNK));
+		if(n <= 0)
 		{
-			return err < 0 ? err : -EIO;
+			return n < 0 ? n : -EIO;
 		}
-		*timestamp_us = (uint32_t)(data.readings[0].value * LSM6DSV16X_FIFO_TIMESTAMP_TICK_US);
+		frame_count -= MIN(frame_count, (uint16_t)n);
 	}
+	*timestamp_us = (uint32_t)(out.data.readings[n - 1].value * LSM6DSV16X_FIFO_TIMESTAMP_TICK_US);
 
 	return 0;
 }
@@ -708,6 +734,7 @@ static int build_imu_report_from_stream(const uint8_t *buf)
 	uint32_t timestamp_us = 0;
 	int16_t oriented[3];
 	bool updated = false;
+	bool gyro_updated = false;
 	bool reports_enabled;
 	int err;
 
@@ -771,6 +798,7 @@ static int build_imu_report_from_stream(const uint8_t *buf)
 		report.gyro_y = oriented[1];
 		report.gyro_z = oriented[2];
 		updated = true;
+		gyro_updated = true;
 	}
 
 	err = decode_latest_quaternion(decoder, buf, quaternion);
@@ -788,6 +816,13 @@ static int build_imu_report_from_stream(const uint8_t *buf)
 	{
 		store_cached_imu_report(&report);
 		k_mutex_unlock(&imu_io_lock);
+#if CONFIG_IBEX_IMU_WAKES_REPORT
+		if(gyro_updated && transport_usb_configured())
+		{
+			/* Let the report loop ship each fresh gyro sample immediately. */
+			hardware_signal_input_changed();
+		}
+#endif
 		return 0;
 	}
 	k_mutex_unlock(&imu_io_lock);
@@ -929,9 +964,12 @@ int imu_read_report(struct controller_report *report)
 {
 	bool enabled;
 
-	k_mutex_lock(&imu_io_lock, K_FOREVER);
-	enabled = imu_mode != SETTING_GYRO_MODE_OFF;
-	k_mutex_unlock(&imu_io_lock);
+	/*
+	 * No imu_io_lock here: the IMU thread holds it while decoding each FIFO batch,
+	 * which used to stall the report loop. imu_mode is a naturally atomic halfword
+	 * and the cached report has its own spinlock.
+	 */
+	enabled = *(volatile uint16_t *)&imu_mode != SETTING_GYRO_MODE_OFF;
 	if(!enabled)
 	{
 		return 0;
