@@ -1,0 +1,44 @@
+From 30ab22a1bc501c09f1ed5e1b8403ed3055b4e2f6 Mon Sep 17 00:00:00 2001
+From: build <build@local>
+Date: Tue, 10 Nov 2026 22:41:50 +0100
+Subject: [PATCH] drivers: sensor: make lsm6dsv16x FIFO timestamp batching
+ optional
+
+Timestamp words are written with every batched sample set, which at
+1 kHz gyro adds ~1000 FIFO words/s of bus traffic. Add a Kconfig option
+to leave them out of the FIFO.
+
+diff --git a/drivers/sensor/st/lsm6dsv16x/Kconfig b/drivers/sensor/st/lsm6dsv16x/Kconfig
+index 2c1926eb..a4393940 100644
+--- a/drivers/sensor/st/lsm6dsv16x/Kconfig
++++ b/drivers/sensor/st/lsm6dsv16x/Kconfig
+@@ -37,6 +37,15 @@ config LSM6DSV16X_STREAM
+ 	help
+ 	  Use this config option to enable streaming sensor data via RTIO subsystem.
+ 
++config LSM6DSV16X_STREAM_FIFO_TIMESTAMP
++	bool "Batch timestamp words into the streaming FIFO"
++	default y
++	depends on LSM6DSV16X_STREAM
++	help
++	  Write a TIMESTAMP word into the FIFO with every batched sample set
++	  (decimation 1). Disable to cut FIFO and bus traffic; per-frame times
++	  are still derived from the read timestamp and the batch rates.
++
+ config LSM6DSV16X_SELF_TEST
+ 	bool "Self test attribute"
+ 	help
+diff --git a/drivers/sensor/st/lsm6dsv16x/lsm6dsv16x_rtio_stream.c b/drivers/sensor/st/lsm6dsv16x/lsm6dsv16x_rtio_stream.c
+index 3d3bdcea..24bd14e0 100644
+--- a/drivers/sensor/st/lsm6dsv16x/lsm6dsv16x_rtio_stream.c
++++ b/drivers/sensor/st/lsm6dsv16x/lsm6dsv16x_rtio_stream.c
+@@ -155,7 +155,8 @@ static void lsm6dsv16x_config_fifo(const struct device *dev, struct trigger_conf
+ 
+ 		fifo_mode = LSM6DSV16X_STREAM_MODE;
+ 		fifo_wtm = config->fifo_wtm;
+-		timestamp_batch = LSM6DSV16X_TMSTMP_DEC_1;
++		timestamp_batch = IS_ENABLED(CONFIG_LSM6DSV16X_STREAM_FIFO_TIMESTAMP) ?
++				  LSM6DSV16X_TMSTMP_DEC_1 : LSM6DSV16X_TMSTMP_NOT_BATCHED;
+ 
+ 		if (config->sflp_fifo_en & LSM6DSVXXX_DT_SFLP_FIFO_GAME_ROTATION) {
+ 			sflp_fifo.game_rotation = 1;

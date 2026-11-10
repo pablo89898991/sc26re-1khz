@@ -16,6 +16,9 @@
 #include <zephyr/sys/util.h>
 
 #include "controller.h"
+#if CONFIG_IBEX_IMU_I2C_FREQ_KHZ != 400
+#include <hal/nrf_twim.h>
+#endif
 #include "ibex_settings_registry.h"
 #include "imu.h"
 #include "imu_bias.h"
@@ -570,6 +573,17 @@ int imu_init(void)
 	}
 	else
 	{
+#if CONFIG_IBEX_IMU_I2C_FREQ_KHZ != 400 && DT_NODE_HAS_COMPAT(DT_BUS(DT_ALIAS(accel0)), nordic_nrf_twim)
+		{
+			/*
+			 * Undocumented on nRF52833 (TWIM lists 100/250/400 kHz): FREQUENCY is a
+			 * fractional rate word (value / 2^32 * 16 MHz). The bus is idle here.
+			 */
+			NRF_TWIM_Type *twim = (NRF_TWIM_Type *)DT_REG_ADDR(DT_BUS(DT_ALIAS(accel0)));
+			twim->FREQUENCY = (uint32_t)(((uint64_t)CONFIG_IBEX_IMU_I2C_FREQ_KHZ << 32) / 16000U);
+			LOG_INF("IMU I2C bus forced to %d kHz", CONFIG_IBEX_IMU_I2C_FREQ_KHZ);
+		}
+#endif
 		k_thread_create(&imu_stream_thread, imu_stream_stack,
 		                K_THREAD_STACK_SIZEOF(imu_stream_stack), imu_stream_thread_main, NULL, NULL,
 		                NULL, K_PRIO_PREEMPT(IMU_STREAM_THREAD_PRIORITY), K_FP_REGS, K_NO_WAIT);
@@ -600,8 +614,9 @@ bool imu_ready(void)
  */
 #define IMU_DECODE_CHUNK 8
 
-static int decode_latest_three_axis(const struct sensor_decoder_api *decoder, const uint8_t *buf,
-                                    enum sensor_channel channel, float value[3])
+static int decode_latest_three_axis_ts(const struct sensor_decoder_api *decoder,
+                                       const uint8_t *buf, enum sensor_channel channel,
+                                       float value[3], uint64_t *timestamp_ns)
 {
 	struct sensor_chan_spec chan_spec = { channel, 0 };
 	struct sensor_decode_context ctx = SENSOR_DECODE_CONTEXT_INIT(decoder, buf, channel, 0);
@@ -637,8 +652,19 @@ static int decode_latest_three_axis(const struct sensor_decoder_api *decoder, co
 	{
 		value[axis] = q31_to_float(out.data.readings[n - 1].values[axis], out.data.shift);
 	}
+	if(timestamp_ns != NULL)
+	{
+		*timestamp_ns =
+		    out.data.header.base_timestamp_ns + out.data.readings[n - 1].timestamp_delta;
+	}
 
 	return 0;
+}
+
+static int decode_latest_three_axis(const struct sensor_decoder_api *decoder, const uint8_t *buf,
+                                    enum sensor_channel channel, float value[3])
+{
+	return decode_latest_three_axis_ts(decoder, buf, channel, value, NULL);
 }
 
 static int decode_latest_quaternion(const struct sensor_decoder_api *decoder, const uint8_t *buf,
@@ -735,6 +761,7 @@ static int build_imu_report_from_stream(const uint8_t *buf)
 	int16_t oriented[3];
 	bool updated = false;
 	bool gyro_updated = false;
+	uint64_t gyro_timestamp_ns = 0;
 	bool reports_enabled;
 	int err;
 
@@ -775,7 +802,7 @@ static int build_imu_report_from_stream(const uint8_t *buf)
 		updated = true;
 	}
 
-	err = decode_latest_three_axis(decoder, buf, SENSOR_CHAN_GYRO_XYZ, gyro);
+	err = decode_latest_three_axis_ts(decoder, buf, SENSOR_CHAN_GYRO_XYZ, gyro, &gyro_timestamp_ns);
 	if(err == 0)
 	{
 		memcpy(bias, latest_sflp_bias_valid ? latest_sflp_bias : gyro_bias, sizeof(bias));
@@ -811,6 +838,11 @@ static int build_imu_report_from_stream(const uint8_t *buf)
 	if(err == 0)
 	{
 		report.imu_timestamp_us = timestamp_us;
+	}
+	else if(gyro_updated)
+	{
+		/* No FIFO timestamp words: use the newest gyro frame's derived time. */
+		report.imu_timestamp_us = (uint32_t)(gyro_timestamp_ns / NSEC_PER_USEC);
 	}
 	if(updated)
 	{

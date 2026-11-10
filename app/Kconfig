@@ -109,6 +109,15 @@ config IBEX_IMU_WAKES_REPORT
 	  Signal the input-changed semaphore after each FIFO batch that carried a
 	  gyro frame, so USB reports carry fresh IMU data at the IMU batch rate.
 
+config IBEX_IMU_I2C_FREQ_KHZ
+	int "Force the IMU I2C bus rate (kHz)"
+	default 400
+	range 100 1000
+	help
+	  400 keeps the devicetree rate. Other values write the nRF TWIM
+	  FREQUENCY register directly; anything above 400 is undocumented on
+	  nRF52833 (1000 crashed a controller in testing, 800 worked).
+
 config IBEX_USB_REPORT_POLL_US
 	int "Report loop poll period while USB is configured (us)"
 	default 1000
