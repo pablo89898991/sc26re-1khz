@@ -1,0 +1,158 @@
+From 05e6107c807d5d9eabc39b2bed5bb094ecdff09c Mon Sep 17 00:00:00 2001
+From: sc26re <noreply@anthropic.com>
+Date: Wed, 11 Nov 2026 18:16:15 +0100
+Subject: [PATCH] drivers: sensor: lsm6dsv16x: actually apply high-accuracy ODR
+ mode
+
+HAODR_SEL can only be changed while both accel and gyro are powered
+down, but the HAL writes CTRL1/CTRL2 first, so DT HA ODR selections
+were silently ignored and the sensor ran at the HP rate (960 Hz instead
+of 1000 Hz). Program HAODR_CFG during init before enabling either
+sensor, and scale decoder sample periods by the HA factor.
+---
+ drivers/sensor/st/lsm6dsv16x/lsm6dsv16x.c     | 26 +++++++++++++++++++
+ drivers/sensor/st/lsm6dsv16x/lsm6dsv16x.h     |  1 +
+ .../sensor/st/lsm6dsv16x/lsm6dsv16x_decoder.c | 26 ++++++++++++++++---
+ .../sensor/st/lsm6dsv16x/lsm6dsv16x_decoder.h |  3 ++-
+ .../st/lsm6dsv16x/lsm6dsv16x_rtio_stream.c    |  1 +
+ 5 files changed, 52 insertions(+), 5 deletions(-)
+
+diff --git a/drivers/sensor/st/lsm6dsv16x/lsm6dsv16x.c b/drivers/sensor/st/lsm6dsv16x/lsm6dsv16x.c
+index 5b63a787..b962b928 100644
+--- a/drivers/sensor/st/lsm6dsv16x/lsm6dsv16x.c
++++ b/drivers/sensor/st/lsm6dsv16x/lsm6dsv16x.c
+@@ -1523,6 +1523,32 @@ static int lsm6dsv16x_init_chip(const struct device *dev)
+ 	}
+ 	lsm6dsv16x->acc_gain = lsm6dsv16x_calc_accel_gain(dev, fs);
+ 
++	/*
++	 * HAODR_SEL is only writable while both accel and gyro are in
++	 * power-down. The HAL writes CTRL1/CTRL2 (powering the sensor up)
++	 * before HAODR_CFG, so the HA selection would be silently ignored.
++	 * Program it here, before either ODR is set.
++	 */
++	{
++		uint8_t sel = ((cfg->gyro_odr >> 4) & 0x3) ? ((cfg->gyro_odr >> 4) & 0x3)
++							   : ((cfg->accel_odr >> 4) & 0x3);
++		lsm6dsv16x_haodr_cfg_t haodr;
++
++		lsm6dsv16x_xl_data_rate_set(ctx, LSM6DSV16X_ODR_OFF);
++		lsm6dsv16x_gy_data_rate_set(ctx, LSM6DSV16X_ODR_OFF);
++		if (lsm6dsv16x_read_reg(ctx, LSM6DSV16X_HAODR_CFG, (uint8_t *)&haodr, 1) < 0) {
++			return -EIO;
++		}
++		haodr.haodr_sel = sel;
++		if (lsm6dsv16x_write_reg(ctx, LSM6DSV16X_HAODR_CFG, (uint8_t *)&haodr, 1) < 0) {
++			return -EIO;
++		}
++#ifdef CONFIG_LSM6DSV16X_STREAM
++		lsm6dsv16x->haodr_sel = sel;
++#endif
++		LOG_INF("HAODR_SEL=%u", sel);
++	}
++
+ 	odr = cfg->accel_odr;
+ 	LOG_DBG("accel odr is %d", odr);
+ 	if (lsm6dsv16x_accel_set_odr_raw(dev, odr) < 0) {
+diff --git a/drivers/sensor/st/lsm6dsv16x/lsm6dsv16x.h b/drivers/sensor/st/lsm6dsv16x/lsm6dsv16x.h
+index 2bcfbb6f..5af3fe72 100644
+--- a/drivers/sensor/st/lsm6dsv16x/lsm6dsv16x.h
++++ b/drivers/sensor/st/lsm6dsv16x/lsm6dsv16x.h
+@@ -183,6 +183,7 @@ struct lsm6dsv16x_data {
+ 	uint16_t temp_batch_odr : 2;
+ 	uint16_t sflp_batch_odr : 3;
+ 	uint16_t reserved : 3;
++	uint8_t haodr_sel;
+ 	rtio_bus_type bus_type;
+ 	int32_t gbias_x_udps;
+ 	int32_t gbias_y_udps;
+diff --git a/drivers/sensor/st/lsm6dsv16x/lsm6dsv16x_decoder.c b/drivers/sensor/st/lsm6dsv16x/lsm6dsv16x_decoder.c
+index a351bd75..518928f1 100644
+--- a/drivers/sensor/st/lsm6dsv16x/lsm6dsv16x_decoder.c
++++ b/drivers/sensor/st/lsm6dsv16x/lsm6dsv16x_decoder.c
+@@ -62,6 +62,24 @@ static const uint32_t sflp_period_ns[] = {
+ 	[LSM6DSVXXX_DT_SFLP_ODR_AT_240Hz] = UINT32_C(1000000000) / 240,
+ 	[LSM6DSVXXX_DT_SFLP_ODR_AT_480Hz] = UINT32_C(1000000000) / 480,
+ };
++
++/*
++ * In high-accuracy ODR mode (HAODR_SEL != 0) every ODR/BDR code maps to a
++ * scaled rate: HA01 = x1000/960, HA02 = x800/960, HA03 = x1066.67/960.
++ */
++static inline uint32_t lsm6dsv16x_ha_period(uint32_t hp_period, uint8_t sel)
++{
++	switch (sel) {
++	case 1:
++		return (uint32_t)(((uint64_t)hp_period * 960U) / 1000U);
++	case 2:
++		return (uint32_t)(((uint64_t)hp_period * 960U) / 800U);
++	case 3:
++		return (uint32_t)(((uint64_t)hp_period * 9U) / 10U);
++	default:
++		return hp_period;
++	}
++}
+ #endif /* CONFIG_LSM6DSV16X_STREAM */
+ 
+ /*
+@@ -315,11 +333,11 @@ static int lsm6dsv16x_decode_fifo(const uint8_t *buffer, struct sensor_chan_spec
+ 	if (SENSOR_CHANNEL_IS_ACCEL(chan_spec.chan_type)) {
+ 		((struct sensor_data_header *)data_out)->base_timestamp_ns =
+ 			edata->header.timestamp -
+-			(tot_chan_fifo_words - 1) * accel_period_ns[edata->accel_batch_odr];
++			(tot_chan_fifo_words - 1) * lsm6dsv16x_ha_period(accel_period_ns[edata->accel_batch_odr], edata->haodr_sel);
+ 	} else if (SENSOR_CHANNEL_IS_GYRO(chan_spec.chan_type)) {
+ 		((struct sensor_data_header *)data_out)->base_timestamp_ns =
+ 			edata->header.timestamp -
+-			(tot_chan_fifo_words - 1) * gyro_period_ns[edata->gyro_batch_odr];
++			(tot_chan_fifo_words - 1) * lsm6dsv16x_ha_period(gyro_period_ns[edata->gyro_batch_odr], edata->haodr_sel);
+ #if defined(CONFIG_LSM6DSV16X_ENABLE_TEMP)
+ 	} else if (chan_spec.chan_type == SENSOR_CHAN_DIE_TEMP) {
+ 		((struct sensor_data_header *)data_out)->base_timestamp_ns =
+@@ -365,7 +383,7 @@ static int lsm6dsv16x_decode_fifo(const uint8_t *buffer, struct sensor_chan_spec
+ 			}
+ 
+ 			out->readings[count].timestamp_delta =
+-				(xl_count - 1) * accel_period_ns[edata->accel_batch_odr];
++				(xl_count - 1) * lsm6dsv16x_ha_period(accel_period_ns[edata->accel_batch_odr], edata->haodr_sel);
+ 
+ 			x = *(int16_t *)&buffer[1];
+ 			y = *(int16_t *)&buffer[3];
+@@ -396,7 +414,7 @@ static int lsm6dsv16x_decode_fifo(const uint8_t *buffer, struct sensor_chan_spec
+ 			}
+ 
+ 			out->readings[count].timestamp_delta =
+-				(gy_count - 1) * gyro_period_ns[edata->gyro_batch_odr];
++				(gy_count - 1) * lsm6dsv16x_ha_period(gyro_period_ns[edata->gyro_batch_odr], edata->haodr_sel);
+ 
+ 			x = *(int16_t *)&buffer[1];
+ 			y = *(int16_t *)&buffer[3];
+diff --git a/drivers/sensor/st/lsm6dsv16x/lsm6dsv16x_decoder.h b/drivers/sensor/st/lsm6dsv16x/lsm6dsv16x_decoder.h
+index 4ec25ec9..e93838e7 100644
+--- a/drivers/sensor/st/lsm6dsv16x/lsm6dsv16x_decoder.h
++++ b/drivers/sensor/st/lsm6dsv16x/lsm6dsv16x_decoder.h
+@@ -31,7 +31,8 @@ struct lsm6dsv16x_fifo_data {
+ 	uint16_t gyro_odr: 4;
+ 	uint16_t accel_odr: 4;
+ 	uint16_t fifo_count: 11;
+-	uint16_t reserved_1: 5;
++	uint16_t haodr_sel: 2;
++	uint16_t reserved_1: 3;
+ 	uint16_t gyro_batch_odr: 4;
+ 	uint16_t accel_batch_odr: 4;
+ 	uint16_t temp_batch_odr: 4;
+diff --git a/drivers/sensor/st/lsm6dsv16x/lsm6dsv16x_rtio_stream.c b/drivers/sensor/st/lsm6dsv16x/lsm6dsv16x_rtio_stream.c
+index 24bd14e0..8b348b5a 100644
+--- a/drivers/sensor/st/lsm6dsv16x/lsm6dsv16x_rtio_stream.c
++++ b/drivers/sensor/st/lsm6dsv16x/lsm6dsv16x_rtio_stream.c
+@@ -509,6 +509,7 @@ static void lsm6dsv16x_read_fifo_cb(struct rtio *r, const struct rtio_sqe *sqe,
+ 		.temp_batch_odr = lsm6dsv16x->temp_batch_odr,
+ #endif
+ 		.sflp_batch_odr = lsm6dsv16x->sflp_batch_odr,
++		.haodr_sel = lsm6dsv16x->haodr_sel,
+ 	};
+ 	/* clang-format on */
+ 
+-- 
+2.43.0
+
