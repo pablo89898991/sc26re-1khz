@@ -18,6 +18,11 @@ jobs:
             python3-pip python3-venv gperf ccache xz-utils file
           pip install --user --break-system-packages west pyelftools pykwalify jsonschema packaging
 
+      - name: Git identity (patch stack is applied with git am)
+        run: |
+          git config --global user.name "ci"
+          git config --global user.email "ci@users.noreply.github.com"
+
       - name: Cache Zephyr SDK and workspace
         uses: actions/cache@v4
         with:
@@ -26,7 +31,7 @@ jobs:
             zephyr/.west
             zephyr/zephyr
             zephyr/modules
-          key: zephyr-${{ hashFiles('manifests/**', 'Makefile') }}
+          key: zephyr-${{ hashFiles('manifests/**', 'Makefile', 'patches/**') }}
 
       - name: Build controller firmware (USB/ESB/BLE, 1 kHz)
         run: make app-ibex
