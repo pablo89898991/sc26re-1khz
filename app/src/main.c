@@ -207,6 +207,9 @@ int main(void)
 
 		hardware_read_report(&current);
 		now_ms = k_uptime_get();
+#if CONFIG_IBEX_RGBW_LED
+		rgbw_led_poll_settings();
+#endif
 		if(ibex_setting_get(SETTING_SLEEP_INACTIVITY_TIMEOUT, &timeout_seconds) &&
 		   timeout_seconds != inactivity_timeout_seconds)
 		{

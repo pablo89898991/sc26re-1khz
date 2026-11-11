@@ -261,6 +261,11 @@ config IBEX_ANALOG_FAST_ON_ESB
 	  settle + 4 SAADC rounds), which caps the controller at ~400 reports/s.
 	  Costs a little battery: the stick/trigger supply stays on while connected.
 
+
+config IBEX_LED_USER_BRIGHTNESS
+	bool "Scale the RGBW LED by Steam's LED brightness setting (45)"
+	default y
+
 endmenu
 
 source "Kconfig.zephyr"

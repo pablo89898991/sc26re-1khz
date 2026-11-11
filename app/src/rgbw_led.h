@@ -42,3 +42,6 @@ void rgbw_led_prepare_poweroff(void);
  * Get the current RGBW values (0-255 per channel).
  */
 struct rgbw_color rgbw_led_get(void);
+
+/* Re-read the host LED brightness setting (rate limited); call from the main loop. */
+void rgbw_led_poll_settings(void);
