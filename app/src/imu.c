@@ -39,7 +39,9 @@ static const struct device *const imu_dev = DEVICE_DT_GET(DT_ALIAS(accel0));
 #define IMU_QUATERNION_REPORT_SCALE INT16_MAX
 #define IMU_SFLP_BIAS_UPDATE_INTERVAL_US USEC_PER_SEC
 #define IMU_STREAM_THREAD_STACK_SIZE 2048
-#define IMU_STREAM_THREAD_PRIORITY 9
+/* Above haptics/puck/ESB (8-10): per-batch work is now short, and a late wake-up
+ * directly delays the next FIFO read. */
+#define IMU_STREAM_THREAD_PRIORITY 6
 #define IMU_STREAM_CQE_COUNT 16
 #define IMU_STREAM_BUFFER_COUNT 8
 #define IMU_STREAM_BUFFER_SIZE 512
