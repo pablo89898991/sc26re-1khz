@@ -455,14 +455,20 @@ int analog_read_report(struct controller_report *report)
 {
 	int16_t samples[ANALOG_CHANNEL_COUNT * ANALOG_SAMPLE_COUNT];
 	int32_t averaged[ANALOG_CHANNEL_COUNT] = { 0 };
+	/*
+	 * Each extra sampling round costs ~170 us of SAADC time in the report loop; over USB
+	 * at 1 kHz fewer rounds are used (CONFIG_IBEX_ANALOG_USB_SAMPLES).
+	 */
+	const size_t sample_count = transport_usb_configured() ?
+	    MIN(CONFIG_IBEX_ANALOG_USB_SAMPLES, ANALOG_SAMPLE_COUNT) : ANALOG_SAMPLE_COUNT;
 	struct adc_sequence_options options = {
-		.extra_samplings = ANALOG_SAMPLE_COUNT - 1,
+		.extra_samplings = sample_count - 1,
 	};
 	struct adc_sequence sequence = {
 		.options = &options,
 		.channels = BIT_MASK(ANALOG_CHANNEL_COUNT),
 		.buffer = samples,
-		.buffer_size = sizeof(samples),
+		.buffer_size = sizeof(int16_t) * ANALOG_CHANNEL_COUNT * sample_count,
 		.resolution = 12,
 	};
 	int disable_err;
@@ -486,7 +492,7 @@ int analog_read_report(struct controller_report *report)
 		return err ? err : disable_err;
 	}
 
-	for(size_t sample = 0; sample < ANALOG_SAMPLE_COUNT; ++sample)
+	for(size_t sample = 0; sample < sample_count; ++sample)
 	{
 		for(size_t channel = 0; channel < ANALOG_CHANNEL_COUNT; ++channel)
 		{
@@ -495,7 +501,7 @@ int analog_read_report(struct controller_report *report)
 	}
 	for(size_t channel = 0; channel < ANALOG_CHANNEL_COUNT; ++channel)
 	{
-		averaged[channel] /= ANALOG_SAMPLE_COUNT;
+		averaged[channel] /= (int32_t)sample_count;
 		err = adc_raw_to_millivolts_dt(&analog_channels[channel], &averaged[channel]);
 		if(err)
 		{

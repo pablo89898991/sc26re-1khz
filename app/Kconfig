@@ -133,6 +133,15 @@ config IBEX_ANALOG_STAY_POWERED_ON_USB
 	help
 	  Skips the 200 us power-up settle per report over USB.
 
+config IBEX_ANALOG_USB_SAMPLES
+	int "Stick/trigger SAADC samples averaged per report over USB"
+	default 1
+	range 1 4
+	depends on IBEX_ANALOG_INPUTS
+	help
+	  Battery/wireless keeps 4. Each extra round adds SAADC time to every
+	  report-loop iteration.
+
 config IBEX_USB_REPORT_POLL_US
 	int "Report loop poll period while USB is configured (us)"
 	default 1000
