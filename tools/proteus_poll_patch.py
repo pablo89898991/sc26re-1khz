@@ -1,5 +1,6 @@
 import struct,zlib,sys
-src='/mnt/user-data/uploads/36c57bda-PROTEUS_FW_6AC6869B.fw'
+src=sys.argv[1] if len(sys.argv)>1 else 'PROTEUS_FW_6AC6869B.fw'
+out=sys.argv[2] if len(sys.argv)>2 else '.'
 f=bytearray(open(src,'rb').read()); hdr=f[:32]; pl=bytearray(f[32:])
 assert len(pl)==struct.unpack_from('<I',hdr,4)[0] and zlib.crc32(pl)==struct.unpack_from('<I',hdr,8)[0]
 WAITS=[0xad64,0xadd0,0xae2a,0xaea0]
@@ -15,5 +16,5 @@ def mk(ticks, fs, hs, name):
         o=a-0x8000; assert p[o+6]==5,hex(a); p[o+6]=hs
     h=bytearray(hdr); struct.pack_into('<II',h,4,len(p),zlib.crc32(p)&0xffffffff)
     open(name,'wb').write(h+p); print(name, hex(zlib.crc32(p)))
-mk(66,2,5,'/home/claude/work/out/PROTEUS_FW_6AC6869B_poll2ms.fw')
-mk(33,1,4,'/home/claude/work/out/PROTEUS_FW_6AC6869B_poll1ms.fw')
+for t,fs,hs,n in ((66,2,5,'poll2ms'),(33,1,4,'poll1ms'),(16,1,4,'poll05ms'),(1,1,4,'pollmax')):
+    mk(t,fs,hs,f'{out}/PROTEUS_FW_6AC6869B_{n}.fw')
