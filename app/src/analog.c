@@ -282,6 +282,13 @@ int analog_init(void)
  */
 static bool analog_powered;
 
+/* Fast scan path: wired USB, or the Puck link (which now polls faster than 250 Hz). */
+static bool analog_fast_link(void)
+{
+	return transport_usb_configured() ||
+	       (IS_ENABLED(CONFIG_IBEX_ANALOG_FAST_ON_ESB) && transport_esb_connected());
+}
+
 static int analog_inputs_take(void)
 {
 	int err;
@@ -307,7 +314,7 @@ static int analog_inputs_put(void)
 
 	__ASSERT_NO_MSG(analog_lock.owner == k_current_get());
 
-	if(IS_ENABLED(CONFIG_IBEX_ANALOG_STAY_POWERED_ON_USB) && transport_usb_configured())
+	if(IS_ENABLED(CONFIG_IBEX_ANALOG_STAY_POWERED_ON_USB) && analog_fast_link())
 	{
 		analog_powered = true;
 		k_mutex_unlock(&analog_lock);
@@ -459,7 +466,7 @@ int analog_read_report(struct controller_report *report)
 	 * Each extra sampling round costs ~170 us of SAADC time in the report loop; over USB
 	 * at 1 kHz fewer rounds are used (CONFIG_IBEX_ANALOG_USB_SAMPLES).
 	 */
-	const size_t sample_count = transport_usb_configured() ?
+	const size_t sample_count = analog_fast_link() ?
 	    MIN(CONFIG_IBEX_ANALOG_USB_SAMPLES, ANALOG_SAMPLE_COUNT) : ANALOG_SAMPLE_COUNT;
 	struct adc_sequence_options options = {
 		.extra_samplings = sample_count - 1,

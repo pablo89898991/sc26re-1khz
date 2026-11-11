@@ -252,6 +252,15 @@ config IBEX_ESB_DEBUG_IN_QUAT
 	bool "Puck link rates in the quaternion fields (diagnostics)"
 	default n
 
+
+config IBEX_ANALOG_FAST_ON_ESB
+	bool "Use the fast analog scan (supply kept on, fewer SAADC rounds) on the Puck link"
+	default y
+	help
+	  Without it a report-loop pass on the Puck link takes ~1.5 ms (supply
+	  settle + 4 SAADC rounds), which caps the controller at ~400 reports/s.
+	  Costs a little battery: the stick/trigger supply stays on while connected.
+
 endmenu
 
 source "Kconfig.zephyr"
