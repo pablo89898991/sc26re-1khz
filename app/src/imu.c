@@ -16,6 +16,9 @@
 #include <zephyr/sys/util.h>
 
 #include "controller.h"
+#if CONFIG_IBEX_IMU_DEBUG_IN_QUAT
+#include <zephyr/drivers/sensor_clock.h>
+#endif
 #if CONFIG_IBEX_IMU_I2C_FREQ_KHZ != 400
 #include <hal/nrf_twim.h>
 #endif
@@ -616,6 +619,18 @@ bool imu_ready(void)
  */
 #define IMU_DECODE_CHUNK 8
 
+#if CONFIG_IBEX_IMU_DEBUG_IN_QUAT
+/*
+ * Diagnostics build: the quaternion fields of the state report carry averages over
+ * 256 FIFO batches instead of orientation:
+ *   w = IRQ->processing latency (us), x = build time (us),
+ *   y = batch period (us),            z = gyro frames per batch * 100
+ */
+static uint16_t dbg_gyro_frames;
+static uint32_t dbg_acc_lat, dbg_acc_build, dbg_acc_period, dbg_acc_frames, dbg_n, dbg_last_cyc;
+static int16_t dbg_out[4];
+#endif
+
 static int decode_latest_three_axis_ts(const struct sensor_decoder_api *decoder,
                                        const uint8_t *buf, enum sensor_channel channel,
                                        float value[3], uint64_t *timestamp_ns)
@@ -641,6 +656,12 @@ static int decode_latest_three_axis_ts(const struct sensor_decoder_api *decoder,
 		return -ENODATA;
 	}
 
+#if CONFIG_IBEX_IMU_DEBUG_IN_QUAT
+	if(channel == SENSOR_CHAN_GYRO_XYZ)
+	{
+		dbg_gyro_frames = frame_count;
+	}
+#endif
 	while(frame_count > 0)
 	{
 		n = sensor_decode(&ctx, &out.data, MIN(frame_count, IMU_DECODE_CHUNK));
@@ -772,6 +793,13 @@ static int build_imu_report_from_stream(const uint8_t *buf)
 	{
 		return err;
 	}
+#if CONFIG_IBEX_IMU_DEBUG_IN_QUAT
+	uint32_t dbg_t0 = k_cycle_get_32();
+	uint64_t dbg_now_cycles = 0;
+
+	(void)sensor_clock_get_cycles(&dbg_now_cycles);
+	uint64_t dbg_now_ns = sensor_clock_cycles_to_ns(dbg_now_cycles);
+#endif
 
 	k_mutex_lock(&imu_io_lock, K_FOREVER);
 	reports_enabled = atomic_get(&imu_motion_trigger_enabled) != 0;
@@ -846,6 +874,31 @@ static int build_imu_report_from_stream(const uint8_t *buf)
 		/* No FIFO timestamp words: use the newest gyro frame's derived time. */
 		report.imu_timestamp_us = (uint32_t)(gyro_timestamp_ns / NSEC_PER_USEC);
 	}
+#if CONFIG_IBEX_IMU_DEBUG_IN_QUAT
+	if(gyro_updated)
+	{
+		uint32_t t1 = k_cycle_get_32();
+		uint64_t lat = dbg_now_ns > gyro_timestamp_ns ? dbg_now_ns - gyro_timestamp_ns : 0;
+
+		dbg_acc_lat += (uint32_t)MIN(lat / NSEC_PER_USEC, 60000U);
+		dbg_acc_build += k_cyc_to_us_floor32(t1 - dbg_t0);
+		dbg_acc_period += dbg_last_cyc ? MIN(k_cyc_to_us_floor32(dbg_t0 - dbg_last_cyc), 60000U) : 0;
+		dbg_acc_frames += dbg_gyro_frames;
+		dbg_last_cyc = dbg_t0;
+		if(++dbg_n == 256U)
+		{
+			dbg_out[0] = (int16_t)(dbg_acc_lat / 256U);
+			dbg_out[1] = (int16_t)(dbg_acc_build / 256U);
+			dbg_out[2] = (int16_t)(dbg_acc_period / 256U);
+			dbg_out[3] = (int16_t)(dbg_acc_frames * 100U / 256U);
+			dbg_acc_lat = dbg_acc_build = dbg_acc_period = dbg_acc_frames = dbg_n = 0;
+		}
+	}
+	report.gyro_quat_w = dbg_out[0];
+	report.gyro_quat_x = dbg_out[1];
+	report.gyro_quat_y = dbg_out[2];
+	report.gyro_quat_z = dbg_out[3];
+#endif
 	if(updated)
 	{
 		store_cached_imu_report(&report);

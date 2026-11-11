@@ -118,6 +118,14 @@ config IBEX_IMU_I2C_FREQ_KHZ
 	  FREQUENCY register directly; anything above 400 is undocumented on
 	  nRF52833 (1000 crashed a controller in testing, 800 worked).
 
+config IBEX_IMU_DEBUG_IN_QUAT
+	bool "Diagnostics: report IMU pipeline timing in the quaternion fields"
+	depends on IBEX_ACCELEROMETER
+	help
+	  w = IRQ-to-processing latency (us), x = batch build time (us),
+	  y = batch period (us), z = gyro frames per batch x100. Averages over
+	  256 batches. For measurement builds only.
+
 config IBEX_USB_REPORT_POLL_US
 	int "Report loop poll period while USB is configured (us)"
 	default 1000
