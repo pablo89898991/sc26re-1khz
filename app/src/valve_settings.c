@@ -13,6 +13,7 @@
 #include "calibration.h"
 #include "ibex_settings_registry.h"
 #include "imu.h"
+#include "valve_nvs.h"
 #include "valve_settings.h"
 
 LOG_MODULE_REGISTER(valve_settings);
@@ -126,6 +127,71 @@ static bool active_esb_bond_available_locked(size_t slot)
 	return bond->valid && esb_bond_material_valid(bond->data);
 }
 
+static int ofw_storage_read(const void *context, uint32_t offset, void *data, size_t len)
+{
+	return flash_area_read(context, offset, data, len);
+}
+
+/*
+ * The Valve bootloader erases the CFW settings area on every flash, so a Puck bond
+ * made under the original firmware would be lost. Fall back (read-only) to the bonds
+ * and wireless transport stored by the original firmware in valve_storage.
+ */
+static void import_ofw_esb_bonds_locked(void)
+{
+	const struct flash_area *fa;
+	struct valve_nvs nvs;
+	bool imported = false;
+
+	if(IS_ENABLED(CONFIG_IBEX_ESB_IMPORT_OFW_BONDS) == false)
+	{
+		return;
+	}
+	if(flash_area_open(PARTITION_ID(valve_storage), &fa) != 0)
+	{
+		return;
+	}
+	if(valve_nvs_open(&nvs, ofw_storage_read, fa, fa->fa_size) != 0)
+	{
+		flash_area_close(fa);
+		return;
+	}
+	for(size_t slot = 0; slot < ARRAY_SIZE(esb_bonds); ++slot)
+	{
+		struct esb_bond *bond = &esb_bonds[slot].staged;
+		uint8_t data[VALVE_ESB_BOND_SIZE];
+
+		if(bond->valid && esb_bond_material_valid(bond->data))
+		{
+			continue;
+		}
+		int len = valve_nvs_read_setting(&nvs, esb_bond_paths[slot], data, sizeof(data));
+
+		LOG_INF("OFW %s: %d", esb_bond_paths[slot], len);
+		if(len >= (int)sizeof(data) && esb_bond_material_valid(data))
+		{
+			memcpy(bond->data, data, sizeof(data));
+			bond->valid = true;
+			imported = true;
+			LOG_INF("imported OFW ESB bond slot %u", (unsigned int)slot);
+		}
+	}
+	if(!wireless_transport_valid || imported)
+	{
+		uint8_t transport;
+
+		if(valve_nvs_read_setting(&nvs, VALVE_WIRELESS_TRANSPORT_PATH, &transport,
+		                          sizeof(transport)) == (int)sizeof(transport) &&
+		   !wireless_transport_valid && esb_bond_slot_for_transport(transport) >= 0)
+		{
+			wireless_transport = transport;
+			wireless_transport_valid = true;
+			LOG_INF("imported OFW wireless transport %u", transport);
+		}
+	}
+	flash_area_close(fa);
+}
+
 static void select_available_wireless_transport(void)
 {
 	int slot;
@@ -204,6 +270,7 @@ void valve_settings_load_feature_state(void)
 	wireless_transport_valid = false;
 	(void)settings_load_subtree_direct(VALVE_WIRELESS_TRANSPORT_PATH, load_feature_state_cb,
 	                                   &transport_target);
+	import_ofw_esb_bonds_locked();
 	select_available_wireless_transport();
 	wireless_transport_dirty = false;
 	key = k_spin_lock(&active_esb_bond_lock);

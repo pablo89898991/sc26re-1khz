@@ -225,6 +225,15 @@ config IBEX_STICK_TOUCH_RELEASE
 	range 0 16000
 	default 0
 
+
+config IBEX_ESB_IMPORT_OFW_BONDS
+	bool "Use Puck bonds stored by the original firmware when CFW has none"
+	default y
+	help
+	  Reads esb/bond, esb/bond_2 and user/wireless_transport from the
+	  original firmware's storage (read-only) when the CFW settings area,
+	  which the bootloader erases on every flash, holds no bond.
+
 endmenu
 
 source "Kconfig.zephyr"
