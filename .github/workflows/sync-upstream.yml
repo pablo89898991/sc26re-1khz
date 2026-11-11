@@ -1,0 +1,41 @@
+name: sync-upstream
+
+# Weekly: merge new commits from mwdmwd/sc26re into master, then rebuild.
+on:
+  schedule:
+    - cron: '17 3 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  issues: write
+  actions: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: master
+          fetch-depth: 0
+      - name: Merge upstream
+        id: merge
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git config user.name "sc26re-1khz bot"
+          git config user.email "ci@users.noreply.github.com"
+          git remote add upstream https://github.com/mwdmwd/sc26re
+          git fetch upstream master
+          if git merge-base --is-ancestor upstream/master HEAD; then
+            echo "Up to date with upstream."; exit 0
+          fi
+          if git merge --no-edit upstream/master; then
+            git push origin HEAD:master
+            gh workflow run build.yml --ref master
+          else
+            git merge --abort
+            gh issue create --title "Upstream sync conflict ($(date -u +%Y-%m-%d))" \
+              --body "Merging mwdmwd/sc26re \`$(git rev-parse --short upstream/master)\` into master conflicts. Resolve manually: \`git fetch upstream && git merge upstream/master\`."
+          fi

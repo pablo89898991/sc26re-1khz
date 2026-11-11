@@ -2,8 +2,18 @@ name: build
 
 on:
   push:
+    branches: [master, imu-1khz]
+    tags: ['v*']
+    paths-ignore: ['web/**', 'docs/**', '**.md']
   pull_request:
   workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   ibex:
@@ -33,18 +43,40 @@ jobs:
             zephyr/modules
           key: zephyr-${{ hashFiles('manifests/**', 'Makefile', 'patches/**') }}
 
-      - name: Build controller firmware (USB/ESB/BLE, 1 kHz)
-        run: make app-ibex
-
-      - name: Collect firmware
+      - name: Build controller firmware
         run: |
+          make app-ibex
           mkdir -p out
           cp "$(ls -t zephyr/build-app-ibex/zephyr/IBEX_CUSTOM_*.fw | head -1)" out/SC26RE_1k.fw
+
+      - name: Build diagnostics variant (Puck link counters in quaternion)
+        run: |
           printf 'CONFIG_IBEX_ESB_DEBUG_IN_QUAT=y\n' >> app/prj.conf
           make app-ibex
           cp "$(ls -t zephyr/build-app-ibex/zephyr/IBEX_CUSTOM_*.fw | head -1)" out/SC26RE_1k_puck_dbg.fw
+          git checkout app/prj.conf
 
       - uses: actions/upload-artifact@v4
         with:
           name: sc26re-1khz-firmware
           path: out/*.fw
+          if-no-files-found: error
+
+      - name: Publish rolling "latest" release (master)
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/master'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete latest --yes --cleanup-tag || true
+          gh release create latest out/*.fw --target "$GITHUB_SHA" --latest \
+            --title "sc26re 1 kHz — latest build ($(date -u +%Y-%m-%d) ${GITHUB_SHA::7})" \
+            --notes "Automatic build of \`master\` at ${GITHUB_SHA}.
+          - **SC26RE_1k.fw** – controller firmware (flash with Ibex Web Utilities or flash.py)
+          - **SC26RE_1k_puck_dbg.fw** – same, with Puck link counters in the quaternion fields
+          Puck firmware: patch your own PROTEUS_FW in the [web patcher](https://pablo89898991.github.io/sc26re-1khz/patcher.html)."
+
+      - name: Publish tagged release
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" out/*.fw --title "sc26re 1 kHz $GITHUB_REF_NAME" --generate-notes

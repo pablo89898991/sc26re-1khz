@@ -1,0 +1,938 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SC2 Firmware Patcher v2</title>
+<style>
+  :root{
+    --bg:#0e1420; --panel:#161f30; --panel2:#1d283c; --edge:#2b3850;
+    --ink:#e6edf7; --muted:#90a0ba; --accent:#4ea1ff; --accent2:#7cc4ff;
+    --ok:#3fd07f; --warn:#ffb347; --err:#ff6b6b; --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.55 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;padding:28px 16px 60px;}
+  .wrap{max-width:760px;margin:0 auto;}
+  h1{font-size:23px;margin:0 0 4px;letter-spacing:-.01em;}
+  h1 .hz{color:var(--accent2);} h1 .v{font-size:13px;color:var(--muted);font-weight:500;margin-left:6px;}
+  .sub{color:var(--muted);margin:0 0 22px;font-size:14px;}
+  .panel{background:var(--panel);border:1px solid var(--edge);border-radius:14px;padding:18px;margin-bottom:16px;}
+  .panel h2{font-size:13px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin:0 0 12px;font-weight:600;}
+  .panel h3{font-size:12.5px;color:var(--accent2);margin:16px 0 10px;font-weight:600;letter-spacing:.02em;}
+  .panel h3:first-of-type{margin-top:4px;}
+  #drop,#pdrop{border:2px dashed var(--edge);border-radius:12px;padding:28px 16px;text-align:center;cursor:pointer;transition:.15s;background:var(--panel2);}
+  #drop:hover,#drop.drag,#pdrop:hover,#pdrop.drag{border-color:var(--accent);background:#1a2740;}
+  #drop.loaded,#pdrop.loaded{border-style:solid;border-color:var(--ok);} #drop.bad,#pdrop.bad{border-style:solid;border-color:var(--err);}
+  #drop .big,#pdrop .big{font-size:15px;margin-bottom:4px;} #drop .small,#pdrop .small{font-size:12.5px;color:var(--muted);}
+  input[type=file]{display:none;}
+  table.insp{width:100%;border-collapse:collapse;font-family:var(--mono);font-size:12px;margin-top:12px;}
+  table.insp td{padding:4px 6px;border-top:1px solid #222d42;vertical-align:top;color:var(--muted);}
+  table.insp td:first-child{width:16px;font-weight:700;} table.insp td:nth-child(2){color:var(--ink);white-space:nowrap;width:170px;}
+  .s-ok{color:var(--ok)} .s-warn{color:var(--warn)} .s-bad{color:var(--err)}
+  .field{display:flex;align-items:center;gap:10px;margin-bottom:11px;}
+  .field > label{font-size:13.5px;flex:0 0 170px;}
+  .presets .btn .s{display:block;font-size:11px;opacity:.7;font-weight:400;margin-top:2px;}
+  .note{margin-top:10px;font-size:12.5px;color:var(--muted);line-height:1.5;}
+  .field > label .s{display:block;color:var(--muted);font-size:11.5px;margin-top:1px;}
+  .field input[type=number],.field input[type=text],.field select{flex:1;min-width:0;background:#0d1626;border:1px solid var(--edge);border-radius:8px;color:var(--ink);font-family:var(--mono);font-size:13.5px;padding:9px 11px;}
+  .field select{font-family:inherit;}
+  .field input:focus,.field select:focus{outline:none;border-color:var(--accent);}
+  .field input:disabled,.field select:disabled{opacity:.4;}
+  .hint{font-family:var(--mono);font-size:11.5px;color:var(--accent2);flex:0 0 150px;text-align:right;}
+  .chkrow{display:flex;align-items:center;gap:9px;margin-bottom:11px;cursor:pointer;}
+  .chkrow input{width:17px;height:17px;accent-color:var(--accent);} .chkrow>span{flex:1;font-size:13.5px;}
+  .info{flex:0 0 auto;width:21px;height:21px;border:1px solid var(--edge);border-radius:50%;background:transparent;color:var(--muted);font:italic 600 12px/1 Georgia,serif;cursor:pointer;padding:0;}
+  .info:hover,.info.on{border-color:var(--accent);color:var(--accent2);} .info.on{background:#1a2740;}
+  .help{display:none;background:#0b1322;border:1px solid var(--edge);border-left:2px solid var(--accent);border-radius:8px;padding:10px 12px;margin:-3px 0 12px;font-size:12.5px;line-height:1.55;color:var(--muted);}
+  .help.open{display:block;} .help b{color:#b9c6dc;} .help i{color:var(--accent2);font-style:normal;}
+  .presets{display:flex;flex-wrap:wrap;gap:8px;}
+  .btn{background:var(--panel2);border:1px solid var(--edge);color:var(--ink);border-radius:9px;padding:8px 12px;font-size:13px;cursor:pointer;}
+  .btn:hover{border-color:var(--accent);} .btn.small{padding:6px 10px;font-size:12px;color:var(--muted);}
+  .row2{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;}
+  button#go{width:100%;padding:14px;border:0;border-radius:12px;font-size:15.5px;font-weight:700;background:linear-gradient(180deg,var(--accent),#3a86e8);color:#06101f;cursor:pointer;margin-top:4px;}
+  button#go:disabled{background:#223049;color:#5a6a84;cursor:not-allowed;}
+  #log,#plog{font-family:var(--mono);font-size:12.5px;white-space:pre-wrap;color:var(--muted);background:#0b1322;border:1px solid var(--edge);border-radius:10px;padding:12px;margin-top:14px;min-height:20px;}
+  #log .ok,#plog .ok{color:var(--ok)} #log .bad,#plog .bad{color:var(--err)} #log .w,#plog .w{color:var(--warn)}
+  details.about{margin-top:18px;border:1px solid var(--edge);border-radius:10px;background:var(--panel);}
+  details.about summary{cursor:pointer;padding:12px 16px;font-size:13px;color:var(--muted);font-weight:600;list-style:none;}
+  details.about summary::-webkit-details-marker{display:none;}
+  details.about summary::before{content:"\25B8  ";color:var(--accent);} details.about[open] summary::before{content:"\25BE  ";}
+  details.about .abouttext{padding:0 16px 15px;font-size:12px;line-height:1.65;color:var(--muted);}
+  details.about .abouttext b{color:#b9c6dc;}
+  code{font-family:var(--mono);color:var(--accent2);}
+  .hide{display:none!important;}
+  .tag{display:inline-block;font-size:10.5px;padding:1px 6px;border-radius:5px;margin-left:6px;vertical-align:1px;border:1px solid;}
+  .tag.exp{color:var(--warn);border-color:#6b5328;} .tag.rec{color:var(--ok);border-color:#2b5c40;}
+  @media (max-width:600px){
+    body{padding:22px 12px 48px;} h1{font-size:20px;}
+    .field{flex-wrap:wrap;gap:8px 9px;} .field>label{flex:1 1 100%;}
+    .field input[type=number],.field input[type=text],.field select{flex:1 1 55%;padding:11px;}
+    .hint{flex:1 1 auto;}
+    table.insp td:nth-child(2){white-space:normal;width:auto;}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Steam Controller 2 &mdash; <span class="hz">Firmware Patcher</span><span class="v">v3</span></h1>
+  <p class="sub">Drop an Ibex controller firmware and/or a Puck (Proteus) firmware (stock <i>or</i> already patched). The tool fingerprints every patch site by structure, shows what the file currently does, and writes only what you ask for. Runs 100% in your browser.</p>
+
+  <div class="panel">
+    <h2>1 &middot; Firmware</h2>
+    <div id="drop">
+      <div class="big">Drop an <code>IBEX_FW_*.fw</code> file here</div>
+      <div class="small">or click to choose &middot; stock from Steam&rsquo;s HardwareUpdate folder, or a previously patched file</div>
+    </div>
+    <input type="file" id="file" accept=".fw,.bin,application/octet-stream">
+    <div id="inspWrap" class="hide">
+      <h3 style="margin-top:14px">Inspect &mdash; what this file currently does</h3>
+      <table class="insp" id="insp"></table>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2>2 &middot; Presets &amp; profiles</h2>
+    <div class="presets">
+      <button class="btn" data-preset="stock">Stock (revert)</button>
+      <button class="btn" data-preset="usb1k">USB 1000 Hz only</button>
+      <button class="btn" data-preset="maxrep">Max reports · gyro 960 <span class="s">~917 rep/s · ~480 fresh gyro/s</span></button>
+      <button class="btn" data-preset="balanced">Balanced · HA 1000 lean wtm 2 (recommended) <span class="s">~757 rep/s · ~532 fresh</span></button>
+      <button class="btn" data-preset="fresh">Freshest gyro · HA 1000 lean wtm 1 <span class="s">~640 rep/s · every report fresh</span></button>
+    </div>
+    <div class="note">Numbers measured on hardware with the SC2 Report Meter (USB, Steam&rsquo;s Gyro Calibration page open so the IMU is on). The stock firmware tops out here: its IMU thread reads the FIFO over I&sup2;C and blocks the report loop, so you trade report rate for gyro freshness. For ~980 reports/s with ~950 fresh gyro samples/s use the sc26re-based <b>SC26RE_1k_v2</b> firmware instead.</div>
+    <div class="row2">
+      <button class="btn small" id="saveProf">Save as my profile</button>
+      <button class="btn small" id="loadProf">Load my profile</button>
+      <button class="btn small" id="expProf">Export JSON</button>
+      <button class="btn small" id="impProf">Import JSON</button>
+      <input type="file" id="impFile" accept=".json,application/json">
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2>3 &middot; Options</h2>
+
+    <h3>IMU</h3>
+    <div class="field">
+      <label for="imu">Gyro mode <span class="s">what the sensor actually runs</span></label>
+      <select id="imu">
+        <option value="stock">Stock (really HP 240 Hz)</option>
+        <option value="g1000">Gyro 1000 / accel 500 · true HA01 (recommended)</option>
+        <option value="g960">Gyro 960 / accel 480 · HP (most reports)</option>
+        <option value="sflp">Fused only · SFLP / accel / gyro at one rate</option>
+      </select>
+      <span class="hint" id="imuHint">—</span>
+      <button type="button" class="info" data-help="h_imu">i</button>
+    </div>
+    <div class="help" id="h_imu"><b>Two stock driver bugs, both fixed here.</b><br>
+      1) Zephyr&rsquo;s LSM6DSV16X driver temporarily sets accel/gyro to the SFLP rate to load the gyro bias, then &ldquo;restores&rdquo; a value it has just overwritten, so the configured rate never sticks. Raw modes patch that restore (2 instructions).<br>
+      2) <b>High-accuracy ODR never turns on.</b> The sensor only runs from the HA table when OP_MODE (CTRL1/CTRL2 bits 6:4) = 001, and HAODR_SEL can only be written while both sensors are off. The stock data-rate setters power the sensor on first and never set OP_MODE, so &ldquo;HA01 1000 Hz&rdquo; silently ran at HP 960 (and Valve&rsquo;s own HA01 250 ran at 240). <b>Gyro 1000 HA</b> rewrites both setters in place (same size): HAODR_SEL first, then CTRL with OP_MODE=HA. <b>Verified on hardware</b> (in sc26re): batch period 1047 &rarr; 998 &micro;s, quaternion/SFLP still works.<br><br>
+      <b>Measured (stock fw, USB 1000):</b> gyro 960 + stock FIFO = most reports (~917/s) but IMU fields refresh only with accel samples (~480/s). With the IMU fast path + lean FIFO + HA 1000: watermark 2 &rarr; 757 reports / 532 fresh gyro; watermark 1 &rarr; 640 / 640 (no repeated gyro). The quaternion stays capped at 480 Hz by silicon.</div>
+    <div class="field">
+      <label for="sflpHz">SFLP fused rate <span class="s">quaternion output</span></label>
+      <select id="sflpHz"><option>480</option><option>240</option><option>120</option><option>60</option><option>30</option><option>15</option></select>
+      <span class="hint">Hz (480 = silicon cap)</span>
+      <button type="button" class="info" data-help="h_sflp">i</button>
+    </div>
+    <div class="help" id="h_sflp">Game-rotation vector + gyro-bias rate from the sensor&rsquo;s fusion block. The accelerometer is kept at 480/500 Hz in raw modes so it never falls below the SFLP rate.</div>
+    <div class="field">
+      <label for="accB">Accel into FIFO <span class="s">lean FIFO</span></label>
+      <select id="accB"><option value="">Same as accel ODR (480/500)</option><option value="7">240/250 Hz (lean, recommended)</option><option value="6">120/125 Hz</option></select>
+      <span class="hint">fewer FIFO words = less I&sup2;C</span>
+      <button type="button" class="info" data-help="h_accB">i</button>
+    </div>
+    <div class="help" id="h_accB">The accelerometer keeps running at 480/500 Hz (SFLP needs it), but only every 2nd/4th sample is batched into the FIFO. Fewer words per second means shorter I&sup2;C reads and less time with the report loop blocked. Use with the IMU fast path, which reuses the last accel sample for gyro-only batches. Paired with SFLP 120 this is the &ldquo;lean FIFO&rdquo; that gave the biggest gain in sc26re.</div>
+    <div class="field">
+      <label for="wtm">FIFO watermark <span class="s">samples per IMU interrupt</span></label>
+      <input type="number" id="wtm" placeholder="stock (4)" min="1" max="32">
+      <span class="hint" id="wtmHint">stock</span>
+      <button type="button" class="info" data-help="h_wtm">i</button>
+    </div>
+    <div class="help" id="h_wtm">How many FIFO words collect before the IMU thread wakes. Lower = fresher gyro, more interrupts and I&sup2;C reads. <b>Without the fast path anything below 4 stalls the IMU</b> (the stock handler drops incomplete batches and floods the log), so values below 4 are only accepted with the fast path. <b>Measured with fast path + lean FIFO + HA 1000:</b> 2 &rarr; 757 reports/s, 532 fresh gyro/s (≈30% of reports repeat a gyro sample); 1 &rarr; 640 reports/s, 640 fresh (0% repeats). 3 or more gives fewer fresh samples.</div>
+
+    <label class="chkrow"><input type="checkbox" id="fast"><span>IMU fast path <span class="tag exp">experimental · 6ACFF323 only</span></span><button type="button" class="info" data-help="h_fast">i</button></label>
+    <div class="help" id="h_fast"><b>Why IMU stops at ~480/s:</b> the stock handler (<code>0x3ba00</code>) builds one report sample per FIFO batch and <i>drops the whole batch</i> (with a LOG_ERR) unless it contains accel <b>and</b> gyro <b>and</b> gyro-bias <b>and</b> quaternion. The SFLP outputs cap at 480 Hz, so at most ~480 complete batches/s. That's also why watermark 2 or removing gbias killed the IMU: every batch failed and the error log flooded the CPU.<br><br>
+    <b>Fast path</b> (5 branch patches + 236 B appended code): a batch only needs <b>gyro</b>. Missing accel or quaternion reuse the last values from the report state; missing gyro bias uses a cache (the driver&rsquo;s <code>gbias_udps</code>, refreshed from every SFLP bias sample, which is also what the SFLP is re-seeded with on stream restart). Batches without gyro return quietly. Tested stable on hardware with watermark 3, 2 and 1 (see the watermark notes for numbers).</div>
+
+    <div class="field">
+      <label for="i2c">IMU I²C speed <span class="s">bus shared with charger</span></label>
+      <select id="i2c"><option value="400">400 kHz (stock)</option><option value="800">800 kHz (overclock)</option></select>
+      <span class="hint">experimental</span>
+      <button type="button" class="info" data-help="h_i2c">i</button>
+    </div>
+    <div class="help" id="h_i2c">nRF52833 TWIM documents only up to 400 kHz; 800 writes an undocumented FREQUENCY value. The same bus carries the MP2733 charger. On stock fast path + wtm 3 it gave a small gain (≈663 reports / ≈599 fresh), but in the sc26re builds it made things <b>worse</b>, and <b>1000 kHz crashed the controller</b> (option removed). Keep 400 unless you are experimenting. Recover via the bootloader and flash a 400 kHz file. <span class="tag exp">experimental</span></div>
+
+    <h3>Report rate</h3>
+    <div class="field">
+      <label for="poll">Polling mode</label>
+      <select id="poll">
+        <option value="stock">Stock (USB 248 Hz)</option>
+        <option value="usbtimer">USB timer (recommended)</option>
+        <option value="freerun">Free-run loop (legacy v1)</option>
+      </select>
+      <span class="hint" id="pollHint">—</span>
+      <button type="button" class="info" data-help="h_poll">i</button>
+    </div>
+    <div class="help" id="h_poll">
+      <b>How stock paces reports:</b> the report thread (<code>ibex_loop</code>) sleeps on a semaphore. Each transport wakes it with a deadline: USB uses a <code>k_timer</code> of <b>132 ticks</b> (4.03 ms &asymp; 248 Hz); the wireless links wake it ~0.5 ms before each radio slot so inputs are sampled just in time.<br><br>
+      <b>USB timer</b> changes only that one constant (1 byte). The loop stays event-driven: no busy-spinning, no thread starvation, and the wireless just-in-time timing stays intact. <span class="tag rec">recommended</span><br>
+      <b>Free-run</b> is the v1 approach: it replaces the wait with a short timeout and removes the sleep, so the loop runs on every link. Note that the kernel tick is <b>32768 Hz</b>, not 16384: 16 ticks &asymp; 2048 Hz loop, 33 ticks &asymp; 993 Hz.<br>
+      USB full speed polls at 1000 Hz max (the firmware declares bInterval 1). Wireless rate is set by the Puck (n &times; 1.25 ms), so it needs OpenPuck.
+    </div>
+    <div class="field" id="fUsbHz">
+      <label for="usbHz">USB report rate <span class="s">target Hz</span></label>
+      <input type="number" id="usbHz" value="1000" min="125" max="2048" step="1">
+      <span class="hint" id="usbHint">—</span>
+      <button type="button" class="info" data-help="h_usbhz">i</button>
+    </div>
+    <div class="help" id="h_usbhz">Converted to whole ticks (32768 Hz): 1000 Hz &rarr; 33 ticks = 993 Hz. Anything above 1000 is wasted on USB (one report per 1 ms frame) and just adds work. 993 Hz means a repeated report roughly every 140 ms, which is harmless.</div>
+    <div class="field hide" id="fTicks">
+      <label for="ticks">Free-run ticks <span class="s">semaphore timeout</span></label>
+      <input type="number" id="ticks" value="33" min="16" max="255" step="1">
+      <span class="hint" id="tickHint">—</span>
+      <button type="button" class="info" data-help="h_ticks">i</button>
+    </div>
+    <div class="help" id="h_ticks">33 ticks &asymp; 993 Hz. v1 defaulted to 16&ndash;17 because it assumed a 16384 Hz tick, which really spun the loop at ~2 kHz.</div>
+    <label class="chkrow"><input type="checkbox" id="attr"><span>Report the new interval to Steam <span class="tag exp">experimental</span></span><button type="button" class="info" data-help="h_attr">i</button></label>
+    <div class="help" id="h_attr">Steam reads <code>ATTRIB_CONNECTION_INTERVAL_IN_US</code> (attribute 11) from the controller; stock returns 4000 for USB. This makes it return the patched interval. The same code path also serves one of the Puck link types, so that link would report the USB interval too. Leave off unless you are testing whether Steam uses it.</div>
+    <div class="field">
+      <label for="prio">Report thread priority <span class="s">ibex_loop, stock 8</span></label>
+      <select id="prio">
+        <option value="auto">Auto (14 when polling is patched)</option>
+        <option value="8">8 (stock)</option><option value="14">14 (tested stable)</option>
+      </select>
+      <span class="hint">lower number = higher prio</span>
+      <button type="button" class="info" data-help="h_prio">i</button>
+    </div>
+    <div class="help" id="h_prio">Static thread priorities in this firmware: IMU / ESB / puck / haptics 9, state machine 10, keyboard / lizard / <code>ibex_loop</code> 8, <b>input 14</b>. At 8 the report thread outranks the IMU and radio threads, so any extra report work runs <i>before</i> them. Under v1 free-run that hung the controller on both cable and wireless. <b>Auto puts it at 14 whenever polling is patched</b> (the value that is known to fix the hangs): IMU, ESB and puck can always preempt it, and it shares time with the input thread. It still wakes every ~1 ms on USB, so report latency is unaffected in practice. <b>Tested: 10 makes the controller reboot every 1&ndash;2 s (watchdog), so values between 8 and 14 are not offered.</b></div>
+
+    <h3>Sticks &amp; touch</h3>
+    <div class="field">
+      <label for="caps">Capsense A <span class="s">stick touch threshold</span></label>
+      <input type="number" id="caps" value="8" min="1" max="65535" step="1">
+      <span class="hint" id="capsHint">8 = stock</span>
+      <button type="button" class="info" data-help="h_caps">i</button>
+    </div>
+    <div class="help" id="h_caps">Replaces the adaptive touch-on threshold (<code>[r4+0xac]</code>) with a fixed value at the detection compare; release is 85% of it. <b>8 = leave stock</b> (the adaptive value is computed at runtime, so &ldquo;8&rdquo; is a placeholder, not a measured stock number). Higher = less sensitive (rejects hover). Range 1&ndash;65535.</div>
+    <div class="field">
+      <label for="capsB">Capsense B <span class="s">2nd channel, same routine</span></label>
+      <input type="number" id="capsB" placeholder="stock" min="1" max="65535" step="1">
+      <span class="hint">blank = stock</span>
+      <button type="button" class="info" data-help="h_capsB">i</button>
+    </div>
+    <div class="help" id="h_capsB">The same per-stick routine has a second capacitive channel with its own hysteresis (<code>[r4+0xc8]</code> on / <code>0xcc</code> off) and its own touch flag. Its purpose isn&rsquo;t confirmed yet. Only touch it if you are testing which physical sensor it maps to. <span class="tag exp">experimental</span></div>
+    <div class="field">
+      <label for="defl">Deflection-as-touch <span class="s">stick moved = touched</span></label>
+      <select id="defl">
+        <option value="stock">Stock (threshold 12000)</option>
+        <option value="off">Off (finger only)</option>
+        <option value="custom">Custom threshold</option>
+      </select>
+      <input type="number" id="deflThr" value="16000" min="1" max="32767" class="hide" style="flex:0 0 110px">
+      <button type="button" class="info" data-help="h_defl">i</button>
+    </div>
+    <div class="help" id="h_defl">When the capacitive sensor reports no finger, the firmware still flags a touch if the stick deflection magnitude exceeds <b>12000</b> (out of ~32767). <b>Off</b> = touch only from the sensor. <b>Custom</b> keeps the feature but moves the threshold: higher = only big deflections count.</div>
+
+    <h3>Gyro calibration</h3>
+    <div class="field">
+      <label for="calib">Auto-calibration threshold <span class="s">Valve units 1&ndash;255</span></label>
+      <input type="number" id="calib" placeholder="stock (Steam setting)" min="1" max="255">
+      <span class="hint" id="calibHint">stock</span>
+      <button type="button" class="info" data-help="h_calib">i</button>
+    </div>
+    <div class="help" id="h_calib">The SFLP&rsquo;s embedded gyro-bias calibration only learns while the controller is &ldquo;still&rdquo; below this threshold (value &times; 0.0025641 / 100, written as half-float to embedded page register 0x98). Stock takes it from a Steam setting. This forces your value whenever the firmware applies that setting. Lower = calibration triggers less often during slow aiming (less &ldquo;pull&rdquo;) but bias drift is corrected less. <span class="tag exp">experimental</span></div>
+
+    <h3>Identity</h3>
+    <div class="field">
+      <label for="name">Device name <span class="s">BT/USB, 16 chars</span></label>
+      <input type="text" id="name" value="Steam Controller" maxlength="16" spellcheck="false">
+      <span class="hint" id="cnt">16/16</span>
+    </div>
+  </div>
+
+  <button id="go" disabled>Load a firmware file first</button>
+  <div id="log"></div>
+
+
+  <div class="panel" id="puckPanel">
+    <h2>4 &middot; Puck (Proteus) firmware <span class="tag rec">optional</span></h2>
+    <div id="pdrop">
+      <div class="big">Drop a <code>PROTEUS_FW_*.fw</code> file here</div>
+      <div class="small">or click to choose &middot; from Steam&rsquo;s HardwareUpdate folder, or a previously patched Puck file</div>
+    </div>
+    <input type="file" id="pfile" accept=".fw,.bin,application/octet-stream" class="hide">
+    <div id="pinspWrap" class="hide">
+      <h3 style="margin-top:14px">Inspect &mdash; what this Puck file currently does</h3>
+      <table class="insp" id="pinsp"></table>
+    </div>
+    <h3>Wireless poll rate</h3>
+    <div class="presets">
+      <button class="btn" data-ppreset="stock">Stock <span class="s">~240 reports/s</span></button>
+      <button class="btn" data-ppreset="poll1ms">Poll 1 ms <span class="s">~516/s</span></button>
+      <button class="btn" data-ppreset="poll05">Poll 0.5 ms <span class="s">~680/s</span></button>
+      <button class="btn" data-ppreset="pollmax">Max (recommended) <span class="s">~828/s · stable in testing</span></button>
+    </div>
+    <div class="field" style="margin-top:12px">
+      <label for="pticks">Wait before each poll <span class="s">kernel ticks, 32768 Hz</span></label>
+      <input type="number" id="pticks" value="1" min="1" max="255" step="1">
+      <span class="hint" id="pticksHint">—</span>
+      <button type="button" class="info" data-help="h_puck">i</button>
+    </div>
+    <div class="help" id="h_puck"><b>How the Puck paces the link.</b> Each connected slot runs a loop that waits on its event object for up to <b>99 ticks (&asymp;3 ms)</b> and then polls the controller once; the poll itself (radio + handing the report to USB) takes about 1 ms, which gives the stock ~240 reports/s. This patch shortens that wait at all its call sites and sets the slot HID endpoints from 2 ms to 1 ms (the 2 ms interval alone caps the link at 500 Hz). Sites are found by code structure (the timed waits on the same event-wait function that the loop also calls with K_FOREVER, and the 4-endpoint HID slot interfaces), not by fixed addresses, so other Puck versions work as long as that structure is unchanged; if it isn&rsquo;t found the patcher refuses instead of guessing.<br><br>
+    <b>Measured</b> (controller on sc26re 1k v5+, which builds ~1000 reports/s and always hands the Puck the newest): stock 240 &middot; 1 ms 516 &middot; 0.5 ms 680 &middot; max 828 reports/s, link stable, haptics OK. <b>The stock controller firmware gains little</b>: it only produces ~250 distinct reports/s over the Puck. With several controllers on one Puck the slots share the radio.<br><br>
+    <b>Flashing the Puck</b> (sc26re <code>flash.py</code>, needs <code>pip install hidapi pyserial</code>): <code>python flash.py list</code> &rarr; <code>python flash.py enter-bl --serial &lt;puck&gt;</code> &rarr; <code>python flash.py bl-flash --firmware &lt;file&gt; --serial &lt;puck&gt;</code>. Keep the stock file to flash back. Steam keeps the patched Puck because the firmware&rsquo;s build stamp is unchanged.</div>
+    <button id="pgo" class="btn" disabled style="width:100%;margin-top:14px;padding:12px">Load a Puck firmware file first</button>
+    <div id="plog"></div>
+  </div>
+  <details class="about">
+    <summary>What changed vs v1 &amp; how it works</summary>
+    <div class="abouttext">
+      <b>Re-patching.</b> Every site is matched in both its stock and patched form, so you can drop a patched file, inspect it, and change or revert options. Reverting writes the known stock encodings of the IBEX_FW_6ACFF323 family.<br><br>
+      <b>v1 fixes.</b> Tick rate is 32768 Hz (v1 assumed 16384, so its loop ran 2&times; faster than shown). The &ldquo;priority 14&rdquo; fix ties with the <code>input</code> thread rather than going below it. Gyro 1000 / accel 500 in v1 never took effect because of the driver restore bug; v2 patches the restore, and v2.1 also fixes the high-accuracy ODR setters so HA01 really runs at 1000/500 Hz.<br><br>
+      <b>New sites.</b> HA ODR setters (2 &times; 78 B in place), USB report <code>k_timer</code> (1 byte), driver ODR restore (2 &times; ldrb &rarr; movs), capsense channel B, deflection threshold, gyro-calibration threshold, interval attribute.<br><br>
+      <b>Safety.</b> Each site must match exactly once, or that option is refused or skipped. The output is re-inspected after patching. Flashing is reversible, so keep your stock file.<br><br>
+      <b>Measure it.</b> Use the companion <i>SC2 Report Meter</i> (WebHID) to check the real report rate, jitter and gyro sample rate.
+    </div>
+  </details>
+</div>
+
+<script>
+/* ===== SC2 patch engine (shared by UI and node tests) ===== */
+"use strict";
+const W = null;
+const TICK_HZ = 32768; // CONFIG_SYS_CLOCK_TICKS_PER_SEC, verified from k_usleep() in IBEX_FW_6ACFF323
+
+/* ---------- CRC32 ---------- */
+const CRC_T = (() => { const t = new Uint32Array(256); for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1); t[n] = c >>> 0; } return t; })();
+function crc32(b, s) { let c = 0xFFFFFFFF; for (let i = s || 0; i < b.length; i++) c = CRC_T[(c ^ b[i]) & 0xFF] ^ (c >>> 8); return (c ^ 0xFFFFFFFF) >>> 0; }
+
+/* ---------- byte helpers ---------- */
+function findAll(b, pat) {
+  const out = [], n = pat.length, f = pat[0];
+  for (let i = 0; i + n <= b.length; i++) {
+    if (f !== W && b[i] !== f) continue;
+    let ok = true;
+    for (let j = 1; j < n; j++) if (pat[j] !== W && b[i + j] !== pat[j]) { ok = false; break; }
+    if (ok) out.push(i);
+  }
+  return out;
+}
+const strBytes = s => Array.from(s, c => c.charCodeAt(0));
+const u32 = (b, o) => (b[o] | (b[o + 1] << 8) | (b[o + 2] << 16) | (b[o + 3] << 24)) >>> 0;
+const eq = (b, o, arr) => arr.every((v, i) => b[o + i] === v);
+
+/* Thumb-2 MOVW rD,#imm16 */
+function movw(reg, val) {
+  const hw1 = 0xF240 | (((val >> 11) & 1) << 10) | ((val >> 12) & 0xF), hw2 = (((val >> 8) & 7) << 12) | (reg << 8) | (val & 0xFF);
+  return [hw1 & 0xff, hw1 >> 8, hw2 & 0xff, hw2 >> 8];
+}
+/* decode MOVW at o -> {reg,val} or null */
+function decMovw(b, o) {
+  const hw1 = b[o] | (b[o + 1] << 8), hw2 = b[o + 2] | (b[o + 3] << 8);
+  if ((hw1 & 0xFBF0) !== 0xF240 || (hw2 & 0x8000)) return null;
+  return { reg: (hw2 >> 8) & 0xF, val: ((hw1 & 0xF) << 12) | (((hw1 >> 10) & 1) << 11) | (((hw2 >> 12) & 7) << 8) | (hw2 & 0xFF) };
+}
+const isMovwR = (b, o, r) => { const d = decMovw(b, o); return d && d.reg === r ? d : null; };
+
+/* IEEE754 float32 -> binary16 (round to nearest even, subnormals) */
+function f32ToF16(v) {
+  const f = new Float32Array([v]), x = new Uint32Array(f.buffer)[0];
+  const sign = (x >>> 16) & 0x8000; let e = ((x >>> 23) & 0xff) - 127 + 15, m = x & 0x7fffff;
+  if (((x >>> 23) & 0xff) === 0xff) return sign | 0x7c00 | (m ? 0x200 : 0);
+  if (e >= 0x1f) return sign | 0x7c00;
+  if (e <= 0) {
+    if (e < -10) return sign;
+    m |= 0x800000; const sh = 14 - e; let h = m >>> sh; const rem = m & ((1 << sh) - 1), half = 1 << (sh - 1);
+    if (rem > half || (rem === half && (h & 1))) h++; return sign | h;
+  }
+  let h = (e << 10) | (m >>> 13); const rem = m & 0x1fff;
+  if (rem > 0x1000 || (rem === 0x1000 && (h & 1))) h++;
+  return sign | h;
+}
+function f16ToF32(h) {
+  const s = (h & 0x8000) ? -1 : 1, e = (h >> 10) & 0x1f, m = h & 0x3ff;
+  if (e === 0) return s * m * Math.pow(2, -24);
+  if (e === 31) return m ? NaN : s * Infinity;
+  return s * (1 + m / 1024) * Math.pow(2, e - 15);
+}
+
+/* ---------- LSM6DSV16X (Zephyr DT encoding) ---------- */
+const HP_RATES = [0, 1.875, 7.5, 15, 30, 60, 120, 240, 480, 960, 1920, 3840, 7680];
+function odrHz(code) {
+  const sel = code >> 4, n = code & 0xF; const base = HP_RATES[n];
+  if (base === undefined) return null;
+  return sel === 1 ? base * 25 / 24 : sel === 2 ? base * 5 / 6 : base;
+}
+const fmtHz = v => v === null || v === undefined ? "?" : (Math.round(v * 1000) / 1000) + " Hz";
+const odrName = code => (code >> 4 ? `HA0${code >> 4} ` : "HP ") + fmtHz(odrHz(code)) + ` (0x${code.toString(16).padStart(2, "0")})`;
+const SFLP_HZ = [15, 30, 60, 120, 240, 480];
+const TWIM_FREQ = { 400: 0x06400000, 800: 0x0CCCCCCD, 1000: 0x0FF00000 }; // 400 = only documented value of these on nRF52833
+const TWIM_FREQ_OK = Object.values(TWIM_FREQ);
+const twimKhz = v => Math.round(v / 4294967296 * 16000);
+const SFLP_FIFO_NAMES = { 1: "game", 2: "gravity", 4: "gbias" };
+
+/* ---------- signatures ---------- */
+const SIG = {
+  CFG:      [0x6a, 0x00, W, W, 0x00, W, 0x00, 0x00, W, W, W, W, 0x00, W, 0x04, 0x00, W, W, W], // i2c addr 0x6a + lsm6dsv16x_config layout
+  RL:       [0x4f, 0xf0, 0xff, 0x33, W, 0x48, 0x4f, 0xf0, 0xff, 0x32],        // k_sem_take(K_FOREVER)
+  RLP:      [0x4f, 0xf0, 0x00, 0x03, W, 0x48, 0x4f, 0xf0, W, 0x02],           // free-run patched
+  SLEEP:    [0x01, 0x28, 0x71, 0xf1, 0x00, 0x03, W, W],                       // deadline check + blt/b
+  USBT:     [0x02, 0x20, W, W, W, W, W, 0x22, 0x00, 0x23, W, 0x48, 0xcd, 0xe9, 0x00, 0x23], // transport_enable(2); k_timer_start(&t, K_TICKS(n), K_TICKS(n))
+  RESTORE_S:[W, 0xf8, 0x1e, 0x10, 0x20, 0x46, W, W, W, W, W, 0xf8, 0x20, 0x10, 0x20, 0x46], // ldrb r1,[rX,#accel_freq] ; ... ldrb r1,[rX,#gyro_freq]
+  RESTORE_P:[W, 0x21, 0x00, 0xbf, 0x20, 0x46, W, W, W, W, W, 0x21, 0x00, 0xbf, 0x20, 0x46],
+  CAP_ON:   [W, W, W, W, 0x98, 0x42, 0x7f, 0xf7],   // <thr> ; cmp r0,r3 ; ble.w   (touch-on, channel A and B)
+  CAP_OFF_A:[W, W, W, W, 0x98, 0x42, 0x80, 0xf2],   // <thr> ; cmp r0,r3 ; bge.w   (release, A)
+  CAP_OFF_B:[W, W, W, W, 0x98, 0x42, 0x02, 0xda],   // <thr> ; cmp r0,r3 ; bge     (release, B)
+  DEFL:     [W, W, W, W, 0x98, 0x42, 0x94, 0xbf, 0x00, 0x26, W, 0x26], // movw r3,#thr ; cmp ; ite ls ; movls r6,#0 ; movhi r6,#1
+  CALIB:    [0xf3, 0xee, 0x47, 0x7a, W, W, W, W, 0xad, 0xf8, 0x34, 0x30], // vcvtb.f16 ; vmov r3,s15 ; strh r3,[sp,#0x34]
+  ATTR:     [0x03, 0x2b, W, 0xd8, 0x01, 0x2b, W, 0xd8, W, 0xd0, 0x00, 0x20, 0x70, 0x47, 0x04, 0x2b], // report-interval getter
+  NAME:     strBytes("Steam Controller").concat([0x00]),
+};
+const STOCK = { // stock encodings for this firmware family, used when un-patching
+  RL_R3: [0x4f, 0xf0, 0xff, 0x33], RL_R2: [0x4f, 0xf0, 0xff, 0x32], BLT: 0xdb,
+  RESTORE_A: [0x98, 0xf8, 0x1e, 0x10], RESTORE_G: [0x98, 0xf8, 0x20, 0x10],
+  CAP_ON_A: [0xd4, 0xf8, 0xac, 0x30], CAP_OFF_A: [0xd4, 0xf8, 0xb0, 0x30],
+  CAP_ON_B: [0xd4, 0xf8, 0xc8, 0x30], CAP_OFF_B: [0xd4, 0xf8, 0xcc, 0x30],
+  CALIB_VMOV: [0x17, 0xee, 0x90, 0x3a], ATTR_4000: [0x4f, 0xf4, 0x7a, 0x60],
+  USB_TICKS: 0x84, PRIO: 8, DEFL_THR: 12000, CFG_ODR: 0x17, CFG_BDR: 0x77, CFG_SFLP: 4,
+};
+
+
+/* ---------- IMU fast path (IBEX_FW_6ACFF323 only; exact-byte match) ----------
+   Makes the IMU sample handler tolerate FIFO batches that lack accel / gyro-bias / quaternion
+   (reuses last accel + quat from report state, caches SFLP gyro bias in the driver's gbias_udps),
+   and returns quietly (no LOG_ERR) on batches without gyro. Code cave appended at 0x6f2b8. */
+const FASTPATH = {"payloadLen": 422584, "sites": [{"a": 244380, "orig": "00f08480", "new": "33f00c84"}, {"a": 244636, "orig": "0f4a04e0", "new": "09e000bf"}, {"a": 244864, "orig": "00f08c80", "new": "33f04083"}, {"a": 244980, "orig": "ebee489aa7eec8aaaaeec89a", "new": "33f01dbb00bf00bf00bf00bf"}, {"a": 245144, "orig": "424a06e7", "new": "33f0eeba"}], "cave": "374b1a6809929a88adf828209fed308adfed308a029b00979c680721cdf80c80012303aa30460591a04768b1dde90e0110f5fa7041f100014ff47a720023a4f7e7fb0890ccf772bcccf757bc254b93ed007ab8eec77ad3ed016af8eee66a93ed026ab8eec66adfed1c5aa7ee65aae6eee59aa6ee659accf7e7bcebee489aa7eec8aaaaeec89adfed155a164b27ee887a27ee257abdeec77a83ed007a6bee086a66eea56afdeee66ac3ed016a2aee886a26ee256abdeec66a83ed026accf7c4bc094b1a680c925a680d92ccf783bd00bf0000003000feff4632ec9532e9905a4c00d10020441100200cd10020"};
+
+/* ---------- true high-accuracy ODR (IBEX_FW_6ACFF323; exact-byte match) ----------
+   The LSM6DSV16X only runs from the HA ODR table when OP_MODE_XL/OP_MODE_G = 001, and
+   HAODR_SEL is only writable while both sensors are off. The stock HAL data-rate setters
+   write CTRL1/CTRL2 first and never touch OP_MODE, so "HA01" DT rates silently run at the
+   HP rate (1000 Hz -> 960 Hz). These rewrites (same size, in place) write HAODR_SEL before
+   CTRL and set OP_MODE=HA whenever an HA code is requested. */
+const HAFIX = [
+  { a: 0x47af4, orig: "37b501230c466a4610210546fff7a1ff08bb9df8003064f303038df800306a46012310212846fff7a1ffa0b9240912d0012301aa62212846fff78bff58b99df8043064f301038df8043001aa0123", new: "37b50c460546230907d08df8043001aa012362212846fff7a9ff01236a4610212846fff796ff80b99df8003064f30303220902d0012262f306138df8003001236a4610212846fff791ff03b030bd" },
+  { a: 0x47ce6, orig: "37b501230c466a4611210546fff7a8fe08bb9df8003064f303038df800306a46012311212846fff7a8fea0b9240912d0012301aa62212846fff792fe58b99df8043064f301038df8043001aa0123", new: "37b50c460546230907d08df8043001aa012362212846fff7b0fe01236a4611212846fff79dfe80b99df8003064f30303220902d0012262f306138df8003001236a4611212846fff798fe03b030bd" },
+];
+function hafixState(b) {
+  let st = null;
+  for (const s of HAFIX) {
+    const o = s.a - 0x8000 + 32, cur = Array.from(b.slice(o, o + s.orig.length / 2), x => x.toString(16).padStart(2, "0")).join("");
+    const k = cur === s.orig ? "stock" : cur === s.new ? "patched" : "other";
+    if (st === null) st = k; else if (st !== k) return "mixed";
+  }
+  return st;
+}
+function setHafix(b, on) {
+  const hx = h => h.match(/../g).map(x => parseInt(x, 16));
+  for (const s of HAFIX) b.set(hx(on ? s.new : s.orig), s.a - 0x8000 + 32);
+}
+function fastpathState(b) {
+  const pl = b.length - 32; let st = null;
+  for (const s of FASTPATH.sites) {
+    const o = s.a - 0x8000 + 32, cur = Array.from(b.slice(o, o + s.orig.length / 2), x => x.toString(16).padStart(2, "0")).join("");
+    const k = cur === s.orig ? "stock" : cur === s.new ? "patched" : "other";
+    if (st === null) st = k; else if (st !== k) return "mixed";
+  }
+  if (st === "stock" && pl !== FASTPATH.payloadLen) return "other";
+  if (st === "patched" && pl < FASTPATH.payloadLen + FASTPATH.cave.length / 2) return "other";
+  return st;
+}
+function applyFastpath(b) {
+  const out = new Uint8Array(32 + ((FASTPATH.payloadLen + FASTPATH.cave.length / 2 + 3) & ~3)).fill(0xff);
+  out.set(b.slice(0, 32 + FASTPATH.payloadLen));
+  const hx = h => h.match(/../g).map(x => parseInt(x, 16));
+  for (const s of FASTPATH.sites) out.set(hx(s.new), s.a - 0x8000 + 32);
+  out.set(hx(FASTPATH.cave), 32 + FASTPATH.payloadLen);
+  return out;
+}
+function removeFastpath(b) {
+  const out = new Uint8Array(b.slice(0, 32 + FASTPATH.payloadLen));
+  const hx = h => h.match(/../g).map(x => parseInt(x, 16));
+  for (const s of FASTPATH.sites) out.set(hx(s.orig), s.a - 0x8000 + 32);
+  return out;
+}
+
+/* ---------- locate everything (works on stock AND patched files) ---------- */
+function locate(b) {
+  const r = { issues: [] };
+  const sz = u32(b, 4);
+  r.header = { sizeOk: sz === b.length - 32, crcStored: u32(b, 8), crcActual: crc32(b, 32), magic: u32(b, 0) };
+  r.header.crcOk = r.header.crcStored === r.header.crcActual;
+
+  const c = findAll(b, SIG.CFG); r.cfg = c.length === 1 ? c[0] : null; r.cfgN = c.length;
+
+  // report loop
+  const pairsS = findAll(b, SIG.RL).map(a => [a, "stock"]), pairsP = findAll(b, SIG.RLP).map(a => [a, "freerun"]);
+  const sleeps = findAll(b, SIG.SLEEP).filter(s => b[s + 7] === 0xdb || b[s + 7] === 0xe0);
+  const hits = [];
+  for (const [a, st] of pairsS.concat(pairsP)) for (const s of sleeps) if (s - a >= 0x40 && s - a <= 0x60) hits.push({ r3: a, r2: a + 6, blt: s + 6, st });
+  r.rl = hits.length === 1 ? hits[0] : null; r.rlN = hits.length;
+
+  const ut = findAll(b, SIG.USBT); r.usbt = ut.length === 1 ? ut[0] + 6 : null; r.usbtN = ut.length;
+
+  const rs = findAll(b, SIG.RESTORE_S).map(o => ({ o, st: "stock" })), rp = findAll(b, SIG.RESTORE_P).map(o => ({ o, st: "patched" }));
+  const rr = rs.concat(rp); r.restore = rr.length === 1 ? rr[0] : null; r.restoreN = rr.length;
+
+  // capsense: two channels (A: 0xac/0xb0, B: 0xc8/0xcc) in the same per-stick routine
+  const okThr = (o, stock) => eq(b, o, stock) || isMovwR(b, o, 3);
+  const on = findAll(b, SIG.CAP_ON).filter(o => okThr(o, STOCK.CAP_ON_A) || okThr(o, STOCK.CAP_ON_B)).sort((x, y) => x - y);
+  const offA = findAll(b, SIG.CAP_OFF_A).filter(o => okThr(o, STOCK.CAP_OFF_A));
+  const offB = findAll(b, SIG.CAP_OFF_B).filter(o => okThr(o, STOCK.CAP_OFF_B));
+  r.capA = null; r.capB = null;
+  if (on.length === 2 && offA.length === 1 && on[1] - on[0] < 0x80 && Math.abs(on[0] - offA[0]) < 0x400) {
+    const aOk = eq(b, on[0], STOCK.CAP_ON_A) || isMovwR(b, on[0], 3), bOk = eq(b, on[1], STOCK.CAP_ON_B) || isMovwR(b, on[1], 3);
+    if (aOk) r.capA = { on: on[0], off: offA[0] };
+    if (bOk && offB.length === 1 && Math.abs(offB[0] - on[1]) < 0x200) r.capB = { on: on[1], off: offB[0] };
+  }
+  r.capN = on.length;
+
+  const df = findAll(b, SIG.DEFL).filter(o => isMovwR(b, o, 3) && (b[o + 10] === 0 || b[o + 10] === 1));
+  r.defl = df.length === 1 ? df[0] : null; r.deflN = df.length;
+
+  const cb = findAll(b, SIG.CALIB).filter(o => eq(b, o + 4, STOCK.CALIB_VMOV) || isMovwR(b, o + 4, 3));
+  r.calib = cb.length === 1 ? cb[0] + 4 : null;
+
+  const at = findAll(b, SIG.ATTR).filter(o => b[o + 0x20] === 0x70 && b[o + 0x21] === 0x47 && (eq(b, o + 0x1c, STOCK.ATTR_4000) || isMovwR(b, o + 0x1c, 0)));
+  r.attr = at.length === 1 ? at[0] + 0x1c : null;
+
+  r.name = findAll(b, SIG.NAME);
+
+  // IMU I2C bus (TWIM) frequency word: lsm6dsv16x config -> i2c_dt_spec.bus -> device.config + 8
+  r.twimFreq = null;
+  if (r.cfg !== null) {
+    const busDev = u32(b, r.cfg - 4) - 0x8000 + 32;
+    if (busDev > 32 && busDev + 8 < b.length) {
+      const nm = u32(b, busDev) - 0x8000 + 32, bcfg = u32(b, busDev + 4) - 0x8000 + 32;
+      let name = ""; for (let i = nm; i > 0 && i < b.length && b[i] && name.length < 20; i++) name += String.fromCharCode(b[i]);
+      if (/^i2c@/.test(name) && bcfg > 32 && bcfg + 12 < b.length) { const f = u32(b, bcfg + 8); if (TWIM_FREQ_OK.includes(f)) r.twimFreq = { off: bcfg + 8, name }; }
+    }
+  }
+
+  // static thread table: {.., entry, p1, p2, p3, prio, options, name}
+  r.threads = []; r.prio = null;
+  const loadAddr = 0x8000 - 32; // file offset -> address
+  for (let q = 24; q + 12 < b.length; q += 4) {
+    const prio = (u32(b, q) | 0); if (prio < -16 || prio > 31) continue;
+    const nptr = u32(b, q + 8), no = nptr - loadAddr; if (no < 32 || no >= b.length) continue;
+    const entry = u32(b, q - 16), ss = u32(b, q - 20);
+    if (!(entry & 1) || entry < 0x8000 || entry > 0x80000 || ss < 64 || ss > 16384 || (ss & 7)) continue;
+    let s = ""; for (let i = no; i < no + 40 && b[i]; i++) { if (b[i] < 0x20 || b[i] > 0x7e) { s = ""; break; } s += String.fromCharCode(b[i]); }
+    if (s.length < 3) continue;
+    r.threads.push({ name: s, prio, stack: ss, off: q });
+    if (s === "ibex_loop") r.prio = q;
+  }
+  return r;
+}
+
+/* ---------- inspect: human-readable state ---------- */
+function inspect(b) {
+  const L = locate(b), out = [];
+  const row = (k, v, st) => out.push({ k, v, st: st || "ok" });
+  row("Container", `${L.header.sizeOk ? "size OK" : "size word MISMATCH"} · CRC ${L.header.crcOk ? "OK" : "BAD"} (0x${L.header.crcStored.toString(16).padStart(8, "0")})`, L.header.sizeOk && L.header.crcOk ? "ok" : "bad");
+  if (L.cfg !== null) {
+    const c = L.cfg, sf = b[c + 18];
+    const sflp = (sf >> 2) & 7, fifoEn = sf >> 5;
+    const en = Object.entries(SFLP_FIFO_NAMES).filter(([k]) => fifoEn & k).map(([, v]) => v).join("+") || "none";
+    row("Accel ODR (DT)", odrName(b[c + 5]));
+    row("Gyro ODR (DT)", odrName(b[c + 13]));
+    row("Gyro range", ["125", "250", "500", "1000", "2000", "4000"][b[c + 14]] ? ["125", "250", "500", "1000", "2000", "4000"][b[c + 14]] + " dps" : `code ${b[c + 14]}`);
+    const ha = b[c + 13] >> 4; const bh = n => fmtHz(odrHz((ha << 4) | n));
+    row("FIFO BDR", `accel ${bh(b[c + 17] & 15)} · gyro ${bh(b[c + 17] >> 4)} (0x${b[c + 17].toString(16)})`);
+    row("FIFO watermark", `${b[c + 16]}`);
+    row("SFLP", `${SFLP_HZ[sflp] || "?"} Hz · FIFO: ${en}`);
+  } else row("IMU config", L.cfgN > 1 ? `ambiguous (${L.cfgN})` : "not found", "bad");
+  if (L.restore) {
+    const o = L.restore.o;
+    if (L.restore.st === "stock") row("ODR after FIFO start", "stock driver bug: reverts to SFLP-matched HP rate (DT ODR ignored)", "warn");
+    else row("ODR after FIFO start", `fixed → accel ${odrName(b[o])}, gyro ${odrName(b[o + 10])}`);
+  } else row("ODR restore site", "not found", "warn");
+  if (L.rl) {
+    if (L.rl.st === "stock" && b[L.rl.blt + 1] === 0xdb) row("Report loop", "stock (event-driven, just-in-time sleep)");
+    else { const t = b[L.rl.r2 + 2]; row("Report loop", `FREE-RUN: k_sem_take timeout ${t} ticks ≈ ${Math.round(TICK_HZ / t)} Hz ceiling, sleep ${b[L.rl.blt + 1] === 0xe0 ? "disabled" : "kept"}`, "warn"); }
+  } else row("Report loop", L.rlN > 1 ? `ambiguous (${L.rlN})` : "not found", "bad");
+  if (L.usbt !== null) { const t = b[L.usbt]; row("USB report timer", `${t} ticks = ${(t * 1e6 / TICK_HZ).toFixed(1)} µs ≈ ${(TICK_HZ / t).toFixed(1)} Hz${t === STOCK.USB_TICKS ? " (stock)" : ""}`); }
+  else row("USB report timer", "not found", "warn");
+  if (L.attr !== null) { const m = isMovwR(b, L.attr, 0); row("Interval attribute", m ? `${m.val} µs (patched)` : "4000 µs (stock)"); }
+  const thr = o => { const m = isMovwR(b, o, 3); return m ? m.val : null; };
+  if (L.capA) { const on = thr(L.capA.on), off = thr(L.capA.off); row("Capsense A", on === null ? "stock (adaptive thresholds)" : `fixed on ${on} / off ${off}`); }
+  else row("Capsense A", "not found", "warn");
+  if (L.capB) { const on = thr(L.capB.on), off = thr(L.capB.off); row("Capsense B", on === null ? "stock (adaptive thresholds)" : `fixed on ${on} / off ${off}`); }
+  if (L.defl !== null) { const t = thr(L.defl); row("Deflection-as-touch", b[L.defl + 10] ? `on, threshold ${t}${t === STOCK.DEFL_THR ? " (stock)" : ""}` : "DISABLED (finger only)"); }
+  if (L.calib !== null) { const m = isMovwR(b, L.calib, 3); row("Gyro calib threshold", m ? `forced ${f16ToF32(m.val).toExponential(3)} (half 0x${m.val.toString(16)})` : "stock (from Steam setting)"); }
+  { const h = hafixState(b); row("HA ODR mode", h === "patched" ? "ON (OP_MODE=HA, HAODR_SEL before CTRL)" : h === "stock" ? "stock (HA codes silently run at HP rate)" : "n/a for this build", h === "other" || h === "mixed" ? "warn" : "ok"); }
+  { const f = fastpathState(b); row("IMU fast path", f === "patched" ? "ON (partial-batch handler)" : f === "stock" ? "off" : "n/a for this build", f === "patched" ? "ok" : "ok"); }
+  if (L.twimFreq) { const f = u32(b, L.twimFreq.off); row("IMU I2C bus", `${L.twimFreq.name} ≈ ${twimKhz(f)} kHz${f === TWIM_FREQ[400] ? " (stock)" : " (overclocked, undocumented)"}`, f === TWIM_FREQ[400] ? "ok" : "warn"); }
+  if (L.name.length) row("Device name", `"Steam Controller" ×${L.name.length}`); else row("Device name", "custom / not found", "warn");
+  if (L.threads.length) row("Threads", L.threads.map(t => `${t.name}:${t.prio}`).join(" · "));
+  return { L, rows: out };
+}
+
+/* ---------- patch ---------- */
+/* opts = {
+   imu: 'stock'|'sflp'|'g960'|'g1000', sflpHz, wtm (null|1..32),
+   poll: 'stock'|'usbtimer'|'freerun', usbHz, freerunTicks, attr (bool),
+   prio: 'auto'|null|number,
+   capA (number, 8 = stock), capB (null|number), defl: 'stock'|'off'|number,
+   calib: null|1..255, name: string }  */
+function plan(b, opts) {
+  const L = locate(b), errors = [], warns = [];
+  if (opts.imu !== "stock" && L.cfg === null) errors.push("IMU config not located — choose IMU 'stock'.");
+  if ((opts.imu === "g960" || opts.imu === "g1000") && !L.restore) errors.push("ODR-restore site not located — raw 960/1000 Hz would be overwritten by the driver. Use 'SFLP only'.");
+  if (opts.poll !== "stock" && !L.rl) errors.push("Report loop not located.");
+  if (opts.poll === "usbtimer" && L.usbt === null) errors.push("USB report timer not located — use free-run mode.");
+  if (opts.attr && L.attr === null) warns.push("interval attribute site not found — skipped");
+  if (opts.capA !== 8 && !L.capA) warns.push("capsense A site not found — skipped");
+  if (opts.capB !== null && opts.capB !== undefined && !L.capB) warns.push("capsense B site not found — skipped");
+  if (opts.defl !== "stock" && L.defl === null) warns.push("deflection site not found — skipped");
+  if (opts.calib && L.calib === null) warns.push("calibration-threshold site not found — skipped");
+  const fps = fastpathState(b);
+  if (opts.fastpath && fps !== "stock" && fps !== "patched") errors.push("IMU fast path is only available for IBEX_FW_6ACFF323 (exact match required).");
+  if (opts.fastpath && opts.imu === "stock") errors.push("IMU fast path needs a non-stock IMU mode (use gyro 960).");
+  return { L, errors, warns };
+}
+
+function sflpCode(hz) { let best = 5, bd = 1e9; SFLP_HZ.forEach((h, i) => { const d = Math.abs(h - hz); if (d < bd) { bd = d; best = i; } }); return best; }
+
+function patch(src, opts) {
+  let out = new Uint8Array(src); const log = [];
+  const { L, errors, warns } = plan(out, opts);
+  if (errors.length) return { ok: false, errors, log };
+  warns.forEach(w => log.push(["w", w]));
+  const put = (o, arr) => out.set(arr, o);
+
+  /* --- IMU --- */
+  if (opts.imu !== "stock") {
+    const c = L.cfg, f = sflpCode(opts.sflpHz || 480), hpForSflp = 3 + f; // SFLP 15..480 -> HP code 3..8
+    let acc, gyr, bdr;
+    if (opts.imu === "sflp") { acc = gyr = hpForSflp; bdr = (hpForSflp << 4) | hpForSflp; }
+    else if (opts.imu === "g960") { acc = 0x08; gyr = 0x09; bdr = 0x98; }
+    else { acc = 0x18; gyr = 0x19; bdr = 0x98; }
+    if (opts.accMatch && opts.imu !== "sflp") { acc = gyr; bdr = (bdr & 0xf0) | (gyr & 0x0f); } // accel at gyro rate: firmware pairs IMU updates with accel samples
+    if (opts.accBatch && opts.imu !== "sflp") bdr = (bdr & 0xf0) | opts.accBatch; // e.g. 7 = 240 Hz accel in FIFO
+    out[c + 5] = acc; out[c + 13] = gyr; out[c + 17] = bdr;
+    out[c + 18] = (out[c + 18] & ~(0x7 << 2)) | (f << 2);
+    if (opts.sflpFifo) { out[c + 18] = (out[c + 18] & 0x1f) | (opts.sflpFifo << 5); log.push(["w", `SFLP FIFO outputs → ${Object.entries(SFLP_FIFO_NAMES).filter(([k]) => opts.sflpFifo & k).map(([, v]) => v).join("+")}`]); }
+    if (L.restore) {
+      const o = L.restore.o;
+      if (opts.imu === "g960" || opts.imu === "g1000") { put(o, [acc, 0x21, 0x00, 0xbf]); put(o + 10, [gyr, 0x21, 0x00, 0xbf]); log.push(["ok", `ODR-restore fix: driver now restores accel ${odrName(acc)}, gyro ${odrName(gyr)} after SFLP setup`]); }
+      else if (L.restore.st === "patched") { put(o, STOCK.RESTORE_A); put(o + 10, STOCK.RESTORE_G); log.push(["ok", "ODR-restore: reverted to stock"]); }
+    }
+    log.push(["ok", `IMU: SFLP ${SFLP_HZ[f]} Hz · accel ${odrName(acc)} · gyro ${odrName(gyr)} · BDR accel ${fmtHz(odrHz((gyr & 0xf0) | (bdr & 15)))} / gyro ${fmtHz(odrHz((gyr & 0xf0) | (bdr >> 4)))}`]);
+  } else if (L.cfg !== null) {
+    const c = L.cfg, sf = (out[c + 18] >> 2) & 7;
+    if (out[c + 16] !== 4 || out[c + 5] !== STOCK.CFG_ODR || out[c + 13] !== STOCK.CFG_ODR || out[c + 17] !== STOCK.CFG_BDR || sf !== STOCK.CFG_SFLP) {
+      out[c + 5] = STOCK.CFG_ODR; out[c + 13] = STOCK.CFG_ODR; if (!opts.wtm) out[c + 16] = 4; out[c + 17] = STOCK.CFG_BDR; out[c + 18] = (out[c + 18] & ~(0x7 << 2)) | (STOCK.CFG_SFLP << 2);
+      log.push(["ok", "IMU: restored to stock (HA01 250 / BDR 240 / SFLP 240)"]);
+    } else log.push(["w", "IMU: left stock"]);
+    if (L.restore && L.restore.st === "patched") { put(L.restore.o, STOCK.RESTORE_A); put(L.restore.o + 10, STOCK.RESTORE_G); log.push(["ok", "ODR-restore: reverted to stock"]); }
+  }
+  if (opts.wtm && opts.wtm < 4 && !opts.fastpath) { log.push(["w", "FIFO watermark < 4 stalls the IMU stream on hardware — kept stock"]); opts = { ...opts, wtm: null }; }
+  if (opts.wtm && L.cfg !== null) { out[L.cfg + 16] = opts.wtm; log.push(["ok", `FIFO watermark → ${opts.wtm}`]); }
+
+  /* --- polling --- */
+  const rl = L.rl;
+  const loopToStock = () => { if (rl && (rl.st !== "stock" || out[rl.blt + 1] !== STOCK.BLT)) { put(rl.r3, STOCK.RL_R3); put(rl.r2, STOCK.RL_R2); out[rl.blt + 1] = STOCK.BLT; log.push(["ok", "report loop: restored to stock (event-driven)"]); } };
+  let intervalUs = null;
+  if (opts.poll === "usbtimer") {
+    loopToStock();
+    const t = Math.max(16, Math.min(255, Math.round(TICK_HZ / (opts.usbHz || 1000))));
+    out[L.usbt] = t; intervalUs = Math.round(t * 1e6 / TICK_HZ);
+    log.push(["ok", `USB report timer: ${STOCK.USB_TICKS} → ${t} ticks (${intervalUs} µs ≈ ${(TICK_HZ / t).toFixed(1)} Hz)`]);
+  } else if (opts.poll === "freerun") {
+    if (L.usbt !== null && out[L.usbt] !== STOCK.USB_TICKS) { out[L.usbt] = STOCK.USB_TICKS; log.push(["ok", "USB report timer: restored to stock"]); }
+    const t = Math.max(16, Math.min(255, opts.freerunTicks || 33));
+    out[rl.r3 + 2] = 0x00; out[rl.r3 + 3] = 0x03; out[rl.r2 + 2] = t; out[rl.r2 + 3] = 0x02; out[rl.blt + 1] = 0xe0;
+    intervalUs = Math.round(t * 1e6 / TICK_HZ);
+    log.push(["w", `report loop: FREE-RUN, ${t} ticks ≈ ${Math.round(TICK_HZ / t)} Hz ceiling (legacy mode)`]);
+  } else {
+    loopToStock();
+    if (L.usbt !== null && out[L.usbt] !== STOCK.USB_TICKS) { out[L.usbt] = STOCK.USB_TICKS; log.push(["ok", "USB report timer: restored to stock"]); }
+    log.push(["w", "polling: stock"]);
+  }
+  if (L.attr !== null) {
+    if (opts.attr && intervalUs) { put(L.attr, movw(0, intervalUs)); log.push(["ok", `interval attribute (USB + puck link): 4000 → ${intervalUs} µs`]); }
+    else if (isMovwR(out, L.attr, 0)) { put(L.attr, STOCK.ATTR_4000); log.push(["ok", "interval attribute: restored to stock"]); }
+  }
+
+  /* --- thread priority --- */
+  let prio = opts.prio;
+  if (prio === "auto") prio = opts.poll !== "stock" ? 14 : null;
+  if (L.prio !== null) {
+    const cur = out[L.prio];
+    if (prio !== null && prio !== undefined) { out[L.prio] = prio; log.push(["ok", `ibex_loop priority ${cur} → ${prio}`]); }
+    else if (opts.prio === "auto" && cur !== STOCK.PRIO && opts.poll === "stock") { out[L.prio] = STOCK.PRIO; log.push(["ok", `ibex_loop priority ${cur} → ${STOCK.PRIO} (stock)`]); }
+  }
+
+  /* --- capsense --- */
+  const capSet = (site, on, stockOn, stockOff, label) => {
+    if (on === null) {
+      if (isMovwR(out, site.on, 3)) { put(site.on, stockOn); put(site.off, stockOff); log.push(["ok", `${label}: restored to stock`]); }
+      return;
+    }
+    const V = Math.max(1, Math.min(65535, on)), R = Math.max(1, Math.round(V * 0.85));
+    put(site.on, movw(3, V)); put(site.off, movw(3, R)); log.push(["ok", `${label}: touch-on ${V}, release ${R}`]);
+  };
+  if (L.capA) capSet(L.capA, opts.capA === 8 ? null : opts.capA, STOCK.CAP_ON_A, STOCK.CAP_OFF_A, "capsense A");
+  if (L.capB) capSet(L.capB, (opts.capB === null || opts.capB === undefined) ? null : opts.capB, STOCK.CAP_ON_B, STOCK.CAP_OFF_B, "capsense B");
+
+  /* --- deflection-as-touch --- */
+  if (L.defl !== null) {
+    if (opts.defl === "off") { out[L.defl + 10] = 0x00; log.push(["ok", "deflection-as-touch: DISABLED"]); }
+    else {
+      out[L.defl + 10] = 0x01;
+      if (opts.defl !== "stock") { const thr = Math.max(1, Math.min(65535, opts.defl)); put(L.defl, movw(3, thr)); log.push(["ok", `deflection-as-touch threshold → ${thr}`]); }
+    }
+  }
+
+  /* --- gyro calibration threshold override --- */
+  if (L.calib !== null) {
+    if (opts.calib) { const h = f32ToF16(Math.fround(opts.calib * Math.fround(0.0025641) / 100)); put(L.calib, movw(3, h)); log.push(["ok", `gyro calibration threshold forced to ${opts.calib} units (half 0x${h.toString(16)})`]); }
+    else if (isMovwR(out, L.calib, 3)) { put(L.calib, STOCK.CALIB_VMOV); log.push(["ok", "gyro calibration threshold: restored to stock"]); }
+  }
+
+  /* --- name --- */
+  const nm = (opts.name || "").replace(/[^\x20-\x7e]/g, "").slice(0, 16);
+  if (nm && nm !== "Steam Controller" && L.name.length) { const nb = new Uint8Array(16); for (let i = 0; i < nm.length; i++) nb[i] = nm.charCodeAt(i); for (const o of L.name) out.set(nb, o); log.push(["ok", `name: "${nm}"`]); }
+
+  /* --- IMU I2C bus speed --- */
+  if (L.twimFreq) {
+    const want = TWIM_FREQ[opts.i2cKhz || 400], o = L.twimFreq.off;
+    if (u32(out, o) !== want) { out.set([want & 0xff, (want >>> 8) & 0xff, (want >>> 16) & 0xff, want >>> 24], o); log.push([opts.i2cKhz > 400 ? "w" : "ok", `IMU I2C (${L.twimFreq.name}) → ≈${twimKhz(want)} kHz${opts.i2cKhz > 400 ? " — undocumented on nRF52833, shared with the charger IC" : ""}`]); }
+  } else if (opts.i2cKhz && opts.i2cKhz !== 400) log.push(["w", "IMU I2C frequency word not found — left stock"]);
+
+  /* --- IMU fast path --- */
+  { const hs = hafixState(out), want = opts.imu === "g1000";
+    if (want && hs === "stock") { setHafix(out, true); log.push(["ok", "HA ODR: data-rate setters rewritten (OP_MODE=HA, HAODR_SEL first) — gyro truly 1000 Hz / accel 500 Hz"]); }
+    else if (want && hs !== "patched") log.push(["w", "HA ODR fix needs IBEX_FW_6ACFF323 — gyro will run at 960 Hz"]);
+    else if (!want && hs === "patched") { setHafix(out, false); log.push(["ok", "HA ODR fix: removed"]); } }
+  const fps = fastpathState(out);
+  if (opts.fastpath && fps === "stock") { out = applyFastpath(out); log.push(["ok", "IMU fast path: handler accepts partial FIFO batches (cached accel/quat/gbias), code cave +236 B"]); }
+  else if (!opts.fastpath && fps === "patched") { out = removeFastpath(out); log.push(["ok", "IMU fast path: removed (restored stock handler)"]); }
+
+  /* --- container --- */
+  const sz = out.length - 32; out[4] = sz & 0xff; out[5] = (sz >>> 8) & 0xff; out[6] = (sz >>> 16) & 0xff; out[7] = (sz >>> 24) & 0xff;
+  const crc = crc32(out, 32); out[8] = crc & 0xff; out[9] = (crc >>> 8) & 0xff; out[10] = (crc >>> 16) & 0xff; out[11] = (crc >>> 24) & 0xff;
+  log.push(["ok", `CRC32 = 0x${crc.toString(16).padStart(8, "0")}`]);
+  return { ok: true, out, log };
+}
+
+if (typeof module !== "undefined") module.exports = { hafixState, fastpathState, locate, inspect, patch, plan, crc32, movw, decMovw, f32ToF16, f16ToF32, TICK_HZ, STOCK };
+
+/* ===== Puck (Proteus) patch engine: version-independent, located by code structure ===== */
+const PROTEUS_MAGIC = 0x2E795631, IBEX_MAGIC = 0xD2D86467, PUCK_BASE = 0x8000;
+const PUCK_STOCK_WAIT = 99; // ticks @32768 Hz ≈ 3.02 ms before each connected-slot poll
+const PUCK_PRESETS = { stock: 99, poll2ms: 66, poll1ms: 33, poll05: 16, pollmax: 1 };
+function fwKind(b) { if (b.length < 40) return null; const m = u32(b, 0); return m === IBEX_MAGIC ? "ibex" : m === PROTEUS_MAGIC ? "puck" : null; }
+/* Thumb-2 BL at payload offset o -> absolute target or null */
+function decBL(b, o) {
+  const h1 = b[o] | (b[o + 1] << 8), h2 = b[o + 2] | (b[o + 3] << 8);
+  if ((h1 & 0xF800) !== 0xF000 || (h2 & 0xD000) !== 0xD000) return null;
+  const S = (h1 >> 10) & 1, i10 = h1 & 0x3FF, J1 = (h2 >> 13) & 1, J2 = (h2 >> 11) & 1, i11 = h2 & 0x7FF;
+  const I1 = 1 - (J1 ^ S), I2 = 1 - (J2 ^ S);
+  let off = (S << 24) | (I1 << 23) | (I2 << 22) | (i10 << 12) | (i11 << 1); if (S) off -= 1 << 25;
+  return (o - 32) + PUCK_BASE + 4 + off; // o = file offset (32-byte header)
+}
+function puckLocate(b) {
+  const r = { header: { sizeOk: u32(b, 4) === b.length - 32, crcStored: u32(b, 8), crcActual: crc32(b, 32) }, waits: [], waitTicks: null, ifaces: [], issues: [] };
+  const addr = o => o - 32 + PUCK_BASE;
+  /* 1) poll waits: "movs r2,#N ; movs r3,#0 ; mov r0,rX ; bl W" where W is also called with K_FOREVER
+        ("mov.w r2,#-1 ; mov.w r3,#-1 ; mov r0,rX ; bl W"). The connected-slot loop has these 4 timed waits. */
+  const timed = new Map(), forever = new Map();
+  for (let o = 32 + 6; o + 4 <= b.length; o += 2) {
+    const t = decBL(b, o); if (t === null) continue;
+    const movR0 = b[o - 1] === 0x46 && (b[o - 2] & 0xC7) === 0x00 && ((b[o - 2] >> 3) & 7) >= 1 ; // mov r0, r1..r7 (0x46 0x08..0x38)
+    if (!movR0) continue;
+    if (b[o - 5] === 0x22 && b[o - 4] === 0x00 && b[o - 3] === 0x23) { // movs r2,#N ; movs r3,#0
+      const key = decBL(b, o); if (!timed.has(key)) timed.set(key, []); timed.get(key).push({ o: o - 6, n: b[o - 6] });
+    }
+    if (o >= 32 + 10 && b[o - 10] === 0x4F && b[o - 9] === 0xF0 && b[o - 8] === 0xFF && b[o - 7] === 0x33 && b[o - 6] === 0x4F && b[o - 5] === 0xF0 && b[o - 4] === 0xFF && b[o - 3] === 0x32) forever.set(decBL(b, o), (forever.get(decBL(b, o)) || 0) + 1);
+    if (o >= 32 + 10 && b[o - 10] === 0x4F && b[o - 9] === 0xF0 && b[o - 8] === 0xFF && b[o - 7] === 0x32 && b[o - 6] === 0x4F && b[o - 5] === 0xF0 && b[o - 4] === 0xFF && b[o - 3] === 0x33) forever.set(decBL(b, o), (forever.get(decBL(b, o)) || 0) + 1);
+  }
+  const cands = [...timed.entries()].filter(([t, s]) => forever.has(t) && s.length >= 3 && s.length <= 8 && s.every(x => x.n === s[0].n) && s[0].n >= 1);
+  if (cands.length === 1) { r.waits = cands[0][1].map(x => x.o); r.waitTicks = cands[0][1][0].n; }
+  else r.issues.push(cands.length ? `poll wait ambiguous (${cands.length} candidates)` : "poll wait not found");
+  /* 2) slot HID interfaces: 09 04 xx 00 02 03 .. | 09 21 .. | 4 interrupt endpoints (FS IN, HS IN, FS OUT, HS OUT).
+        Slots are the ones with a ~2 ms FS interval (stock 2, patched 1); the 32 ms vendor interface is left alone. */
+  for (let o = 32; o + 46 <= b.length; o++) {
+    if (!(b[o] === 9 && b[o + 1] === 4 && b[o + 4] === 2 && b[o + 5] === 3 && b[o + 9] === 9 && b[o + 10] === 0x21)) continue;
+    const e = o + 18, ok = [0, 7, 14, 21].every(k => b[e + k] === 7 && b[e + k + 1] === 5 && (b[e + k + 3] & 3) === 3);
+    if (!ok) continue;
+    const fsIn = b[e + 6], hsIn = b[e + 13];
+    if ((fsIn === 1 || fsIn === 2) && (hsIn === 4 || hsIn === 5)) r.ifaces.push({ o: e, fs: fsIn, hs: hsIn });
+  }
+  if (!r.ifaces.length) r.issues.push("slot HID endpoints not found");
+  return r;
+}
+function puckInspect(b) {
+  const L = puckLocate(b), rows = [], row = (k, v, st) => rows.push({ k, v, st: st || "ok" });
+  row("Container", `PROTEUS (Puck) · ${L.header.sizeOk ? "size OK" : "size MISMATCH"} · CRC ${L.header.crcStored === L.header.crcActual ? "OK" : "BAD"}`, L.header.sizeOk && L.header.crcStored === L.header.crcActual ? "ok" : "bad");
+  if (L.waitTicks !== null) { const ms = L.waitTicks / 32.768; row("Poll wait", `${L.waitTicks} ticks ≈ ${ms.toFixed(2)} ms before each poll · ${L.waits.length} sites` + (L.waitTicks === PUCK_STOCK_WAIT ? " (stock, ~240 Hz)" : " (patched)")); }
+  else row("Poll wait", L.issues[0], "bad");
+  if (L.ifaces.length) { const fs = L.ifaces[0].fs; row("Slot USB interval", `${fs} ms (${L.ifaces.length} slot interfaces)` + (fs === 2 ? " (stock, caps 500 Hz)" : " (patched)")); }
+  else row("Slot USB interval", "not found", "bad");
+  return { L, rows };
+}
+function puckPatch(src, opts) {
+  const out = new Uint8Array(src), L = puckLocate(out), log = [];
+  if (fwKind(out) !== "puck") return { ok: false, errors: ["Not a Puck (PROTEUS) firmware file."] };
+  if (L.waitTicks === null) return { ok: false, errors: ["Poll-wait sites not found in this Puck version: " + L.issues.join("; ")] };
+  const n = Math.max(1, Math.min(255, opts.pollTicks | 0));
+  for (const o of L.waits) out[o] = n;
+  log.push(["ok", `Poll wait: ${L.waitTicks} → ${n} ticks (≈ ${(n / 32.768).toFixed(2)} ms) at ${L.waits.length} sites`]);
+  const fast = opts.usb1ms !== undefined ? opts.usb1ms : n < PUCK_STOCK_WAIT;
+  if (L.ifaces.length) {
+    for (const i of L.ifaces) { out[i.o + 6] = fast ? 1 : 2; out[i.o + 20] = fast ? 1 : 2; out[i.o + 13] = fast ? 4 : 5; out[i.o + 27] = fast ? 4 : 5; }
+    log.push(["ok", `Slot USB interval → ${fast ? 1 : 2} ms on ${L.ifaces.length} interfaces`]);
+  } else log.push(["w", "Slot USB endpoints not found — USB interval left unchanged (caps ~500 Hz)"]);
+  const crc = crc32(out, 32); out[8] = crc & 0xff; out[9] = (crc >>> 8) & 0xff; out[10] = (crc >>> 16) & 0xff; out[11] = (crc >>> 24) & 0xff;
+  log.push(["ok", `CRC32 = 0x${crc.toString(16).padStart(8, "0")}`]);
+  return { ok: true, out, log };
+}
+
+</script>
+<script>
+"use strict";
+const $=s=>document.querySelector(s);
+let buf=null, srcName="IBEX_FW.fw";
+const drop=$("#drop"),fileInput=$("#file"),go=$("#go"),logEl=$("#log");
+const F={imu:$("#imu"),sflpHz:$("#sflpHz"),wtm:$("#wtm"),poll:$("#poll"),usbHz:$("#usbHz"),ticks:$("#ticks"),attr:$("#attr"),prio:$("#prio"),caps:$("#caps"),capsB:$("#capsB"),defl:$("#defl"),deflThr:$("#deflThr"),calib:$("#calib"),name:$("#name"),fast:$("#fast"),i2c:$("#i2c"),accB:$("#accB")};
+
+function log(m,c){logEl.innerHTML+=(c?`<span class="${c}">${m}</span>`:m)+"\n";}
+const num=(el)=>{const v=parseInt(el.value,10);return el.value.trim()===""||!(v>0)?null:v;};
+
+function readOpts(){
+  return {
+    imu:F.imu.value, sflpHz:parseInt(F.sflpHz.value,10), wtm:num(F.wtm),
+    poll:F.poll.value, usbHz:num(F.usbHz)||1000, freerunTicks:num(F.ticks)||33, attr:F.attr.checked,
+    prio:F.prio.value==="auto"?"auto":parseInt(F.prio.value,10),
+    capA:num(F.caps)||8, capB:num(F.capsB),
+    defl:F.defl.value==="custom"?(num(F.deflThr)||12000):F.defl.value,
+    calib:num(F.calib), name:F.name.value, fastpath:F.fast.checked, i2cKhz:parseInt(F.i2c.value,10), accBatch:F.accB.value?parseInt(F.accB.value,10):null
+  };
+}
+function writeOpts(o){
+  F.imu.value=o.imu; F.sflpHz.value=String(o.sflpHz||480); F.wtm.value=o.wtm||"";
+  F.poll.value=o.poll; F.usbHz.value=o.usbHz||1000; F.ticks.value=o.freerunTicks||33; F.attr.checked=!!o.attr;
+  F.prio.value=String(o.prio||"auto"); F.caps.value=o.capA||8; F.capsB.value=o.capB||"";
+  if(typeof o.defl==="number"){F.defl.value="custom";F.deflThr.value=o.defl;} else F.defl.value=o.defl||"stock";
+  F.calib.value=o.calib||""; F.name.value=o.name||"Steam Controller"; F.fast.checked=!!o.fastpath; F.i2c.value=String(o.i2cKhz||400); F.accB.value=o.accBatch?String(o.accBatch):"";
+  updHints(); refresh();
+}
+const BASE={fastpath:false,imu:"stock",sflpHz:480,accBatch:null,i2cKhz:400,wtm:null,poll:"stock",usbHz:1000,freerunTicks:33,attr:false,prio:"auto",capA:8,capB:null,defl:"stock",calib:null,name:"Steam Controller"};
+const PRESETS={
+  stock:{...BASE},
+  usb1k:{...BASE,poll:"usbtimer"},
+  maxrep:{...BASE,poll:"usbtimer",imu:"g960",sflpHz:480,prio:14},
+  balanced:{...BASE,poll:"usbtimer",imu:"g1000",sflpHz:120,accBatch:7,prio:14,wtm:2,fastpath:true},
+  fresh:{...BASE,poll:"usbtimer",imu:"g1000",sflpHz:120,accBatch:7,prio:14,wtm:1,fastpath:true},
+};
+
+function updHints(){
+  const T=TICK_HZ;
+  const imu=F.imu.value;
+  F.sflpHz.disabled=imu==="stock"; F.accB.disabled=imu==="stock"||imu==="sflp";
+  $("#imuHint").textContent={stock:"stock",sflp:"fused only",g960:"HP 960 / acc 480",g1000:"true HA 1000 / acc 500"}[imu];
+  const p=F.poll.value;
+  $("#fUsbHz").classList.toggle("hide",p!=="usbtimer"); $("#fTicks").classList.toggle("hide",p!=="freerun");
+  $("#pollHint").textContent={stock:"132 ticks",usbtimer:"event-driven",freerun:"legacy"}[p];
+  const hz=num(F.usbHz)||1000, t=Math.max(16,Math.min(255,Math.round(T/hz)));
+  $("#usbHint").textContent=`${t} ticks → ${(T/t).toFixed(1)} Hz`;
+  const ft=Math.max(16,Math.min(255,num(F.ticks)||33)); $("#tickHint").textContent=`≈ ${Math.round(T/ft)} Hz ceiling`;
+  F.attr.disabled=p==="stock";
+  const cv=num(F.caps)||8; $("#capsHint").textContent=cv===8?"8 = stock":`on ${cv} / off ${Math.round(cv*.85)}`;
+  F.deflThr.classList.toggle("hide",F.defl.value!=="custom");
+  const cb=num(F.calib); $("#calibHint").textContent=cb?(cb*0.0025641/100).toExponential(2):"stock";
+  $("#wtmHint").textContent=num(F.wtm)?`${num(F.wtm)} words`:"stock";
+  $("#cnt").textContent=`${F.name.value.length}/16`;
+}
+
+function renderInspect(b){
+  const {rows}=inspect(b);
+  $("#insp").innerHTML=rows.map(r=>`<tr><td class="s-${r.st}">${r.st==="ok"?"✓":r.st==="warn"?"!":"✗"}</td><td>${r.k}</td><td>${r.v}</td></tr>`).join("");
+  $("#inspWrap").classList.remove("hide");
+}
+
+function refresh(){
+  if(!buf)return; logEl.innerHTML="";
+  const {errors,warns}=plan(buf,readOpts());
+  go.disabled=errors.length>0;
+  drop.classList.toggle("loaded",!errors.length); drop.classList.toggle("bad",!!errors.length);
+  if(errors.length){ go.textContent="Can't patch with these options"; errors.forEach(e=>log("✗ "+e,"bad")); }
+  else { go.textContent="Patch & download"; log("All required sites located — ready.","ok"); }
+  warns.forEach(w=>log("! "+w,"w"));
+}
+
+function doPatch(){
+  const r=patch(buf,readOpts()); logEl.innerHTML="";
+  if(!r.ok){ r.errors.forEach(e=>log("✗ "+e,"bad")); return; }
+  r.log.forEach(([c,m])=>log("  "+m,c==="ok"?"ok":"w"));
+  // self-verify
+  const v=inspect(r.out); const crcOk=v.L.header.crcOk&&v.L.header.sizeOk;
+  log(crcOk?"  self-check: re-located all sites, container + CRC valid":"  self-check FAILED",crcOk?"ok":"bad");
+  if(!crcOk) return;
+  const base=srcName.replace(/_patched(?=\.[^.]*$|$)/,""), dot=base.lastIndexOf(".");
+  const outName=dot>0?(base.slice(0,dot)+"_patched"+base.slice(dot)):(base+"_patched.fw");
+  const blob=new Blob([r.out],{type:"application/octet-stream"});
+  const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download=outName;
+  document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove();},1500);
+  log(`\n✓ Downloaded ${outName} — flash it with the Ibex flashing page. The Inspect table above now shows the new file.`,"ok");
+  renderInspect(r.out);
+}
+
+function loadFile(f){ if(!f)return; srcName=(f.name||srcName).replace(/[\\/]/g,"");
+  const rd=new FileReader(); rd.onload=e=>{ const b=new Uint8Array(e.target.result); if(fwKind(b)==="puck"){ log("That is a Puck firmware — loaded in section 4.","w"); pLoad(f); document.getElementById("puckPanel").scrollIntoView({behavior:"smooth"}); return; } buf=b; renderInspect(buf); refresh(); }; rd.readAsArrayBuffer(f); }
+drop.onclick=()=>fileInput.click();
+fileInput.onchange=e=>loadFile(e.target.files[0]);
+["dragover","dragenter"].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.add("drag");}));
+["dragleave","drop"].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.remove("drag");}));
+drop.addEventListener("drop",e=>loadFile(e.dataTransfer.files[0]));
+go.onclick=()=>{if(!go.disabled)doPatch();};
+Object.values(F).forEach(el=>el.addEventListener(el.tagName==="SELECT"||el.type==="checkbox"?"change":"input",()=>{updHints();refresh();}));
+F.name.addEventListener("input",()=>{F.name.value=F.name.value.replace(/[^\x20-\x7e]/g,"").slice(0,16);updHints();});
+document.querySelectorAll(".info").forEach(b=>b.addEventListener("click",e=>{e.preventDefault();e.stopPropagation();
+  const h=document.getElementById(b.dataset.help); if(h) b.classList.toggle("on",h.classList.toggle("open"));}));
+document.querySelectorAll("[data-preset]").forEach(b=>b.addEventListener("click",()=>writeOpts(PRESETS[b.dataset.preset])));
+const LS="sc2patcher.profile";
+const lsGet=()=>{try{return localStorage.getItem(LS);}catch(e){return null;}};
+$("#saveProf").onclick=()=>{try{localStorage.setItem(LS,JSON.stringify(readOpts()));log("Profile saved in this browser.","ok");}catch(e){log("Couldn't save (storage blocked) — use Export JSON.","w");}};
+$("#loadProf").onclick=()=>{const s=lsGet(); if(s) writeOpts({...BASE,...JSON.parse(s)}); else log("No saved profile in this browser.","w");};
+$("#expProf").onclick=()=>{const blob=new Blob([JSON.stringify(readOpts(),null,2)],{type:"application/json"});const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download="sc2_profile.json";document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove();},1000);};
+$("#impProf").onclick=()=>$("#impFile").click();
+$("#impFile").onchange=e=>{const f=e.target.files[0]; if(!f)return; f.text().then(t=>{try{writeOpts({...BASE,...JSON.parse(t)});log("Profile imported.","ok");}catch(err){log("Invalid profile JSON.","bad");}});};
+updHints();
+
+/* ---------- Puck panel ---------- */
+let pbuf=null, pname="PROTEUS_FW.fw";
+const pdrop=$("#pdrop"), pfile=$("#pfile"), pgo=$("#pgo"), plog=$("#plog"), pticks=$("#pticks");
+function plg(m,c){plog.innerHTML+=(c?`<span class="${c}">${m}</span>`:m)+"\n";}
+function pHint(){const n=Math.max(1,Math.min(255,parseInt(pticks.value,10)||1)); $("#pticksHint").textContent=`≈ ${(n/32.768).toFixed(2)} ms${n===99?" (stock)":""}`;}
+function pRender(b){const {rows}=puckInspect(b); $("#pinsp").innerHTML=rows.map(r=>`<tr><td class="s-${r.st}">${r.st==="ok"?"✓":r.st==="warn"?"!":"✗"}</td><td>${r.k}</td><td>${r.v}</td></tr>`).join(""); $("#pinspWrap").classList.remove("hide");}
+function pLoad(f){ if(!f)return; pname=(f.name||pname).replace(/[\\/]/g,"");
+  const rd=new FileReader(); rd.onload=e=>{ const b=new Uint8Array(e.target.result); plog.innerHTML="";
+    if(fwKind(b)==="ibex"){ plg("That is a controller (IBEX) firmware — loading it in section 1.","w"); buf=b; srcName=pname; renderInspect(buf); refresh(); return; }
+    if(fwKind(b)!=="puck"){ pdrop.className="bad"; pgo.disabled=true; plg("✗ Not a Puck (PROTEUS) firmware file.","bad"); return; }
+    pbuf=b; pRender(b); const L=puckLocate(b); const ok=L.waitTicks!==null;
+    pdrop.className=ok?"loaded":"bad"; pgo.disabled=!ok; pgo.textContent=ok?"Patch & download Puck firmware":"Can't patch this Puck version";
+    L.issues.forEach(i=>plg("! "+i,"w")); if(ok) plg("Puck sites located — ready.","ok"); };
+  rd.readAsArrayBuffer(f); }
+pdrop.onclick=()=>pfile.click(); pfile.onchange=e=>pLoad(e.target.files[0]);
+["dragover","dragenter"].forEach(ev=>pdrop.addEventListener(ev,e=>{e.preventDefault();pdrop.classList.add("drag");}));
+["dragleave","drop"].forEach(ev=>pdrop.addEventListener(ev,e=>{e.preventDefault();pdrop.classList.remove("drag");}));
+pdrop.addEventListener("drop",e=>pLoad(e.dataTransfer.files[0]));
+pticks.addEventListener("input",pHint); pHint();
+document.querySelectorAll("[data-ppreset]").forEach(b=>b.addEventListener("click",()=>{pticks.value=PUCK_PRESETS[b.dataset.ppreset]; pHint();}));
+pgo.onclick=()=>{ if(!pbuf)return; plog.innerHTML="";
+  const n=Math.max(1,Math.min(255,parseInt(pticks.value,10)||1)); const r=puckPatch(pbuf,{pollTicks:n});
+  if(!r.ok){ r.errors.forEach(e=>plg("✗ "+e,"bad")); return; }
+  r.log.forEach(([c,m])=>plg("  "+m,c==="ok"?"ok":"w"));
+  const v=puckLocate(r.out); if(v.waitTicks!==n||v.header.crcStored!==v.header.crcActual){plg("  self-check FAILED","bad");return;}
+  plg("  self-check: sites re-located, CRC valid","ok");
+  const base=pname.replace(/_patched(?=\.[^.]*$|$)/,""), dot=base.lastIndexOf(".");
+  const tag=n===99?"_stock":`_poll${n}t`; const out=dot>0?(base.slice(0,dot)+tag+base.slice(dot)):(base+tag+".fw");
+  const a=document.createElement("a"); a.href=URL.createObjectURL(new Blob([r.out],{type:"application/octet-stream"})); a.download=out;
+  document.body.appendChild(a); a.click(); setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove();},1500);
+  plg(`\n✓ Downloaded ${out} — flash it with flash.py (see ⓘ).`,"ok"); pRender(r.out); };
+</script>
+</body>
+</html>

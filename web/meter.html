@@ -1,0 +1,193 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SC2 Report Meter</title>
+<style>
+  :root{--bg:#0e1420;--panel:#161f30;--panel2:#1d283c;--edge:#2b3850;--ink:#e6edf7;--muted:#90a0ba;--accent:#4ea1ff;--accent2:#7cc4ff;--ok:#3fd07f;--warn:#ffb347;--err:#ff6b6b;--mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.55 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;padding:28px 16px 60px;}
+  .wrap{max-width:860px;margin:0 auto;}
+  h1{font-size:23px;margin:0 0 4px;} h1 .hz{color:var(--accent2);}
+  .sub{color:var(--muted);margin:0 0 20px;font-size:14px;}
+  .panel{background:var(--panel);border:1px solid var(--edge);border-radius:14px;padding:18px;margin-bottom:16px;}
+  .panel h2{font-size:13px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin:0 0 12px;font-weight:600;}
+  .bar{display:flex;gap:10px;flex-wrap:wrap;align-items:center;}
+  button,select{background:var(--panel2);border:1px solid var(--edge);color:var(--ink);border-radius:9px;padding:9px 14px;font-size:14px;cursor:pointer;font-family:inherit;}
+  button.primary{background:linear-gradient(180deg,var(--accent),#3a86e8);color:#06101f;border:0;font-weight:700;}
+  button:hover,select:hover{border-color:var(--accent);}
+  .grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;}
+  .stat{background:var(--panel2);border:1px solid var(--edge);border-radius:10px;padding:10px 12px;}
+  .stat .k{font-size:11.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;}
+  .stat .v{font-family:var(--mono);font-size:22px;font-weight:600;margin-top:2px;}
+  .stat .u{font-size:12px;color:var(--muted);font-family:var(--mono);}
+  canvas{width:100%;height:180px;background:#0b1322;border:1px solid var(--edge);border-radius:10px;display:block;}
+  .mono{font-family:var(--mono);font-size:12px;color:var(--muted);white-space:pre-wrap;word-break:break-all;}
+  .lbl{font-size:12px;color:var(--muted);margin:12px 0 6px;}
+  .ok{color:var(--ok)} .warn{color:var(--warn)} .err{color:var(--err)}
+  .note{font-size:12.5px;color:var(--muted);line-height:1.6;}
+  .note b{color:#b9c6dc;} code{font-family:var(--mono);color:var(--accent2);}
+  @media (max-width:640px){.grid{grid-template-columns:repeat(2,1fr);}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>SC2 <span class="hz">Report Meter</span></h1>
+  <p class="sub">Measures what actually reaches your PC from a Steam Controller 2 (or its Puck): report rate, timing jitter, dropped reports, and how often the gyro data in those reports is really new. Chrome/Edge on desktop (WebHID). Nothing leaves your computer.</p>
+
+  <div class="panel">
+    <div class="bar">
+      <button class="primary" id="connect">Connect controller…</button>
+      <button id="reset">Reset stats</button>
+      <label class="note">Report ID <select id="rid"><option value="auto">auto</option></select></label>
+      <label class="note">Window <select id="win"><option value="1">1 s</option><option value="2" selected>2 s</option><option value="5">5 s</option></select></label>
+      <span id="status" class="note">not connected</span>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2>Report stream</h2>
+    <div class="grid">
+      <div class="stat"><div class="k">Report rate</div><div class="v" id="sRate">—</div><div class="u">reports / s (host)</div></div>
+      <div class="stat"><div class="k">Interval</div><div class="v" id="sInt">—</div><div class="u" id="sIntU">mean ms</div></div>
+      <div class="stat"><div class="k">Jitter (SD)</div><div class="v" id="sJit">—</div><div class="u" id="sP99">p99 —</div></div>
+      <div class="stat"><div class="k" id="kDrop">Dropped</div><div class="v" id="sDrop">—</div><div class="u" id="uDrop">sequence gaps</div></div>
+    </div>
+    <div class="lbl">Host-side interval histogram (0–8 ms, 0.125 ms bins). Includes OS/USB scheduling noise; use the IMU numbers below for device-side timing.</div>
+    <canvas id="hist" width="1600" height="360"></canvas>
+  </div>
+
+  <div class="panel">
+    <h2>IMU in reports</h2>
+    <div class="grid">
+      <div class="stat"><div class="k">Fresh IMU</div><div class="v" id="sImuRate">—</div><div class="u">IMU batches / s</div></div>
+      <div class="stat"><div class="k">IMU Δt</div><div class="v" id="sImuDt">—</div><div class="u">median µs (device)</div></div>
+      <div class="stat"><div class="k">Repeated gyro</div><div class="v" id="sRep">—</div><div class="u">% reports, same sample</div></div>
+      <div class="stat"><div class="k">Gyro xyz</div><div class="v" id="sGyro" style="font-size:15px">—</div><div class="u">raw LSB · peak <span id="sGpk">—</span></div></div>
+    </div>
+    <div class="grid" style="margin-top:10px">
+      <div class="stat" style="grid-column:span 2"><div class="k">Accel xyz</div><div class="v" id="sAcc" style="font-size:15px">—</div><div class="u">raw LSB (16384 ≈ 1 g)</div></div>
+      <div class="stat" style="grid-column:span 2"><div class="k">Quaternion wxyz</div><div class="v" id="sQuat" style="font-size:15px">—</div><div class="u">raw int16</div></div>
+    </div>
+    <div class="lbl">Gyro X/Y/Z (last 1.5 s)</div>
+    <canvas id="gplot" width="1600" height="360"></canvas>
+  </div>
+
+  <div class="panel">
+    <h2>Raw</h2>
+    <div class="mono" id="ids">—</div>
+    <div class="lbl">Last report (hex, without report ID)</div>
+    <div class="mono" id="raw">—</div>
+  </div>
+
+  <div class="panel note">
+    <b>How to read it.</b> Stock USB shows ~248 reports/s. The v2 &ldquo;USB timer&rdquo; patch should show ~993/s with near-zero drops. <b>Fresh IMU</b> counts new IMU timestamps per second. The firmware refreshes the IMU fields once per FIFO batch (every <i>watermark</i> FIFO words), so this is the batch rate, not the raw sensor rate. With watermark 4 and everything at 480 Hz it reads 480.<br>
+    <b>Layout used</b> (Triton state report, ID <code>0x42</code>, from sc26re): seq @0, IMU timestamp u32 µs @29, accel @33, gyro @39, quaternion @45. If your numbers look nonsensical, pick another report ID from the list. The &ldquo;IDs seen&rdquo; line shows every report ID with its length and rate.<br>
+    <b>Accel and quaternion all 0?</b> The host has the IMU switched off (Steam enables it only when something uses gyro). Keep Steam&rsquo;s <i>Calibration &amp; Advanced Settings → Gyro Calibration</i> page open while measuring. With sc26re the timestamp then falls back to report time, so the IMU numbers are meaningless.<br><b>No reports?</b> Some hosts only receive state reports while Steam (or another app) has enabled them. Start Steam, or try a game with Steam Input, then reconnect here. Over wireless, connect the <b>Puck</b> instead; its rate is set by the Puck firmware. <b>Puck + sc26re v3+:</b> the controller builds ~1000 reports/s and the Puck forwards the newest one at each poll, so sequence gaps are reports replaced by newer ones, not losses &mdash; the tile then reads &ldquo;Skipped&rdquo;.
+  </div>
+</div>
+
+<script>
+"use strict";
+const $=s=>document.querySelector(s);
+const OFF={seq:0,ts:29,ax:33,ay:35,az:37,gx:39,gy:41,gz:43,q:45};
+let devs=[], ev=[], idStats={}, lastSeq=null, drops=0, lastTs=null, lastG=null, gyroHist=[], lastRaw=null;
+
+function reset(){ev=[];idStats={};lastSeq=null;drops=0;lastTs=null;lastG=null;gyroHist=[];}
+$("#reset").onclick=reset;
+
+async function connect(){
+  if(!("hid" in navigator)){ $("#status").innerHTML='<span class="err">WebHID not available — use desktop Chrome or Edge.</span>'; return; }
+  try{
+    const sel=await navigator.hid.requestDevice({filters:[{vendorId:0x28de}]});
+    for(const d of sel){ if(!d.opened) await d.open(); d.addEventListener("inputreport",onReport); devs.push(d); }
+    $("#status").innerHTML=devs.length?`<span class="ok">connected: ${devs.map(d=>d.productName||"device").join(", ")}</span>`:"no device selected";
+    reset();
+  }catch(e){ $("#status").innerHTML=`<span class="err">${e.message}</span>`; }
+}
+$("#connect").onclick=connect;
+if("hid" in navigator) navigator.hid.addEventListener("disconnect",e=>{devs=devs.filter(d=>d!==e.device);$("#status").textContent="disconnected";});
+
+function wantedId(){
+  const v=$("#rid").value; if(v!=="auto") return parseInt(v,10);
+  if(idStats[0x42]) return 0x42;
+  let best=null,bn=0; for(const [id,s] of Object.entries(idStats)) if(s.len>=45&&s.n>bn){bn=s.n;best=+id;} return best;
+}
+
+function onReport(e){
+  const id=e.reportId, dv=e.data, t=e.timeStamp||performance.now();
+  const st=idStats[id]||(idStats[id]={n:0,len:dv.byteLength,times:[]}); st.n++; st.len=dv.byteLength; st.times.push(t);
+  if(st.times.length>4000) st.times.splice(0,st.times.length-4000);
+  if(id!==wantedId()) return;
+  lastRaw=dv;
+  const rec={t};
+  if(dv.byteLength>OFF.seq){ const s=dv.getUint8(OFF.seq); if(lastSeq!==null){ const d=(s-lastSeq+256)&255; if(d>1&&d<200) drops+=d-1; } lastSeq=s; }
+  if(dv.byteLength>=OFF.gz+2){
+    const ts=dv.getUint32(OFF.ts,true), g=[dv.getInt16(OFF.gx,true),dv.getInt16(OFF.gy,true),dv.getInt16(OFF.gz,true)];
+    rec.ts=ts; rec.newImu = lastTs===null || ts!==lastTs; rec.dts = (lastTs!==null && ts!==lastTs) ? ((ts-lastTs)>>>0) : null;
+    rec.rep = lastG!==null && !rec.newImu && g[0]===lastG[0]&&g[1]===lastG[1]&&g[2]===lastG[2];
+    lastTs=ts; lastG=g; rec.g=g; gyroHist.push({t,g});
+    rec.a=[dv.getInt16(OFF.ax,true),dv.getInt16(OFF.ay,true),dv.getInt16(OFF.az,true)];
+    if(dv.byteLength>=OFF.q+8) rec.q=[0,1,2,3].map(i=>dv.getInt16(OFF.q+2*i,true));
+  }
+  ev.push(rec);
+}
+
+const med=a=>{if(!a.length)return null;const s=[...a].sort((x,y)=>x-y);return s[s.length>>1];};
+function pct(a,p){if(!a.length)return null;const s=[...a].sort((x,y)=>x-y);return s[Math.min(s.length-1,Math.floor(s.length*p))];}
+
+function draw(){
+  const now=performance.now(), win=parseFloat($("#win").value)*1000;
+  ev=ev.filter(r=>now-r.t<=Math.max(win,1500)+200);
+  const w=ev.filter(r=>now-r.t<=win);
+  gyroHist=gyroHist.filter(x=>now-x.t<=1500);
+  const ids=Object.keys(idStats).map(Number).sort((a,b)=>a-b);
+  const ridSel=$("#rid"); const have=new Set([...ridSel.options].map(o=>o.value));
+  for(const id of ids) if(!have.has(String(id))){const o=document.createElement("option");o.value=id;o.textContent=`0x${id.toString(16)}`;ridSel.appendChild(o);}
+  $("#ids").textContent= ids.length ? "IDs seen: "+ids.map(id=>{const s=idStats[id];const r=s.times.filter(t=>now-t<=1000).length;return `0x${id.toString(16)} (${s.len} B, ${r}/s)`;}).join(" · ") : "IDs seen: —";
+  if(w.length>1){
+    const span=(w[w.length-1].t-w[0].t)/1000, rate=(w.length-1)/span;
+    const iv=[]; for(let i=1;i<w.length;i++) iv.push(w[i].t-w[i-1].t);
+    const mean=iv.reduce((a,b)=>a+b,0)/iv.length, sd=Math.sqrt(iv.reduce((a,b)=>a+(b-mean)**2,0)/iv.length);
+    $("#sRate").textContent=rate.toFixed(0); $("#sInt").textContent=mean.toFixed(3); $("#sJit").textContent=sd.toFixed(3); $("#sP99").textContent=`p99 ${pct(iv,.99).toFixed(2)} ms`;
+    { const puck=devs.some(d=>/puck|dongle/i.test(d.productName||""));
+      if(puck){ $("#kDrop").textContent="Skipped"; $("#sDrop").textContent=drops; $("#uDrop").textContent="replaced by newer (Puck link, not lost)"; }
+      else { $("#kDrop").textContent="Dropped"; $("#sDrop").textContent=drops; $("#uDrop").textContent="sequence gaps"; } }
+    const imu=w.filter(r=>r.ts!==undefined);
+    if(imu.length){
+      const fresh=imu.filter(r=>r.newImu).length/span; $("#sImuRate").textContent=fresh.toFixed(0);
+      const d=med(imu.map(r=>r.dts).filter(x=>x!==null&&x<100000)); $("#sImuDt").textContent=d===null?"—":d;
+      $("#sRep").textContent=(100*imu.filter(r=>r.rep).length/imu.length).toFixed(1);
+      const last=imu[imu.length-1], g=last.g; $("#sGyro").textContent=g.join(" / ");
+      let pk=0; for(const r of imu) for(const v of r.g) pk=Math.max(pk,Math.abs(v)); $("#sGpk").textContent=pk;
+      if(last.a) $("#sAcc").textContent=last.a.join(" / ")+((last.a[0]|last.a[1]|last.a[2])?"":"  ← IMU off (host)");
+      if(last.q) $("#sQuat").textContent=last.q.join(" / ");
+    }
+    hist(iv);
+  }
+  plot();
+  if(lastRaw){ const b=new Uint8Array(lastRaw.buffer,lastRaw.byteOffset,lastRaw.byteLength); $("#raw").textContent=[...b].map(x=>x.toString(16).padStart(2,"0")).join(" "); }
+  requestAnimationFrame(draw);
+}
+
+function hist(iv){
+  const c=$("#hist"),x=c.getContext("2d"),W=c.width,H=c.height; x.clearRect(0,0,W,H);
+  const bins=new Array(64).fill(0); for(const v of iv){const i=Math.min(63,Math.max(0,Math.floor(v/0.125)));bins[i]++;}
+  const mx=Math.max(1,...bins), bw=W/64;
+  x.fillStyle="#2b3850"; x.font="22px ui-monospace,monospace";
+  for(let ms=0;ms<=8;ms++){const px=ms*W/8;x.fillRect(px,0,1,H);x.fillStyle="#90a0ba";x.fillText(ms+" ms",px+4,H-8);x.fillStyle="#2b3850";}
+  x.fillStyle="#4ea1ff"; bins.forEach((n,i)=>{const h=(H-40)*n/mx; x.fillRect(i*bw+2,H-32-h,bw-4,h);});
+}
+function plot(){
+  const c=$("#gplot"),x=c.getContext("2d"),W=c.width,H=c.height; x.clearRect(0,0,W,H);
+  x.fillStyle="#2b3850"; x.fillRect(0,H/2,W,1);
+  if(gyroHist.length<2) return;
+  const t0=performance.now()-1500; let mx=500; for(const p of gyroHist) for(const v of p.g) mx=Math.max(mx,Math.abs(v));
+  ["#ff6b6b","#3fd07f","#4ea1ff"].forEach((col,k)=>{ x.strokeStyle=col; x.lineWidth=2; x.beginPath();
+    gyroHist.forEach((p,i)=>{const px=(p.t-t0)/1500*W, py=H/2-p.g[k]/mx*(H/2-10); i?x.lineTo(px,py):x.moveTo(px,py);}); x.stroke(); });
+}
+requestAnimationFrame(draw);
+</script>
+</body>
+</html>
