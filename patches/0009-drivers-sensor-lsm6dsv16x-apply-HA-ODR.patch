@@ -1,4 +1,4 @@
-From 05e6107c807d5d9eabc39b2bed5bb094ecdff09c Mon Sep 17 00:00:00 2001
+From dcac01746c1cac815e6d38dbb3c8827b641fc49d Mon Sep 17 00:00:00 2001
 From: sc26re <noreply@anthropic.com>
 Date: Wed, 11 Nov 2026 18:16:15 +0100
 Subject: [PATCH] drivers: sensor: lsm6dsv16x: actually apply high-accuracy ODR
@@ -10,18 +10,18 @@ were silently ignored and the sensor ran at the HP rate (960 Hz instead
 of 1000 Hz). Program HAODR_CFG during init before enabling either
 sensor, and scale decoder sample periods by the HA factor.
 ---
- drivers/sensor/st/lsm6dsv16x/lsm6dsv16x.c     | 26 +++++++++++++++++++
+ drivers/sensor/st/lsm6dsv16x/lsm6dsv16x.c     | 37 +++++++++++++++++++
  drivers/sensor/st/lsm6dsv16x/lsm6dsv16x.h     |  1 +
- .../sensor/st/lsm6dsv16x/lsm6dsv16x_decoder.c | 26 ++++++++++++++++---
- .../sensor/st/lsm6dsv16x/lsm6dsv16x_decoder.h |  3 ++-
+ .../sensor/st/lsm6dsv16x/lsm6dsv16x_decoder.c | 26 +++++++++++--
+ .../sensor/st/lsm6dsv16x/lsm6dsv16x_decoder.h |  3 +-
  .../st/lsm6dsv16x/lsm6dsv16x_rtio_stream.c    |  1 +
- 5 files changed, 52 insertions(+), 5 deletions(-)
+ 5 files changed, 63 insertions(+), 5 deletions(-)
 
 diff --git a/drivers/sensor/st/lsm6dsv16x/lsm6dsv16x.c b/drivers/sensor/st/lsm6dsv16x/lsm6dsv16x.c
-index 5b63a787..b962b928 100644
+index 5b63a787..f63748f1 100644
 --- a/drivers/sensor/st/lsm6dsv16x/lsm6dsv16x.c
 +++ b/drivers/sensor/st/lsm6dsv16x/lsm6dsv16x.c
-@@ -1523,6 +1523,32 @@ static int lsm6dsv16x_init_chip(const struct device *dev)
+@@ -1523,6 +1523,43 @@ static int lsm6dsv16x_init_chip(const struct device *dev)
  	}
  	lsm6dsv16x->acc_gain = lsm6dsv16x_calc_accel_gain(dev, fs);
  
@@ -48,6 +48,17 @@ index 5b63a787..b962b928 100644
 +#ifdef CONFIG_LSM6DSV16X_STREAM
 +		lsm6dsv16x->haodr_sel = sel;
 +#endif
++		/*
++		 * HAODR_SEL only picks the HA ODR table; the sensors run from it
++		 * only when OP_MODE_XL/OP_MODE_G = 001 (high-accuracy ODR mode).
++		 * Both must use HA mode (or be off) at the same time.
++		 */
++		if (sel != 0U) {
++			if (lsm6dsv16x_xl_mode_set(ctx, LSM6DSV16X_XL_HIGH_ACCURACY_ODR_MD) < 0 ||
++			    lsm6dsv16x_gy_mode_set(ctx, LSM6DSV16X_GY_HIGH_ACCURACY_ODR_MD) < 0) {
++				return -EIO;
++			}
++		}
 +		LOG_INF("HAODR_SEL=%u", sel);
 +	}
 +
