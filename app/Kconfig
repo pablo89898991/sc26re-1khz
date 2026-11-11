@@ -234,6 +234,24 @@ config IBEX_ESB_IMPORT_OFW_BONDS
 	  original firmware's storage (read-only) when the CFW settings area,
 	  which the bootloader erases on every flash, holds no bond.
 
+
+config IBEX_ESB_REPORT_POLL_US
+	int "Report loop period while connected to the Puck (us)"
+	range 500 4000
+	default 1000
+	help
+	  The Puck polls every 4 ms (fixed in its firmware). A faster loop does not
+	  add reports, but with IBEX_ESB_REPLACE_STALE_INPUT each poll gets a report
+	  at most this old instead of up to one poll interval old.
+
+config IBEX_ESB_REPLACE_STALE_INPUT
+	bool "Overwrite not-yet-sent input ACK payloads with the newest report"
+	default y
+
+config IBEX_ESB_DEBUG_IN_QUAT
+	bool "Puck link rates in the quaternion fields (diagnostics)"
+	default n
+
 endmenu
 
 source "Kconfig.zephyr"

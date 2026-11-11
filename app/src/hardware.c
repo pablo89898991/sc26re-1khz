@@ -235,6 +235,11 @@ void hardware_wait_for_change(void)
 		(void)k_sem_take(&input_changed, K_USEC(CONFIG_IBEX_USB_REPORT_POLL_US));
 		return;
 	}
+	if(transport_esb_connected())
+	{
+		(void)k_sem_take(&input_changed, K_USEC(CONFIG_IBEX_ESB_REPORT_POLL_US));
+		return;
+	}
 	(void)k_sem_take(&input_changed, K_MSEC(HARDWARE_REPORT_POLL_MS));
 }
 

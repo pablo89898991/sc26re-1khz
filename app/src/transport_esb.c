@@ -129,6 +129,9 @@ static uint32_t channel_maps_received;
 static uint32_t awake_frames_received;
 static uint32_t polls_received;
 static uint32_t replies_sent;
+static uint32_t rx_frames_total;
+static uint32_t tx_full_drops;
+static uint32_t tx_replaced;
 static struct k_spinlock pairing_bond_lock;
 static uint8_t pairing_bond[VALVE_ESB_BOND_SIZE];
 static uint8_t pairing_bond_slot = UINT8_MAX;
@@ -271,6 +274,10 @@ static int queue_payload(const struct valve_esb_payload *payload)
 	}
 
 	err = valve_esb_backend_write_payload(payload);
+	if(err == -ENOMEM)
+	{
+		tx_full_drops++;
+	}
 	if(err && err != -ENOMEM)
 	{
 		LOG_DBG("failed to queue ESB ACK payload: %d", err);
@@ -502,6 +509,25 @@ static void queue_latest_input(void)
 		return;
 	}
 
+#if CONFIG_IBEX_ESB_REPLACE_STALE_INPUT
+	if(feature_len == 0 && !write_included && queued_reports_included == 0)
+	{
+		if(atomic_get(&session_connected) == 0 || atomic_get(&bond_change_pending) != 0)
+		{
+			return;
+		}
+		err = valve_esb_backend_write_latest_payload(&payload);
+		if(err == 1)
+		{
+			tx_replaced++;
+		}
+		else if(err == -ENOMEM)
+		{
+			tx_full_drops++;
+		}
+		return;
+	}
+#endif
 	err = queue_payload(&payload);
 	if(err)
 	{
@@ -1144,6 +1170,7 @@ static void event_handler(const struct valve_esb_backend_event *event)
 		case VALVE_ESB_EVENT_RX_RECEIVED:
 			while(valve_esb_backend_read_rx_payload(&rx_payload) == 0)
 			{
+				rx_frames_total++;
 				bool accepted = false;
 				uint8_t frame_type;
 
@@ -1333,6 +1360,34 @@ int transport_esb_send(const struct controller_report *report)
 		return -ENOTCONN;
 	}
 	sequence = report_sequence++;
+#if CONFIG_IBEX_ESB_DEBUG_IN_QUAT
+	/* Diagnostics: per-second link rates in the quaternion fields.
+	 * w = frames from puck, x = ACK payloads delivered, y = reports built, z = stale reports replaced. */
+	struct controller_report dbg_report = *report;
+	{
+		static uint32_t win_start, rx0, tx0, rep0, drop0, reps;
+		static int16_t w, x, y, z;
+		uint32_t now = k_uptime_get_32();
+
+		reps++;
+		if(now - win_start >= 1000U)
+		{
+			uint32_t dt = now - win_start;
+
+			w = (int16_t)(((rx_frames_total - rx0) * 1000U) / dt);
+			x = (int16_t)(((replies_sent - tx0) * 1000U) / dt);
+			y = (int16_t)(((reps - rep0) * 1000U) / dt);
+			z = (int16_t)(((tx_replaced - drop0) * 1000U) / dt);
+			rx0 = rx_frames_total; tx0 = replies_sent; rep0 = reps; drop0 = tx_replaced;
+			win_start = now;
+		}
+		dbg_report.gyro_quat_w = w;
+		dbg_report.gyro_quat_x = x;
+		dbg_report.gyro_quat_y = y;
+		dbg_report.gyro_quat_z = z;
+	}
+	report = &dbg_report;
+#endif
 	build_input_payload(&input_42, ESB_REPORT_42_ID, ESB_REPORT_42_SIZE, sequence, report);
 	latest_input_42 = input_42;
 	latest_input_valid = true;

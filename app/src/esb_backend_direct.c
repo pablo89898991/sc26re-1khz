@@ -28,6 +28,7 @@ static uint8_t rx_dma[VALVE_ESB_BACKEND_MAX_PAYLOAD_SIZE + 2];
 static uint8_t tx_dma[VALVE_ESB_BACKEND_MAX_PAYLOAD_SIZE + 2];
 static struct valve_esb_payload rx_fifo[RX_FIFO_SIZE];
 static struct valve_esb_payload tx_fifo[TX_FIFO_SIZE];
+static bool tx_replaceable[TX_FIFO_SIZE];
 static K_THREAD_STACK_DEFINE(event_thread_stack, ESB_EVENT_THREAD_STACK_SIZE);
 static struct k_thread event_thread;
 static struct k_sem event_sem;
@@ -533,6 +534,51 @@ int valve_esb_backend_write_payload(const struct valve_esb_payload *payload)
 	}
 
 	tx_fifo[tx_head] = *payload;
+	tx_replaceable[tx_head] = false;
+	tx_head = (tx_head + 1) % TX_FIFO_SIZE;
+	tx_count++;
+	k_spin_unlock(&fifo_lock, key);
+	return 0;
+}
+
+/*
+ * Queue an input-only ACK payload. If the newest queued entry is also input-only
+ * and has not been handed to the radio yet, overwrite it so the next poll carries
+ * the freshest report instead of one queued a whole poll interval ago.
+ * Returns 1 when an entry was replaced.
+ */
+int valve_esb_backend_write_latest_payload(const struct valve_esb_payload *payload)
+{
+	k_spinlock_key_t key;
+	uint8_t newest;
+
+	if(!initialized)
+	{
+		return -EACCES;
+	}
+	if(!payload || payload->length == 0 || payload->length > VALVE_ESB_BACKEND_MAX_PAYLOAD_SIZE)
+	{
+		return -EINVAL;
+	}
+
+	key = k_spin_lock(&fifo_lock);
+	if(tx_count > 0)
+	{
+		newest = (tx_head + TX_FIFO_SIZE - 1) % TX_FIFO_SIZE;
+		if(tx_replaceable[newest] && (newest != tx_tail || !ack_payload_active))
+		{
+			tx_fifo[newest] = *payload;
+			k_spin_unlock(&fifo_lock, key);
+			return 1;
+		}
+	}
+	if(tx_count >= TX_FIFO_SIZE)
+	{
+		k_spin_unlock(&fifo_lock, key);
+		return -ENOMEM;
+	}
+	tx_fifo[tx_head] = *payload;
+	tx_replaceable[tx_head] = true;
 	tx_head = (tx_head + 1) % TX_FIFO_SIZE;
 	tx_count++;
 	k_spin_unlock(&fifo_lock, key);

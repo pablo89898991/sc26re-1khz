@@ -86,6 +86,7 @@ int valve_esb_backend_stop_rx(void);
 int valve_esb_backend_flush_rx(void);
 int valve_esb_backend_flush_tx(void);
 int valve_esb_backend_write_payload(const struct valve_esb_payload *payload);
+int valve_esb_backend_write_latest_payload(const struct valve_esb_payload *payload);
 int valve_esb_backend_read_rx_payload(struct valve_esb_payload *payload);
 void valve_esb_backend_disable(void);
 int valve_esb_backend_get_debug(struct valve_esb_backend_debug *debug);
