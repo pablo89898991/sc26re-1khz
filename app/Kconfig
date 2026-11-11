@@ -211,6 +211,20 @@ config IBEX_BATTERY
 	  Poll the MP2733 charger and the switched battery-voltage divider, then
 	  expose battery level over HID/BLE BAS.
 
+
+config IBEX_STICK_TOUCH_PRESS
+	int "Forced stick touch (press) threshold, 0 = use host setting"
+	range 0 16000
+	default 720
+	help
+	  Raw capacitive value the stick must exceed to report a touch.
+	  Higher = less sensitive (ignores hovering fingers). Stock 500.
+
+config IBEX_STICK_TOUCH_RELEASE
+	int "Forced stick touch release threshold, 0 = 80% of press"
+	range 0 16000
+	default 0
+
 endmenu
 
 source "Kconfig.zephyr"

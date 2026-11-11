@@ -124,6 +124,31 @@ static int16_t registry_setting_or_default(uint8_t id, int16_t fallback)
 	return ibex_setting_get(id, &value) ? value : fallback;
 }
 
+/*
+ * Stick capacitive touch thresholds. A non-zero Kconfig value forces it and
+ * ignores the host setting (olympus_click_press / _release).
+ */
+static int16_t stick_touch_press_threshold(void)
+{
+	if(CONFIG_IBEX_STICK_TOUCH_PRESS > 0)
+	{
+		return CONFIG_IBEX_STICK_TOUCH_PRESS;
+	}
+	return registry_setting_or_default(IBEX_SETTING_OLYMPUS_CLICK_PRESS, OLYMPUS_CLICK_THRESHOLD);
+}
+
+static int16_t stick_touch_release_threshold(void)
+{
+	if(CONFIG_IBEX_STICK_TOUCH_PRESS > 0)
+	{
+		return CONFIG_IBEX_STICK_TOUCH_RELEASE > 0
+		           ? CONFIG_IBEX_STICK_TOUCH_RELEASE
+		           : (int16_t)((CONFIG_IBEX_STICK_TOUCH_PRESS * 4) / 5);
+	}
+	return registry_setting_or_default(IBEX_SETTING_OLYMPUS_CLICK_RELEASE,
+	                                   OLYMPUS_CLICK_RELEASE_THRESHOLD);
+}
+
 static int32_t scaled_setting_or_default(uint8_t id, int16_t fallback)
 {
 	int32_t scaled = MAX((int32_t)registry_setting_or_default(id, fallback), 0) /
@@ -708,14 +733,12 @@ static void decode_pad(struct olympus_pad_state *state, const int16_t *x_samples
 	if(state->stick_touched)
 	{
 		state->stick_touched =
-		    click_value >= registry_setting_or_default(IBEX_SETTING_OLYMPUS_CLICK_RELEASE,
-		                                               OLYMPUS_CLICK_RELEASE_THRESHOLD);
+		    click_value >= stick_touch_release_threshold();
 	}
 	else
 	{
 		state->stick_touched =
-		    click_value >
-		    registry_setting_or_default(IBEX_SETTING_OLYMPUS_CLICK_PRESS, OLYMPUS_CLICK_THRESHOLD);
+		    click_value > stick_touch_press_threshold();
 	}
 
 	if(!pressure_click_enabled)
