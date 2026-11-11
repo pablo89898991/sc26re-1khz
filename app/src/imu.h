@@ -17,3 +17,5 @@ void imu_reset(void);
 bool imu_settings_read(const char *path, uint8_t *buf, size_t capacity, size_t *len);
 int imu_settings_stage(const char *path, const uint8_t *value, size_t len);
 int imu_settings_commit(const char *path);
+
+void imu_debug_note_scan_us(uint32_t us);

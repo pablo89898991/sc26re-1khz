@@ -126,6 +126,13 @@ config IBEX_IMU_DEBUG_IN_QUAT
 	  y = batch period (us), z = gyro frames per batch x100. Averages over
 	  256 batches. For measurement builds only.
 
+config IBEX_ANALOG_STAY_POWERED_ON_USB
+	bool "Keep the stick/trigger supply on between scans while on USB"
+	default y
+	depends on IBEX_ANALOG_INPUTS
+	help
+	  Skips the 200 us power-up settle per report over USB.
+
 config IBEX_USB_REPORT_POLL_US
 	int "Report loop poll period while USB is configured (us)"
 	default 1000

@@ -346,10 +346,10 @@
 		accel-odr = <LSM6DSVXXX_DT_ODR_HA01_AT_500Hz>;
 		gyro-range = <LSM6DSV16X_DT_FS_2000DPS>;
 		gyro-odr = <LSM6DSVXXX_DT_ODR_HA01_AT_1000Hz>;
-		fifo-watermark = <2>;
-		accel-fifo-batch-rate = <LSM6DSVXXX_DT_XL_BATCHED_AT_480Hz>;
+		fifo-watermark = <1>;
+		accel-fifo-batch-rate = <LSM6DSVXXX_DT_XL_BATCHED_AT_240Hz>;
 		gyro-fifo-batch-rate = <LSM6DSVXXX_DT_GY_BATCHED_AT_960Hz>;
-		sflp-odr = <LSM6DSVXXX_DT_SFLP_ODR_AT_480Hz>;
+		sflp-odr = <LSM6DSVXXX_DT_SFLP_ODR_AT_120Hz>;
 		sflp-fifo-enable = <LSM6DSVXXX_DT_SFLP_FIFO_GAME_ROTATION_GBIAS>;
 		int1-gpios = <&gpio0 7 GPIO_ACTIVE_HIGH>;
 		drdy-pin = <1>;

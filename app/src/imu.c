@@ -629,6 +629,18 @@ bool imu_ready(void)
 static uint16_t dbg_gyro_frames;
 static uint32_t dbg_acc_lat, dbg_acc_build, dbg_acc_period, dbg_acc_frames, dbg_n, dbg_last_cyc;
 static int16_t dbg_out[4];
+static uint32_t dbg_scan_acc, dbg_scan_n;
+static int16_t dbg_scan_avg;
+
+void imu_debug_note_scan_us(uint32_t us)
+{
+	dbg_scan_acc += us;
+	if(++dbg_scan_n == 256U)
+	{
+		dbg_scan_avg = (int16_t)(dbg_scan_acc / 256U);
+		dbg_scan_acc = dbg_scan_n = 0;
+	}
+}
 #endif
 
 static int decode_latest_three_axis_ts(const struct sensor_decoder_api *decoder,
@@ -891,13 +903,14 @@ static int build_imu_report_from_stream(const uint8_t *buf)
 			dbg_out[1] = (int16_t)(dbg_acc_build / 256U);
 			dbg_out[2] = (int16_t)(dbg_acc_period / 256U);
 			dbg_out[3] = (int16_t)(dbg_acc_frames * 100U / 256U);
+			(void)dbg_out[3];
 			dbg_acc_lat = dbg_acc_build = dbg_acc_period = dbg_acc_frames = dbg_n = 0;
 		}
 	}
 	report.gyro_quat_w = dbg_out[0];
 	report.gyro_quat_x = dbg_out[1];
 	report.gyro_quat_y = dbg_out[2];
-	report.gyro_quat_z = dbg_out[3];
+	report.gyro_quat_z = dbg_scan_avg; /* analog+buttons scan time in the report loop (us) */
 #endif
 	if(updated)
 	{

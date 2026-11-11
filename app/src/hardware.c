@@ -210,6 +210,9 @@ void hardware_read_report(struct controller_report *report)
 		LOG_WRN("IMU scan failed: %d", err);
 	}
 
+#if CONFIG_IBEX_IMU_DEBUG_IN_QUAT
+	uint32_t scan_t0 = k_cycle_get_32();
+#endif
 #if CONFIG_IBEX_ANALOG_INPUTS
 	if(analog_read_report(report) != 0)
 	{
@@ -219,6 +222,9 @@ void hardware_read_report(struct controller_report *report)
 
 #if CONFIG_IBEX_OLYMPUS
 	olympus_read_report(report);
+#endif
+#if CONFIG_IBEX_IMU_DEBUG_IN_QUAT
+	imu_debug_note_scan_us(k_cyc_to_us_floor32(k_cycle_get_32() - scan_t0));
 #endif
 }
 

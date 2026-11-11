@@ -11,6 +11,8 @@
 #include <zephyr/logging/log.h>
 #include <zephyr/sys/util.h>
 
+#include "controller.h"
+
 #include "analog.h"
 #include "calibration.h"
 #include "ibex_settings_registry.h"
@@ -273,11 +275,22 @@ int analog_init(void)
 	return 0;
 }
 
+/*
+ * Over USB the stick/trigger supply stays on between scans: power-cycling it costs a
+ * 200 us settle (plus tick rounding) on every report, which capped the 1 kHz loop.
+ * On battery the original per-scan gating is kept.
+ */
+static bool analog_powered;
+
 static int analog_inputs_take(void)
 {
 	int err;
 
 	k_mutex_lock(&analog_lock, K_FOREVER);
+	if(analog_powered)
+	{
+		return 0;
+	}
 	err = gpio_pin_set_dt(&analog_enable, 1);
 	if(err)
 	{
@@ -294,6 +307,13 @@ static int analog_inputs_put(void)
 
 	__ASSERT_NO_MSG(analog_lock.owner == k_current_get());
 
+	if(IS_ENABLED(CONFIG_IBEX_ANALOG_STAY_POWERED_ON_USB) && transport_usb_configured())
+	{
+		analog_powered = true;
+		k_mutex_unlock(&analog_lock);
+		return 0;
+	}
+	analog_powered = false;
 	err = gpio_pin_set_dt(&analog_enable, 0);
 	k_mutex_unlock(&analog_lock);
 	return err;
