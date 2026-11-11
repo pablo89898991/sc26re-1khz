@@ -917,7 +917,7 @@ static int build_imu_report_from_stream(const uint8_t *buf)
 		store_cached_imu_report(&report);
 		k_mutex_unlock(&imu_io_lock);
 #if CONFIG_IBEX_IMU_WAKES_REPORT
-		if(gyro_updated && transport_usb_configured())
+		if(gyro_updated && (transport_usb_configured() || transport_esb_connected()))
 		{
 			/* Let the report loop ship each fresh gyro sample immediately. */
 			hardware_signal_input_changed();
