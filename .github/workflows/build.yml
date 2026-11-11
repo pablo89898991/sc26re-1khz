@@ -1,0 +1,45 @@
+name: build
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  ibex:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install host tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends cmake ninja-build device-tree-compiler \
+            python3-pip python3-venv gperf ccache xz-utils file
+          pip install --user --break-system-packages west pyelftools pykwalify jsonschema packaging
+
+      - name: Cache Zephyr SDK and workspace
+        uses: actions/cache@v4
+        with:
+          path: |
+            sdk
+            zephyr/.west
+            zephyr/zephyr
+            zephyr/modules
+          key: zephyr-${{ hashFiles('manifests/**', 'Makefile') }}
+
+      - name: Build controller firmware (USB/ESB/BLE, 1 kHz)
+        run: make app-ibex
+
+      - name: Collect firmware
+        run: |
+          mkdir -p out
+          cp "$(ls -t zephyr/build-app-ibex/zephyr/IBEX_CUSTOM_*.fw | head -1)" out/SC26RE_1k.fw
+          printf 'CONFIG_IBEX_ESB_DEBUG_IN_QUAT=y\n' >> app/prj.conf
+          make app-ibex
+          cp "$(ls -t zephyr/build-app-ibex/zephyr/IBEX_CUSTOM_*.fw | head -1)" out/SC26RE_1k_puck_dbg.fw
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sc26re-1khz-firmware
+          path: out/*.fw
