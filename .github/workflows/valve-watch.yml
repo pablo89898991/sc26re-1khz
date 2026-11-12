@@ -1,0 +1,111 @@
+name: valve-watch
+
+# Daily: look for new Valve controller / Puck firmware (OpenSteamController/Ibex-Firmware).
+#  - controller: open an issue with a change report vs. the last ported version and
+#    a pull request that ports settings-table changes automatically
+#  - controller or Puck: publish Valve's new stock firmware patched by the SC2 Patcher engine
+on:
+  schedule:
+    - cron: '41 6 * * *'
+  workflow_dispatch:
+    inputs:
+      release_latest:
+        description: 'Publish a patched stock release for the current latest Valve firmware even if nothing is new'
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+
+concurrency:
+  group: valve-watch
+
+jobs:
+  watch:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: master
+          fetch-depth: 0
+
+      - name: Tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends binutils-arm-none-eabi jq
+          git config user.name "sc26re-1khz bot"
+          git config user.email "ci@users.noreply.github.com"
+
+      - name: Look for new Valve firmware
+        id: check
+        run: |
+          python3 tools/valve/valve_watch.py check --state valve/state.json --out /tmp/valve
+          NC=$(jq '.controller | length' /tmp/valve/new.json)
+          NP=$(jq '.puck | length' /tmp/valve/new.json)
+          echo "controller=$NC" >> "$GITHUB_OUTPUT"
+          echo "puck=$NP" >> "$GITHUB_OUTPUT"
+
+      - name: Report + settings PR for new controller firmware
+        if: steps.check.outputs.controller != '0'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          BASEFW=$(jq -r '.controller_baseline_file' /tmp/valve/new.json)
+          NEWFW=$(jq -r '.controller[-1].file' /tmp/valve/new.json)
+          VER=$(jq -r '.controller[-1].version' /tmp/valve/new.json)
+          CH=$(jq -r '.controller[-1].channels' /tmp/valve/new.json)
+          ALL=$(jq -r '[.controller[].version] | join(", ")' /tmp/valve/new.json)
+          gh label create valve-update --color 1f6feb --description "New Valve firmware" 2>/dev/null || true
+
+          BODY=/tmp/valve/issue.md
+          {
+            echo "Valve shipped new Steam Controller firmware: **${ALL}** (${CH})."
+            echo
+            echo "Automatic part: settings-table changes are ported in a pull request (linked below, if any)."
+            echo "Manual part: everything else in this report needs to be read from the binary and re-implemented in sc26re."
+            echo "When done, set \`controller_baseline\` / \`controller_baseline_unix\` in \`valve/state.json\` to \`${VER}\`."
+            echo
+            python3 tools/valve/valve_watch.py report "$BASEFW" "$NEWFW" \
+              --registry app/src/ibex_settings_registry.c --objdump arm-none-eabi-objdump \
+              --title "Changes ${VER} vs. ported baseline"
+          } > "$BODY"
+          head -c 64000 "$BODY" > "$BODY.cut"
+
+          BR="valve/${VER}-settings"
+          git switch -c "$BR"
+          python3 tools/valve/valve_watch.py apply-settings "$BASEFW" "$NEWFW" \
+            --registry app/src/ibex_settings_registry.c --header app/src/ibex_settings_registry.h | tee /tmp/valve/settings.txt
+          PRLINE=""
+          if ! git diff --quiet; then
+            git commit -qam "Port settings table from Valve firmware ${VER}" -m "$(cat /tmp/valve/settings.txt)"
+            git push -q -f origin "$BR"
+            if PR=$(gh pr create --base master --head "$BR" --title "Valve ${VER}: settings table" \
+                 --body "Automatic port of Valve's settings-table changes.$(printf '\n\n```\n%s\n```' "$(cat /tmp/valve/settings.txt)")"); then
+              PRLINE="Settings PR: ${PR}"
+            else
+              PRLINE="Settings branch: https://github.com/${GITHUB_REPOSITORY}/compare/master...${BR} (allow Actions to create PRs in Settings → Actions → General to get a PR automatically)"
+            fi
+          else
+            PRLINE="Settings table: nothing to port automatically."
+          fi
+          git switch -q master
+          { echo "$PRLINE"; echo; cat "$BODY.cut"; } > "$BODY.final"
+          gh issue create --title "Valve controller firmware ${VER}" --label valve-update --body-file "$BODY.final"
+
+      - name: Patched stock release
+        if: steps.check.outputs.controller != '0' || steps.check.outputs.puck != '0' || inputs.release_latest
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash tools/valve/release_stock.sh /tmp/stock
+
+      - name: Remember processed versions
+        if: steps.check.outputs.controller != '0' || steps.check.outputs.puck != '0'
+        run: |
+          python3 tools/valve/valve_watch.py mark --state valve/state.json \
+            $(jq -r '[.controller[].version, .puck[].version] | join(" ")' /tmp/valve/new.json)
+          git add valve/state.json
+          git commit -qm "valve-watch: processed $(jq -r '[.controller[].version, .puck[].version] | join(", ")' /tmp/valve/new.json)"
+          git push -q origin HEAD:master
