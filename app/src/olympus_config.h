@@ -138,11 +138,11 @@ struct olympus_u16_config
 
 static const struct olympus_global_config olympus_active_config = {
 	.enable = 1,
-	.frame_period_ms_le = OLYMPUS_LE16(4),
+	.frame_period_ms_le = OLYMPUS_LE16(CONFIG_IBEX_OLYMPUS_FRAME_PERIOD_MS),
 	.persist = 0,
 	.restore = 0,
 	.power_on_enable = 1,
-	.low_power_mode = 1,
+	.low_power_mode = IS_ENABLED(CONFIG_IBEX_OLYMPUS_LOW_POWER) ? 1 : 0,
 };
 
 static const struct olympus_group_config olympus_group_configs[] = {

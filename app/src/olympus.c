@@ -18,6 +18,9 @@
 #include "haptics.h"
 #include "ibex_settings_registry.h"
 #include "olympus.h"
+#if CONFIG_IBEX_OLYMPUS_I2C_FREQ_KHZ != 400
+#include <hal/nrf_twim.h>
+#endif
 #include "olympus_config.h"
 #include "puck_interface.h"
 
@@ -966,6 +969,35 @@ static int olympus_read_frame(void)
 	uint16_t payload_size;
 	int err;
 
+#if CONFIG_IBEX_OLYMPUS_SINGLE_READ
+	/*
+	 * Each read restarts at the frame header, so fetch header + the usual sensor
+	 * payload in one transfer (81 bytes) instead of 5 + 81. Falls back to a
+	 * second, exact-size read for any other frame type.
+	 */
+	err = i2c_read_dt(&olympus_i2c, frame, 5 + OLYMPUS_SENSOR_PAYLOAD_SIZE);
+	if(err)
+	{
+		return err;
+	}
+	payload_size = sys_get_le16(&frame[3]);
+	if(frame[2] != 0x0e || payload_size == 0xa5a5 || payload_size > OLYMPUS_MAX_PAYLOAD_SIZE)
+	{
+		return -EBADMSG;
+	}
+	if(payload_size == OLYMPUS_SENSOR_PAYLOAD_SIZE)
+	{
+		olympus_process_sensor_payload(&frame[5]);
+		return 0;
+	}
+	if(payload_size <= OLYMPUS_SENSOR_PAYLOAD_SIZE)
+	{
+		return 0;
+	}
+	err = i2c_read_dt(&olympus_i2c, frame, payload_size + 5);
+	return err;
+#endif
+
 	err = i2c_read_dt(&olympus_i2c, header, sizeof(header));
 	if(err)
 	{
@@ -1098,6 +1130,15 @@ int olympus_init(void)
 		return err;
 	}
 
+#if CONFIG_IBEX_OLYMPUS_I2C_FREQ_KHZ != 400
+	{
+		/* Undocumented on nRF52833: FREQUENCY = kHz / 16000 * 2^32. Bus idle here. */
+		NRF_TWIM_Type *twim = (NRF_TWIM_Type *)DT_REG_ADDR(DT_BUS(OLYMPUS_NODE));
+		twim->FREQUENCY =
+		    (uint32_t)(((uint64_t)CONFIG_IBEX_OLYMPUS_I2C_FREQ_KHZ << 32) / 16000U);
+		LOG_INF("Olympus I2C bus forced to %d kHz", CONFIG_IBEX_OLYMPUS_I2C_FREQ_KHZ);
+	}
+#endif
 	k_thread_create(&olympus_thread, olympus_thread_stack,
 	                K_THREAD_STACK_SIZEOF(olympus_thread_stack), olympus_thread_entry, NULL, NULL,
 	                NULL, 9, 0, K_NO_WAIT);

@@ -266,6 +266,25 @@ config IBEX_LED_USER_BRIGHTNESS
 	bool "Scale the RGBW LED by Steam's LED brightness setting (45)"
 	default y
 
+
+config IBEX_OLYMPUS_FRAME_PERIOD_MS
+	int "Trackpad (Olympus) frame period in ms (stock 4 = 250 Hz)"
+	range 1 20
+	default 4
+
+config IBEX_OLYMPUS_LOW_POWER
+	bool "Let the trackpad controller drop to low-power scanning when idle"
+	default y
+
+config IBEX_OLYMPUS_SINGLE_READ
+	bool "Read trackpad header + payload in one I2C transfer"
+	default y
+
+config IBEX_OLYMPUS_I2C_FREQ_KHZ
+	int "Force the trackpad I2C bus (i2c1) frequency in kHz (400 = DT default)"
+	range 100 1000
+	default 400
+
 endmenu
 
 source "Kconfig.zephyr"
