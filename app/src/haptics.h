@@ -104,3 +104,4 @@ int haptics_backend_tone(uint32_t frequency_hz, uint32_t duration_ms);
 
 /* Route trigger-driven haptics (Steam trigger effects) to the grip actuators. */
 void haptics_trigger_update(int16_t left, int16_t right);
+void haptics_gyro_update(int16_t gx, int16_t gy, int16_t gz);

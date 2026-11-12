@@ -225,6 +225,8 @@ void hardware_read_report(struct controller_report *report)
 	report->buttons = hardware_read_buttons();
 
 	int err = imu_read_report(report);
+
+	haptics_gyro_update(report->gyro_x, report->gyro_y, report->gyro_z);
 	if(err && imu_scan_error_logs < 8)
 	{
 		imu_scan_error_logs++;

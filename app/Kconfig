@@ -233,6 +233,15 @@ config IBEX_HAPTICS_TRIGGERS_ON_GRIPS
 	  same side is not touched, haptic pulses/commands aimed at that side's trackpad
 	  actuator are sent to the grip actuator of that side instead.
 
+config IBEX_HAPTICS_GYRO_ON_GRIPS
+	bool "Play Steam gyro haptics on the grip actuators instead of the trackpads"
+	default y
+	help
+	  While the controller is being turned (> ~20 dps, and 150 ms after) and the
+	  trackpad on a side is either not touched or the finger rests still on it
+	  (touch-to-enable gyro), haptics aimed at that trackpad go to the grip on
+	  the same side.
+
 config IBEX_GRIP_TOUCH_PERCENT
 	int "Default grip touch sensitivity (setting 34), threshold = 225 + 9 * value"
 	range 25 400

@@ -568,13 +568,42 @@ static uint8_t haptics_command_channels(uint8_t side)
 	}
 }
 
+#if CONFIG_IBEX_HAPTICS_TRIGGERS_ON_GRIPS || CONFIG_IBEX_HAPTICS_GYRO_ON_GRIPS
+static atomic_t trackpad_touched[2];
+#endif
 #if CONFIG_IBEX_HAPTICS_TRIGGERS_ON_GRIPS
 /* A trigger counts as "in use" while pulled past ~3% and for a short time after release. */
 #define TRIGGER_HAPTIC_ACTIVE_LEVEL (INT16_MAX / 32)
 #define TRIGGER_HAPTIC_HOLD_MS 150
 static atomic_t trigger_haptic_until_ms[2];
-static atomic_t trackpad_touched[2];
 #endif
+
+#if CONFIG_IBEX_HAPTICS_GYRO_ON_GRIPS
+/* Report units: 1 LSB = 0.061 dps. ~20 dps counts as the controller being turned. */
+#define GYRO_HAPTIC_ACTIVE_LSB 328
+#define GYRO_HAPTIC_HOLD_MS 150
+/* Finger resting on a pad (e.g. touch-to-enable gyro) = no movement for this long. */
+#define PAD_STILL_MS 100
+#define PAD_STILL_MOVE 600
+static atomic_t gyro_haptic_until_ms;
+static atomic_t pad_moved_ms[2];
+static int16_t pad_last_x[2];
+static int16_t pad_last_y[2];
+#endif
+
+void haptics_gyro_update(int16_t gx, int16_t gy, int16_t gz)
+{
+#if CONFIG_IBEX_HAPTICS_GYRO_ON_GRIPS
+	if(MAX(MAX(abs(gx), abs(gy)), abs(gz)) > GYRO_HAPTIC_ACTIVE_LSB)
+	{
+		atomic_set(&gyro_haptic_until_ms, (int32_t)k_uptime_get_32() + GYRO_HAPTIC_HOLD_MS);
+	}
+#else
+	ARG_UNUSED(gx);
+	ARG_UNUSED(gy);
+	ARG_UNUSED(gz);
+#endif
+}
 
 void haptics_trigger_update(int16_t left, int16_t right)
 {
@@ -614,6 +643,27 @@ static uint8_t haptics_redirect_trigger_channels(uint8_t channels)
 		   atomic_get(&trackpad_touched[i]) == 0)
 		{
 			channels = (channels & ~pad[i]) | grip[i];
+		}
+	}
+#endif
+#if CONFIG_IBEX_HAPTICS_GYRO_ON_GRIPS
+	{
+		static const uint8_t gpad[2] = { HAPTICS_CHANNEL_LEFT_0, HAPTICS_CHANNEL_RIGHT_0 };
+		static const uint8_t ggrip[2] = { HAPTICS_CHANNEL_LEFT_1, HAPTICS_CHANNEL_RIGHT_1 };
+		int32_t gnow = (int32_t)k_uptime_get_32();
+
+		if((int32_t)(atomic_get(&gyro_haptic_until_ms) - gnow) > 0)
+		{
+			for(int i = 0; i < 2; ++i)
+			{
+				bool pad_idle = atomic_get(&trackpad_touched[i]) == 0 ||
+				                gnow - (int32_t)atomic_get(&pad_moved_ms[i]) >= PAD_STILL_MS;
+
+				if((channels & gpad[i]) != 0 && pad_idle)
+				{
+					channels = (channels & ~gpad[i]) | ggrip[i];
+				}
+			}
 		}
 	}
 #endif
@@ -812,8 +862,24 @@ void haptics_touchpad_update(bool right, bool pressure_active, bool touch_active
 	int16_t increment = 5500;
 	int16_t click_pressure = 40;
 
-#if CONFIG_IBEX_HAPTICS_TRIGGERS_ON_GRIPS
-	atomic_set(&trackpad_touched[right ? 1 : 0], touch_active ? 1 : 0);
+#if CONFIG_IBEX_HAPTICS_TRIGGERS_ON_GRIPS || CONFIG_IBEX_HAPTICS_GYRO_ON_GRIPS
+	{
+		int i = right ? 1 : 0;
+		bool was = atomic_get(&trackpad_touched[i]) != 0;
+
+		atomic_set(&trackpad_touched[i], touch_active ? 1 : 0);
+#if CONFIG_IBEX_HAPTICS_GYRO_ON_GRIPS
+		if(touch_active && (!was || abs((int32_t)x - pad_last_x[i]) > PAD_STILL_MOVE ||
+		                    abs((int32_t)y - pad_last_y[i]) > PAD_STILL_MOVE))
+		{
+			pad_last_x[i] = x;
+			pad_last_y[i] = y;
+			atomic_set(&pad_moved_ms[i], (int32_t)k_uptime_get_32());
+		}
+#else
+		ARG_UNUSED(was);
+#endif
+	}
 #endif
 	(void)ibex_setting_get(SETTING_HAPTICS_ENABLED, &enabled);
 	(void)ibex_setting_get(SETTING_LIZARD_MODE, &lizard_mode);
