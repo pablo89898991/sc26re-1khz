@@ -228,16 +228,40 @@ void hardware_read_report(struct controller_report *report)
 #endif
 }
 
+/*
+ * Fast links: wait until a fixed-period deadline instead of "period after the
+ * scan finished", so the loop keeps ~1 kHz even when no gyro sample wakes it
+ * (IMU switched off by the host). A wake-up from the IMU/trackpad still
+ * returns early.
+ */
+static void wait_until_deadline(uint32_t period_us)
+{
+	static k_ticks_t deadline;
+	k_ticks_t period = MAX(k_us_to_ticks_ceil64(period_us), 1);
+	k_ticks_t now = k_uptime_ticks();
+
+	if(deadline == 0 || deadline <= now || deadline - now > 2 * period)
+	{
+		deadline = now + period;
+	}
+	(void)k_sem_take(&input_changed, K_TIMEOUT_ABS_TICKS(deadline));
+	now = k_uptime_ticks();
+	if(now >= deadline)
+	{
+		deadline += period;
+	}
+}
+
 void hardware_wait_for_change(void)
 {
 	if(transport_usb_configured())
 	{
-		(void)k_sem_take(&input_changed, K_USEC(CONFIG_IBEX_USB_REPORT_POLL_US));
+		wait_until_deadline(CONFIG_IBEX_USB_REPORT_POLL_US);
 		return;
 	}
 	if(transport_esb_connected())
 	{
-		(void)k_sem_take(&input_changed, K_USEC(CONFIG_IBEX_ESB_REPORT_POLL_US));
+		wait_until_deadline(CONFIG_IBEX_ESB_REPORT_POLL_US);
 		return;
 	}
 	(void)k_sem_take(&input_changed, K_MSEC(HARDWARE_REPORT_POLL_MS));
