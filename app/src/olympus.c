@@ -1181,6 +1181,12 @@ static void olympus_debug_quat(struct controller_report *report)
 	report->gyro_quat_x = x;
 	report->gyro_quat_y = y;
 	report->gyro_quat_z = z;
+#elif CONFIG_IBEX_CAPSENSE_DEBUG_IN_QUAT
+	/* w/x = raw stick-touch value left/right, y/z = grip value left/right */
+	report->gyro_quat_w = (int16_t)CLAMP(olympus_debug.left.raw_click, INT16_MIN, INT16_MAX);
+	report->gyro_quat_x = (int16_t)CLAMP(olympus_debug.right.raw_click, INT16_MIN, INT16_MAX);
+	report->gyro_quat_y = (int16_t)CLAMP(olympus_debug.left.grip_value, INT16_MIN, INT16_MAX);
+	report->gyro_quat_z = (int16_t)CLAMP(olympus_debug.right.grip_value, INT16_MIN, INT16_MAX);
 #else
 	ARG_UNUSED(report);
 #endif

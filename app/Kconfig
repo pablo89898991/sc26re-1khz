@@ -307,6 +307,11 @@ config IBEX_OLYMPUS_NOISE_APERTURE
 	help
 	  Experimental: shorter noise measurements shorten every trackpad frame.
 
+
+config IBEX_CAPSENSE_DEBUG_IN_QUAT
+	bool "Raw stick-touch and grip values in the quaternion fields (diagnostics)"
+	default n
+
 endmenu
 
 source "Kconfig.zephyr"
