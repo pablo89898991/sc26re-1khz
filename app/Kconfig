@@ -285,6 +285,11 @@ config IBEX_OLYMPUS_I2C_FREQ_KHZ
 	range 100 1000
 	default 400
 
+
+config IBEX_OLYMPUS_DEBUG_IN_QUAT
+	bool "Trackpad controller frame rates in the quaternion fields (diagnostics)"
+	default n
+
 endmenu
 
 source "Kconfig.zephyr"

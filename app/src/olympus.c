@@ -962,6 +962,10 @@ static void olympus_invalidate_report(void)
 	hardware_signal_input_changed();
 }
 
+#if CONFIG_IBEX_OLYMPUS_DEBUG_IN_QUAT
+static atomic_t dbg_frames, dbg_sensor, dbg_errors, dbg_wakes;
+#endif
+
 static int olympus_read_frame(void)
 {
 	uint8_t header[5];
@@ -987,6 +991,9 @@ static int olympus_read_frame(void)
 	}
 	if(payload_size == OLYMPUS_SENSOR_PAYLOAD_SIZE)
 	{
+#if CONFIG_IBEX_OLYMPUS_DEBUG_IN_QUAT
+		atomic_inc(&dbg_sensor);
+#endif
 		olympus_process_sensor_payload(&frame[5]);
 		return 0;
 	}
@@ -1041,11 +1048,17 @@ static void olympus_thread_entry(void *unused1, void *unused2, void *unused3)
 	for(;;)
 	{
 		(void)k_sem_take(&olympus_irq_sem, K_MSEC(20));
+#if CONFIG_IBEX_OLYMPUS_DEBUG_IN_QUAT
+		atomic_inc(&dbg_wakes);
+#endif
 		while(gpio_pin_get_dt(&olympus_irq) > 0)
 		{
 			k_mutex_lock(&olympus_io_mutex, K_FOREVER);
 			int err = olympus_read_frame();
 			k_mutex_unlock(&olympus_io_mutex);
+#if CONFIG_IBEX_OLYMPUS_DEBUG_IN_QUAT
+			atomic_inc(err ? &dbg_errors : &dbg_frames);
+#endif
 			if(err)
 			{
 				LOG_DBG("frame read failed: %d", err);
@@ -1148,8 +1161,34 @@ int olympus_init(void)
 	return 0;
 }
 
+static void olympus_debug_quat(struct controller_report *report)
+{
+#if CONFIG_IBEX_OLYMPUS_DEBUG_IN_QUAT
+	/* w = sensor frames/s, x = all frames/s, y = thread wakes/s, z = read errors/s */
+	static int64_t win;
+	static int16_t w, x, y, z;
+	int64_t now = k_uptime_get();
+
+	if(now - win >= 1000)
+	{
+		w = (int16_t)atomic_set(&dbg_sensor, 0);
+		x = (int16_t)atomic_set(&dbg_frames, 0);
+		y = (int16_t)atomic_set(&dbg_wakes, 0);
+		z = (int16_t)atomic_set(&dbg_errors, 0);
+		win = now;
+	}
+	report->gyro_quat_w = w;
+	report->gyro_quat_x = x;
+	report->gyro_quat_y = y;
+	report->gyro_quat_z = z;
+#else
+	ARG_UNUSED(report);
+#endif
+}
+
 void olympus_read_report(struct controller_report *report)
 {
+	olympus_debug_quat(report);
 	if(atomic_get(&olympus_ready) == 0)
 	{
 		report->touchpad_left_x = 0;
