@@ -186,7 +186,7 @@ function hapIngest(q,t){
   const fl=[f&1?"TL":"",f&2?"TR":"",f&4?"PL":"",f&8?"PR":"",f&16?"G":""].filter(Boolean).join(" ");
   const h=x=>x.toString(16).padStart(2,"0");
   hapLines.push(`${((t-hapT0)/1000).toFixed(3).padStart(8)}s #${seq} id=0x${h(id)} ${(HAPN[id]||"").padEnd(9)} side=${side} data=${h(d1)} ${h(d2)} ${h(d3)}  [${fl}]`);
-  if(hapLines.length>400) hapLines.splice(0,hapLines.length-400);
+  if(hapLines.length>5000) hapLines.splice(0,hapLines.length-5000);
   hapDirty=true;
 }
 let hapDirty=false;

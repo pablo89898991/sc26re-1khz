@@ -242,6 +242,21 @@ config IBEX_HAPTICS_GYRO_ON_GRIPS
 	  (touch-to-enable gyro), haptics aimed at that trackpad go to the grip on
 	  the same side.
 
+config IBEX_HAPTICS_GRIP_TICK_HZ
+	int "Tick/click on grip actuators: sine burst frequency, 0 = trackpad waveform"
+	range 0 1000
+	default 0
+
+config IBEX_HAPTICS_GRIP_TICK_MS
+	int "Tick/click on grip actuators: burst length in ms"
+	range 2 60
+	default 12
+
+config IBEX_HAPTICS_GRIP_TICK_GAIN_DB
+	int "Tick/click on grip actuators: gain offset in dB"
+	range -24 24
+	default 0
+
 config IBEX_HAPTICS_DEBUG_IN_QUAT
 	bool "Diagnostics: report received haptic output reports in the quaternion fields"
 	help

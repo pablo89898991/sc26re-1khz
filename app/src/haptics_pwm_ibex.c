@@ -1799,8 +1799,76 @@ int haptics_backend_init(void)
 	return 0;
 }
 
+#if CONFIG_IBEX_HAPTICS_GRIP_TICK_HZ > 0
+/*
+ * Grip actuators are big low-frequency LRAs; the 4 kHz trackpad tick/click waveforms
+ * sound thin and buzzy on them. Use a Hann-windowed sine burst rendered at the I2S rate.
+ */
+#define GRIP_TICK_RATE_HZ IBEX_HAPTICS_SECONDARY_SAMPLE_RATE_HZ
+#define GRIP_TICK_SAMPLES ((GRIP_TICK_RATE_HZ * CONFIG_IBEX_HAPTICS_GRIP_TICK_MS) / 1000U)
+static int16_t grip_tick_waveform[GRIP_TICK_SAMPLES];
+static bool grip_tick_ready;
+
+static void grip_tick_build(void)
+{
+	for(uint32_t i = 0; i < GRIP_TICK_SAMPLES; ++i)
+	{
+		float t = (float)i / (float)GRIP_TICK_RATE_HZ;
+		float w = 0.5f - 0.5f * cosf(IBEX_HAPTICS_TWO_PI * (float)i / (float)(GRIP_TICK_SAMPLES - 1));
+		float v = sinf(IBEX_HAPTICS_TWO_PI * (float)CONFIG_IBEX_HAPTICS_GRIP_TICK_HZ * t) * w;
+
+		grip_tick_waveform[i] = (int16_t)(v * 32000.0f);
+	}
+	grip_tick_ready = true;
+}
+
+static int submit_grip_tick(uint8_t grip_channels, int8_t gain_db,
+                            enum ibex_haptics_effect_slot slot)
+{
+	if(!grip_tick_ready)
+	{
+		grip_tick_build();
+	}
+
+	struct waveform_context context = {
+		.waveform = grip_tick_waveform,
+		.waveform_len = GRIP_TICK_SAMPLES,
+		.waveform_format = HAPTICS_WAVEFORM_SAMPLE_FORMAT_S16,
+		.waveform_rate_hz = GRIP_TICK_RATE_HZ,
+		.gain_db = (int8_t)CLAMP(gain_db + CONFIG_IBEX_HAPTICS_GRIP_TICK_GAIN_DB, -60, 24),
+	};
+
+	return submit_channels_start(grip_channels, slot, apply_waveform, &context,
+	                             GRIP_TICK_SAMPLES);
+}
+#endif
+
 int haptics_backend_effect(const struct haptics_effect *effect)
 {
+#if CONFIG_IBEX_HAPTICS_GRIP_TICK_HZ > 0
+	if(effect->type == HAPTICS_EFFECT_TICK || effect->type == HAPTICS_EFFECT_PULSE_ONE_SHOT ||
+	   effect->type == HAPTICS_EFFECT_BUTTON_PULSE || effect->type == HAPTICS_EFFECT_CLICK ||
+	   effect->type == HAPTICS_EFFECT_PULSE_CLICK)
+	{
+		uint8_t grip = effect->channels & (HAPTICS_CHANNEL_LEFT_1 | HAPTICS_CHANNEL_RIGHT_1);
+
+		if(grip != 0)
+		{
+			bool click = effect->type == HAPTICS_EFFECT_CLICK ||
+			             effect->type == HAPTICS_EFFECT_PULSE_CLICK;
+			struct haptics_effect rest = *effect;
+
+			(void)submit_grip_tick(grip, effect->gain_db,
+			                       click ? IBEX_HAPTICS_SLOT_CLICK : IBEX_HAPTICS_SLOT_TICK);
+			rest.channels &= (uint8_t)~grip;
+			if(rest.channels == 0)
+			{
+				return 0;
+			}
+			return haptics_backend_effect(&rest);
+		}
+	}
+#endif
 	switch(effect->type)
 	{
 		case HAPTICS_EFFECT_STOP:
