@@ -276,11 +276,11 @@ config IBEX_OLYMPUS_FRAME_PERIOD_MS
 	  with the stock measurement profile, so 1 means "as fast as it can".
 
 config IBEX_OLYMPUS_LOW_POWER
-	bool "Let the trackpad controller drop to low-power scanning when idle"
-	default n
+	bool "Trackpad controller low_power_mode flag (stock 1)"
+	default y
 	help
-	  When enabled the controller scans at ~100 Hz until touched, adding up
-	  to ~10 ms to the first contact.
+	  Measured: with 1 the controller runs ~100 frames/s idle and ~305 touched;
+	  with 0 only ~43 idle and ~273 touched. Keep the stock value.
 
 config IBEX_OLYMPUS_SINGLE_READ
 	bool "Read trackpad header + payload in one I2C transfer"
@@ -289,7 +289,10 @@ config IBEX_OLYMPUS_SINGLE_READ
 config IBEX_OLYMPUS_I2C_FREQ_KHZ
 	int "Force the trackpad I2C bus (i2c1) frequency in kHz (400 = DT default)"
 	range 100 1000
-	default 400
+	default 800
+	help
+	  800 is undocumented on nRF52833 TWIM but ran error-free on hardware and
+	  raised touched trackpad frames from ~273 to ~305 per second.
 
 
 config IBEX_OLYMPUS_DEBUG_IN_QUAT
