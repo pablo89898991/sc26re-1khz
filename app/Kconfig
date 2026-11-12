@@ -323,6 +323,12 @@ config IBEX_OLYMPUS_THREAD_PRIORITY
 	range 1 14
 	default 9
 
+
+config IBEX_BUTTON_DEBOUNCE_MS
+	int "Button debounce lock-out in ms (OFW 6ACFF323 uses 16, 0 = off)"
+	range 0 50
+	default 16
+
 endmenu
 
 source "Kconfig.zephyr"

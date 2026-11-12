@@ -106,17 +106,38 @@ static void button_changed(const struct device *port, struct gpio_callback *call
 	hardware_signal_input_changed();
 }
 
+/*
+ * Per-button debounce, as in OFW 6ACFF323 (its "buttons" driver: a change is
+ * taken immediately, then the pin is frozen for 16 ms). Without it, contact
+ * bounce on release shows up as repeated presses — the "B button repeated
+ * press" fix — and the 1 kHz scan here makes bounce far more visible than the
+ * stock 250 Hz loop did.
+ */
 uint32_t hardware_read_buttons(void)
 {
-	uint32_t pressed = 0;
+	static uint32_t stable;
+	static int64_t locked_until[ARRAY_SIZE(buttons)];
+	int64_t now = k_uptime_get();
+	uint32_t pressed = stable;
 
 	for(size_t i = 0; i < ARRAY_SIZE(buttons); ++i)
 	{
-		if(gpio_pin_get_dt(&buttons[i].gpio) > 0)
+		uint32_t mask = buttons[i].report_mask;
+		bool raw = gpio_pin_get_dt(&buttons[i].gpio) > 0;
+
+		if(CONFIG_IBEX_BUTTON_DEBOUNCE_MS == 0)
 		{
-			pressed |= buttons[i].report_mask;
+			pressed = raw ? (pressed | mask) : (pressed & ~mask);
+			continue;
 		}
+		if(now < locked_until[i] || raw == ((stable & mask) != 0U))
+		{
+			continue;
+		}
+		pressed = raw ? (pressed | mask) : (pressed & ~mask);
+		locked_until[i] = now + CONFIG_IBEX_BUTTON_DEBOUNCE_MS;
 	}
+	stable = pressed;
 
 	return pressed;
 }
