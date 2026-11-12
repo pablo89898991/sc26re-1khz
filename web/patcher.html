@@ -254,6 +254,11 @@
   <div id="log"></div>
 
 
+  <div class="panel" style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+    <b>Flash the patched controller firmware with</b>
+    <a class="btn" href="https://opensteamcontroller.github.io/" target="_blank" rel="noopener" style="text-decoration:none">Ibex Web Utilities &#8599;</a>
+    <span class="hint">opensteamcontroller.github.io &middot; Chrome/Edge (WebHID). The Puck is flashed with <code>flash.py</code> (see section 4).</span>
+  </div>
   <div class="panel" id="puckPanel">
     <h2>4 &middot; Puck (Proteus) firmware <span class="tag rec">optional</span></h2>
     <div id="pdrop">
@@ -876,7 +881,7 @@ function doPatch(){
   const blob=new Blob([r.out],{type:"application/octet-stream"});
   const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download=outName;
   document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove();},1500);
-  log(`\n✓ Downloaded ${outName} — flash it with the Ibex flashing page. The Inspect table above now shows the new file.`,"ok");
+  log(`\n✓ Downloaded ${outName} — flash it with Ibex Web Utilities (opensteamcontroller.github.io). The Inspect table above now shows the new file.`,"ok");
   renderInspect(r.out);
 }
 
