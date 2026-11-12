@@ -1799,6 +1799,61 @@ static int handle_haptic_pcm_stereo(const uint8_t *data, size_t len, bool log)
 	return haptics_submit_pcm_stereo(&data[1], &data[32], sample_count);
 }
 
+#if CONFIG_IBEX_HAPTICS_DEBUG_IN_QUAT
+#define HDBG_RING 16
+struct hdbg_entry { uint16_t seq; uint8_t id, side, d1, d2, d3, flags; };
+static struct hdbg_entry hdbg_ring[HDBG_RING];
+static uint16_t hdbg_seq;
+static uint32_t hdbg_out;
+static struct k_spinlock hdbg_lock;
+
+static uint8_t hdbg_flags(void)
+{
+	uint8_t f = 0;
+#if CONFIG_IBEX_HAPTICS_TRIGGERS_ON_GRIPS || CONFIG_IBEX_HAPTICS_GYRO_ON_GRIPS
+	int32_t now = (int32_t)k_uptime_get_32();
+
+	f |= atomic_get(&trackpad_touched[0]) ? BIT(2) : 0;
+	f |= atomic_get(&trackpad_touched[1]) ? BIT(3) : 0;
+#if CONFIG_IBEX_HAPTICS_TRIGGERS_ON_GRIPS
+	f |= (int32_t)(atomic_get(&trigger_haptic_until_ms[0]) - now) > 0 ? BIT(0) : 0;
+	f |= (int32_t)(atomic_get(&trigger_haptic_until_ms[1]) - now) > 0 ? BIT(1) : 0;
+#endif
+#if CONFIG_IBEX_HAPTICS_GYRO_ON_GRIPS
+	f |= (int32_t)(atomic_get(&gyro_haptic_until_ms) - now) > 0 ? BIT(4) : 0;
+#endif
+#endif
+	return f;
+}
+
+static void hdbg_record(uint8_t id, const uint8_t *data, size_t len)
+{
+	k_spinlock_key_t key = k_spin_lock(&hdbg_lock);
+	struct hdbg_entry *e = &hdbg_ring[hdbg_seq % HDBG_RING];
+
+	e->seq = ++hdbg_seq;
+	e->id = id;
+	e->side = len > 0 ? data[0] : 0xff;
+	e->d1 = len > 1 ? data[1] : 0;
+	e->d2 = len > 2 ? data[2] : 0;
+	e->d3 = len > 3 ? data[3] : 0;
+	e->flags = hdbg_flags();
+	k_spin_unlock(&hdbg_lock, key);
+}
+
+void haptics_debug_quat(struct controller_report *report)
+{
+	k_spinlock_key_t key = k_spin_lock(&hdbg_lock);
+	const struct hdbg_entry *e = &hdbg_ring[hdbg_out++ % HDBG_RING];
+
+	report->gyro_quat_w = (int16_t)e->seq;
+	report->gyro_quat_x = (int16_t)(e->id | (e->side << 8));
+	report->gyro_quat_y = (int16_t)(e->d1 | (e->d2 << 8));
+	report->gyro_quat_z = (int16_t)(e->d3 | (e->flags << 8));
+	k_spin_unlock(&hdbg_lock, key);
+}
+#endif
+
 int haptics_handle_output_report(uint8_t report_id, const uint8_t *data, size_t len)
 {
 	bool log;
@@ -1815,6 +1870,9 @@ int haptics_handle_output_report(uint8_t report_id, const uint8_t *data, size_t 
 	}
 	atomic_inc(&haptics_reports_seen);
 	atomic_set(&haptics_last_report_id, report_id);
+#if CONFIG_IBEX_HAPTICS_DEBUG_IN_QUAT
+	hdbg_record(report_id, data, len);
+#endif
 	log = haptics_take_report_log_slot();
 	if(log)
 	{

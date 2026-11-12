@@ -121,12 +121,17 @@
         <option value="tp">Trackpad controller counters — *_tp*_dbg firmware</option>
         <option value="tpt">Trackpad timing µs — *_tptiming_dbg firmware</option>
         <option value="puck">Puck link counters — *_puck_dbg firmware</option>
+        <option value="hap">Haptic reports log — *_haptics_dbg firmware</option>
       </select></div>
     <div class="grid" id="capGrid" style="display:none">
       <div class="stat"><div class="k">L stick touch raw</div><div class="v" id="cLs">—</div><div class="u">touch above 720 · release below 576</div><div class="cbar"><b id="bLs"></b><u style="left:72%"></u></div></div>
       <div class="stat"><div class="k">R stick touch raw</div><div class="v" id="cRs">—</div><div class="u">touch above 720 · release below 576</div><div class="cbar"><b id="bRs"></b><u style="left:72%"></u></div></div>
       <div class="stat"><div class="k">L grip value</div><div class="v" id="cLg">—</div><div class="u">peak <span id="pLg">—</span></div><div class="cbar"><b id="bLg"></b></div></div>
       <div class="stat"><div class="k">R grip value</div><div class="v" id="cRg">—</div><div class="u">peak <span id="pRg">—</span></div><div class="cbar"><b id="bRg"></b></div></div>
+    </div>
+    <div id="hapBox" style="display:none;margin-top:10px">
+      <div class="bar"><button id="hapClear">Clear log</button><button id="hapCopy">Copy log</button><span class="note">flags: TL/TR = trigger in use, PL/PR = pad touched, G = controller turning</span></div>
+      <pre id="hapLog" style="max-height:340px;overflow:auto;font-size:12px;background:#0b0f14;padding:8px;border-radius:8px"></pre>
     </div>
     <div class="grid" id="cntGrid" style="display:none">
       <div class="stat"><div class="k" id="q0k">w</div><div class="v" id="q0">—</div></div>
@@ -172,6 +177,23 @@ async function connect(){
 }
 $("#connect").onclick=connect;
 
+let hapSeen=new Set(), hapLines=[], hapT0=null;
+const HAPN={0x80:"RUMBLE",0x81:"PULSE",0x82:"COMMAND",0x83:"LFO_TONE",0x84:"LOG_SWEEP",0x85:"SCRIPT",0x86:"CLASS",0x87:"PCM_MONO",0x88:"PCM_STEREO",0x89:"PCM_MONO_L",0x8a:"GYRO_BIAS"};
+function hapIngest(q,t){
+  const seq=q[0]&0xffff; if(seq===0||hapSeen.has(seq)) return; hapSeen.add(seq); if(hapSeen.size>4000) hapSeen=new Set([...hapSeen].slice(-2000));
+  if(hapT0===null) hapT0=t;
+  const id=q[1]&0xff, side=(q[1]>>8)&0xff, d1=q[2]&0xff, d2=(q[2]>>8)&0xff, d3=q[3]&0xff, f=(q[3]>>8)&0xff;
+  const fl=[f&1?"TL":"",f&2?"TR":"",f&4?"PL":"",f&8?"PR":"",f&16?"G":""].filter(Boolean).join(" ");
+  const h=x=>x.toString(16).padStart(2,"0");
+  hapLines.push(`${((t-hapT0)/1000).toFixed(3).padStart(8)}s #${seq} id=0x${h(id)} ${(HAPN[id]||"").padEnd(9)} side=${side} data=${h(d1)} ${h(d2)} ${h(d3)}  [${fl}]`);
+  if(hapLines.length>400) hapLines.splice(0,hapLines.length-400);
+  hapDirty=true;
+}
+let hapDirty=false;
+setInterval(()=>{ if(hapDirty){ const el=$("#hapLog"); el.textContent=hapLines.join("\n"); el.scrollTop=el.scrollHeight; hapDirty=false; } },200);
+$("#hapClear").onclick=()=>{hapLines=[];hapT0=null;$("#hapLog").textContent="";};
+$("#hapCopy").onclick=()=>navigator.clipboard.writeText(hapLines.join("\n"));
+
 async function trigCal(stage){
   const buf=new Uint8Array(63); buf[0]=0xC0; buf[1]=1; buf[2]=stage; let ok=0,last="";
   for(const d of devs){ try{ await d.sendFeatureReport(1,buf); ok++; }catch(e){ last=e.message; } }
@@ -208,6 +230,7 @@ function onReport(e){
     lastTs=ts; lastG=g; rec.g=g; gyroHist.push({t,g});
     rec.a=[dv.getInt16(OFF.ax,true),dv.getInt16(OFF.ay,true),dv.getInt16(OFF.az,true)];
     if(dv.byteLength>=OFF.q+8) rec.q=[0,1,2,3].map(i=>dv.getInt16(OFF.q+2*i,true));
+    if(rec.q&&$("#qmode").value==="hap") hapIngest(rec.q,t);
   }
   ev.push(rec);
 }
@@ -249,7 +272,7 @@ function draw(){
         else { $(f).textContent="—"; $(rr).textContent="—"; } }
       const lt=tps.length?tps[tps.length-1].tp:null; if(lt){ $("#tLv").textContent=lt.slice(0,3).join(" / "); $("#tRv").textContent=lt.slice(3).join(" / "); } }
     { const lastB=[...w].reverse().find(r=>r.btn!==undefined); if(lastB) document.querySelectorAll("#inds .ind").forEach(e=>e.classList.toggle("on",!!(lastB.btn>>>(+e.dataset.b)&1)));
-      const m=$("#qmode").value, lq=[...w].reverse().find(r=>r.q); $("#capGrid").style.display=m==="cap"?"":"none"; $("#cntGrid").style.display=(m==="tp"||m==="puck"||m==="tpt")?"":"none";
+      const m=$("#qmode").value, lq=[...w].reverse().find(r=>r.q); $("#capGrid").style.display=m==="cap"?"":"none"; $("#cntGrid").style.display=(m==="tp"||m==="puck"||m==="tpt")?"":"none"; $("#hapBox").style.display=m==="hap"?"":"none";
       if(lq&&m==="cap"){ const [ls,rs,lg,rg]=lq.q; capPk.l=Math.max(capPk.l,lg); capPk.r=Math.max(capPk.r,rg);
         $("#cLs").textContent=ls; $("#cRs").textContent=rs; $("#cLg").textContent=lg; $("#cRg").textContent=rg; $("#pLg").textContent=capPk.l; $("#pRg").textContent=capPk.r;
         const pct=(v,mx)=>Math.max(0,Math.min(100,v/mx*100))+"%"; $("#bLs").style.width=pct(ls,1000); $("#bRs").style.width=pct(rs,1000);

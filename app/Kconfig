@@ -242,6 +242,12 @@ config IBEX_HAPTICS_GYRO_ON_GRIPS
 	  (touch-to-enable gyro), haptics aimed at that trackpad go to the grip on
 	  the same side.
 
+config IBEX_HAPTICS_DEBUG_IN_QUAT
+	bool "Diagnostics: report received haptic output reports in the quaternion fields"
+	help
+	  Ring of the last 16 haptic output reports: w = sequence, x = report id |
+	  side << 8, y = payload bytes 1..2, z = byte 3 | redirect state flags << 8.
+
 config IBEX_GRIP_TOUCH_PERCENT
 	int "Default grip touch sensitivity (setting 34), threshold = 225 + 9 * value"
 	range 25 400
