@@ -54,6 +54,18 @@
   </div>
 
   <div class="panel">
+    <h2>Trigger calibration (SC26RE v15+)</h2>
+    <p class="note">Port of the new Valve step calibration (feature 0xC0). 1) Release both triggers and press <b>Start</b>. 2) Slowly press both triggers fully, hold, then release a few times. 3) Press <b>Save</b>. Steam must be closed (or not holding the controller) for the commands to arrive.</p>
+    <div class="bar">
+      <button id="tc1">1. Start (triggers released)</button>
+      <button id="tc2">2. Now press triggers fully</button>
+      <button class="primary" id="tc3">3. Save</button>
+      <button id="tc0">Cancel</button>
+      <span id="tcStatus" class="note"></span>
+    </div>
+  </div>
+
+  <div class="panel">
     <h2>Report stream</h2>
     <div class="grid">
       <div class="stat"><div class="k">Report rate</div><div class="v" id="sRate">—</div><div class="u">reports / s (host)</div></div>
@@ -159,6 +171,13 @@ async function connect(){
   }catch(e){ $("#status").innerHTML=`<span class="err">${e.message}</span>`; }
 }
 $("#connect").onclick=connect;
+
+async function trigCal(stage){
+  const buf=new Uint8Array(63); buf[0]=0xC0; buf[1]=1; buf[2]=stage; let ok=0,last="";
+  for(const d of devs){ try{ await d.sendFeatureReport(1,buf); ok++; }catch(e){ last=e.message; } }
+  $("#tcStatus").innerHTML=ok?`<span class="ok">stage ${stage} sent</span>`:`<span class="err">failed: ${last||"not connected"}</span>`;
+}
+[0,1,2,3].forEach(n=>$("#tc"+n).onclick=()=>trigCal(n));
 if("hid" in navigator) navigator.hid.addEventListener("disconnect",e=>{devs=devs.filter(d=>d!==e.device);$("#status").textContent="disconnected";});
 
 function wantedId(){

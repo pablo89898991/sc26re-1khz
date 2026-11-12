@@ -66,6 +66,108 @@ static const struct gpio_dt_spec battery_meter_enable =
 #endif
 static bool trigger_left_click_latched;
 static bool trigger_right_click_latched;
+
+/* Trigger step calibration (port of OFW 6AE90BC5 get_id_set_trigger_step_cal). */
+#define TRIGGER_CAL_MIN_SPAN_MV 100
+static struct k_spinlock trigger_cal_lock;
+static uint8_t trigger_cal_stage;
+static bool trigger_cal_seen[2][2]; /* [trigger][stage 1/2] */
+/* [trigger][0] = normal record, [trigger][1] = inverted record, as in OFW */
+static struct trigger_calibration trigger_cal_candidate[2][2];
+
+static void trigger_cal_sample(const int32_t value[2])
+{
+	k_spinlock_key_t key = k_spin_lock(&trigger_cal_lock);
+	uint8_t stage = trigger_cal_stage;
+
+	for(int i = 0; i < 2 && (stage == 1 || stage == 2); ++i)
+	{
+		struct trigger_calibration *a = &trigger_cal_candidate[i][0];
+		struct trigger_calibration *b = &trigger_cal_candidate[i][1];
+		uint16_t v = (uint16_t)CLAMP(value[i], 0, INT16_MAX);
+
+		if(stage == 1)
+		{
+			a->idle = MIN(a->idle, v);
+			b->pressed = MAX(b->pressed, v);
+		}
+		else
+		{
+			a->pressed = MAX(a->pressed, v);
+			b->idle = MIN(b->idle, v);
+		}
+		trigger_cal_seen[i][stage - 1] = true;
+	}
+	k_spin_unlock(&trigger_cal_lock, key);
+}
+
+int analog_trigger_step_cal(uint8_t stage)
+{
+	struct trigger_calibration chosen[2];
+	bool ok[2];
+	k_spinlock_key_t key;
+
+	if(stage > 3)
+	{
+		return 0;
+	}
+
+	key = k_spin_lock(&trigger_cal_lock);
+	if(stage == 1)
+	{
+		for(int i = 0; i < 2; ++i)
+		{
+			trigger_cal_candidate[i][0] = (struct trigger_calibration){
+			    .type = 2, .pressed = 0, .idle = 0x7fff, .inverted = 0};
+			trigger_cal_candidate[i][1] = (struct trigger_calibration){
+			    .type = 2, .pressed = 0, .idle = 0x7fff, .inverted = 1};
+			trigger_cal_seen[i][0] = false;
+			trigger_cal_seen[i][1] = false;
+		}
+	}
+	if(stage != 3)
+	{
+		trigger_cal_stage = stage;
+		k_spin_unlock(&trigger_cal_lock, key);
+		LOG_INF("trigger step calibration stage %u", stage);
+		return 0;
+	}
+
+	for(int i = 0; i < 2; ++i)
+	{
+		const struct trigger_calibration *a = &trigger_cal_candidate[i][0];
+		const struct trigger_calibration *b = &trigger_cal_candidate[i][1];
+		int span_a = abs((int)a->pressed - (int)a->idle);
+		int span_b = abs((int)b->pressed - (int)b->idle);
+
+		chosen[i] = span_a < span_b ? *b : *a;
+		ok[i] = trigger_cal_seen[i][0] && trigger_cal_seen[i][1] &&
+		        MAX(span_a, span_b) >= TRIGGER_CAL_MIN_SPAN_MV;
+	}
+	trigger_cal_stage = 0;
+	k_spin_unlock(&trigger_cal_lock, key);
+
+	for(int i = 0; i < 2; ++i)
+	{
+		enum calibration_side side = i ? CALIBRATION_RIGHT : CALIBRATION_LEFT;
+		int err;
+
+		if(!ok[i])
+		{
+			LOG_WRN("trigger step calibration: %s trigger range too small, keeping old",
+			        i ? "right" : "left");
+			continue;
+		}
+		err = calibration_stage_trigger(side, (const uint8_t *)&chosen[i], sizeof(chosen[i]));
+		if(!err)
+		{
+			err = calibration_commit_trigger(side);
+		}
+		LOG_INF("trigger step calibration %s: pressed=%u idle=%u inverted=%u err=%d",
+		        i ? "right" : "left", chosen[i].pressed, chosen[i].idle, chosen[i].inverted, err);
+	}
+	return 0;
+}
 static bool analog_ready;
 K_MUTEX_DEFINE(analog_lock);
 
@@ -519,6 +621,11 @@ int analog_read_report(struct controller_report *report)
 
 	struct analog_calibration_snapshot calibration;
 
+	if(trigger_cal_stage == 1 || trigger_cal_stage == 2)
+	{
+		trigger_cal_sample((const int32_t[2]){averaged[ANALOG_TRIGGER_LEFT],
+		                                      averaged[ANALOG_TRIGGER_RIGHT]});
+	}
 	calibration_analog_snapshot(&calibration);
 
 	report->stick_left_x = scale_stick_axis(

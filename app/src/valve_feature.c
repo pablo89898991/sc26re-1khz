@@ -8,6 +8,7 @@
 #include <zephyr/sys/byteorder.h>
 #include <zephyr/sys/util.h>
 
+#include "analog.h"
 #include "controller.h"
 #include "ibex_settings_registry.h"
 #include "imu.h"
@@ -520,6 +521,7 @@ static ssize_t build_feature_response(enum valve_feature_link link, const uint8_
 		case VALVE_FEATURE_COMMIT_SETTING:
 		case VALVE_FEATURE_CALIBRATE_GYRO:
 		case VALVE_FEATURE_RESET_IMU:
+		case VALVE_FEATURE_CALIBRATE_ANALOG_TRIGGERS:
 			break;
 		default:
 			return -ENOTSUP;
@@ -600,6 +602,9 @@ static int handle_feature_request(enum valve_feature_link link, const uint8_t *r
 			return 0;
 		case VALVE_FEATURE_CALIBRATE_GYRO:
 			return imu_calibrate_gyro();
+		case VALVE_FEATURE_CALIBRATE_ANALOG_TRIGGERS:
+			/* OFW 6AE90BC5 trigger step calibration, stage in the first body byte */
+			return analog_trigger_step_cal(len >= 3 && request[1] >= 1 ? request[2] : 0);
 		case VALVE_FEATURE_RESET_IMU:
 			imu_reset();
 			return 0;
