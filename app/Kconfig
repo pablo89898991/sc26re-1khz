@@ -225,6 +225,15 @@ config IBEX_STICK_TOUCH_RELEASE
 	range 0 16000
 	default 0
 
+config IBEX_GRIP_TOUCH_PERCENT
+	int "Default grip touch sensitivity (setting 34), threshold = 225 + 9 * value"
+	range 25 400
+	default 75
+	help
+	  Stock is 100 (threshold 1125). Measured grip values while holding the
+	  controller sit around 1000, so the stock threshold can miss a grip.
+	  75 gives touch at 900 and release at 720 (80%).
+
 
 config IBEX_ESB_IMPORT_OFW_BONDS
 	bool "Use Puck bonds stored by the original firmware when CFW has none"
