@@ -8,7 +8,7 @@
 #include "sdl/controller_constants.h"
 
 #define IBEX_SETTING_SDL_COUNT SETTING_COUNT
-#define IBEX_SETTING_COUNT (IBEX_SETTING_SDL_COUNT + 4)
+#define IBEX_SETTING_COUNT (IBEX_SETTING_SDL_COUNT + 5)
 
 enum ibex_setting_id
 {
@@ -26,6 +26,7 @@ enum ibex_setting_id
 	IBEX_SETTING_UNKNOWN_83 = 83,
 	IBEX_SETTING_IMU_USE_BIAS = 84,
 	IBEX_SETTING_IMU_GYRO_THRESHOLD = 85,
+	IBEX_SETTING_UNKNOWN_86 = 86, /* new in OFW 6AE90BC5 */
 };
 
 enum ibex_setting_kind

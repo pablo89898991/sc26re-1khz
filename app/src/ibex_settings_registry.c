@@ -73,8 +73,8 @@ static const struct ibex_setting_entry setting_entries[IBEX_SETTING_COUNT] = {
 	/* OFW reports these max values even though the reset defaults exceed them. */
 	[28] = SETTING_ENTRY(16500, 0, 4096, "trackpad_z_on_left", NULL),
 	[29] = SETTING_ENTRY(15000, 0, 4096, "trackpad_z_off_left", NULL),
-	[30] = OFW_SETTING_ENTRY(500, 100, 1000, "olympus_click_press", NULL),
-	[31] = OFW_SETTING_ENTRY(400, 0, 800, "olympus_click_release", NULL),
+	[30] = OFW_SETTING_ENTRY(780, 100, 1000, "olympus_click_press", NULL),
+	[31] = OFW_SETTING_ENTRY(680, 0, 800, "olympus_click_release", NULL),
 	[32] = SETTING_ENTRY(800, 100, 1200, "trackpad_outer_spin_horizontal_only", NULL),
 	[33] = SETTING_ENTRY(0, 0, 1, "trackpad_relative_mode_deadzone", NULL),
 	[34] = SETTING_ENTRY(100, 25, 400, "trackpad_relative_mode_max_vel", NULL),
@@ -132,6 +132,7 @@ static const struct ibex_setting_entry setting_entries[IBEX_SETTING_COUNT] = {
 	[83] = UNKNOWN_SETTING_ENTRY(1, 0, 1, "unknown_83", NULL),
 	[84] = OFW_SETTING_ENTRY(1, 0, 1, "imu_use_bias", NULL),
 	[85] = OFW_SETTING_ENTRY(100, 0, 200, "imu_gyro_threshold", NULL),
+	[86] = UNKNOWN_SETTING_ENTRY(0, 0, 1, "unknown_86", NULL),
 };
 
 static int16_t setting_values[IBEX_SETTING_COUNT];

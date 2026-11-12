@@ -25,6 +25,10 @@
 #include "watchdog.h"
 
 #define VALVE_ISP_MAGIC_BASE 0x2001fff0u
+#define CONTINUE_WIRELESS_MAGIC 0xd5cee019u
+
+/* Same retained word as OFW (0x2001ff00 + 0xd4), outside Zephyr RAM and untouched by the bootloader. */
+#define continue_wireless_magic (*(volatile uint32_t *)0x2001ffd4u)
 #define POWER_OFF_RELEASE_POLL_MS 20
 #define POWER_OFF_RELEASE_DEBOUNCE_MS 100
 #define POWER_OFF_EXTERNAL_POLL_MS 100
@@ -105,6 +109,7 @@ static void power_enter_system_off(void)
 			if(waiting_for_external_power && (hardware_read_buttons() & STEAM_BUTTON_MASK) != 0U)
 			{
 				LOG_INF("Steam pressed while externally powered: restarting");
+				power_mark_continue_wireless();
 				sys_reboot(SYS_REBOOT_COLD);
 			}
 
@@ -176,8 +181,26 @@ void power_boot_gpio_latches(uint32_t latches[2])
 	latches[1] = boot_gpio_latches[1];
 }
 
+void power_mark_continue_wireless(void)
+{
+	/* Same idea and magic as OFW: only when the radio is the active link. */
+	if(!transport_usb_configured())
+	{
+		continue_wireless_magic = CONTINUE_WIRELESS_MAGIC;
+	}
+}
+
+bool power_take_continue_wireless(void)
+{
+	bool set = continue_wireless_magic == CONTINUE_WIRELESS_MAGIC;
+
+	continue_wireless_magic = 0;
+	return set;
+}
+
 int power_reboot_normal(void)
 {
+	power_mark_continue_wireless();
 	sys_reboot(SYS_REBOOT_COLD);
 	return 0;
 }

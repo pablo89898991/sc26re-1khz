@@ -264,6 +264,12 @@ enum charge_mode_result charge_mode_run_if_needed(void)
 
 	usb_attached = transport_usb_attached();
 	puck_contact = puck_contact_present();
+	if(power_take_continue_wireless() && (usb_attached || puck_contact) &&
+	   !transport_usb_configured())
+	{
+		LOG_INF("Continue wireless operation (%s)", usb_attached ? "USB" : "PUCK");
+		return CHARGE_MODE_POWER_ON_RADIO;
+	}
 	if(!usb_attached && !puck_contact)
 	{
 		return CHARGE_MODE_SKIPPED;

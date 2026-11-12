@@ -8,6 +8,7 @@
 #include <zephyr/sys/reboot.h>
 
 #include "controller.h"
+#include "power.h"
 
 #define RADIO_PERSONALITY_GPREGRET_BLE 0xb1
 #define RADIO_PERSONALITY_GPREGRET_ESB 0xe5
@@ -147,6 +148,7 @@ void radio_personality_reboot_into(enum radio_personality personality)
 	k_work_cancel_delayable(&delayed_reboot_work);
 	k_work_cancel_delayable(&delayed_persist_work);
 	radio_personality_remember(personality);
+	power_mark_continue_wireless();
 	sys_reboot(SYS_REBOOT_COLD);
 }
 
