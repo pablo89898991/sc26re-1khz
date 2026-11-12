@@ -270,11 +270,17 @@ config IBEX_LED_USER_BRIGHTNESS
 config IBEX_OLYMPUS_FRAME_PERIOD_MS
 	int "Trackpad (Olympus) frame period in ms (stock 4 = 250 Hz)"
 	range 1 20
-	default 4
+	default 1
+	help
+	  The controller is limited by its measurement time to ~305 frames/s
+	  with the stock measurement profile, so 1 means "as fast as it can".
 
 config IBEX_OLYMPUS_LOW_POWER
 	bool "Let the trackpad controller drop to low-power scanning when idle"
-	default y
+	default n
+	help
+	  When enabled the controller scans at ~100 Hz until touched, adding up
+	  to ~10 ms to the first contact.
 
 config IBEX_OLYMPUS_SINGLE_READ
 	bool "Read trackpad header + payload in one I2C transfer"
