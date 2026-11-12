@@ -29,6 +29,13 @@
   .note{font-size:12.5px;color:var(--muted);line-height:1.6;}
   .note b{color:#b9c6dc;} code{font-family:var(--mono);color:var(--accent2);}
   @media (max-width:640px){.grid{grid-template-columns:repeat(2,1fr);}}
+  .ind{display:inline-flex;align-items:center;gap:6px;padding:6px 10px;border-radius:999px;border:1px solid var(--line,#2a3a5c);margin:3px;font-size:12.5px;opacity:.55}
+  .ind.on{opacity:1;background:rgba(80,200,140,.18);border-color:#4fc98a;color:#9ff0c4}
+  .ind i{width:8px;height:8px;border-radius:50%;background:#4a5a7a;display:inline-block}
+  .ind.on i{background:#4fc98a;box-shadow:0 0 8px #4fc98a}
+  .cbar{height:10px;border-radius:5px;background:#1b2742;position:relative;overflow:hidden;margin-top:6px}
+  .cbar b{position:absolute;left:0;top:0;bottom:0;background:#4f8cff}
+  .cbar u{position:absolute;top:-2px;bottom:-2px;width:2px;background:#ffcc55}
 </style>
 </head>
 <body>
@@ -81,6 +88,39 @@
       <div class="stat" style="grid-column:span 2"><div class="k">Left x / y / pressure</div><div class="v" id="tLv" style="font-size:15px">—</div></div>
       <div class="stat" style="grid-column:span 2"><div class="k">Right x / y / pressure</div><div class="v" id="tRv" style="font-size:15px">—</div></div>
     </div>
+    <div class="lbl" style="margin-top:16px">Touch sensors &amp; buttons (live, from the report's button bits — no Steam window needed)</div>
+    <div id="inds">
+      <span class="ind" data-b="24"><i></i>L stick touch</span><span class="ind" data-b="20"><i></i>R stick touch</span>
+      <span class="ind" data-b="29"><i></i>L grip</span><span class="ind" data-b="28"><i></i>R grip</span>
+      <span class="ind" data-b="25"><i></i>L pad touch</span><span class="ind" data-b="21"><i></i>R pad touch</span>
+      <span class="ind" data-b="26"><i></i>L pad click</span><span class="ind" data-b="22"><i></i>R pad click</span>
+      <span class="ind" data-b="27"><i></i>LT click</span><span class="ind" data-b="23"><i></i>RT click</span>
+      <span class="ind" data-b="19"><i></i>LB</span><span class="ind" data-b="9"><i></i>RB</span>
+      <span class="ind" data-b="17"><i></i>L4</span><span class="ind" data-b="18"><i></i>L5</span><span class="ind" data-b="7"><i></i>R4</span><span class="ind" data-b="8"><i></i>R5</span>
+      <span class="ind" data-b="15"><i></i>L3</span><span class="ind" data-b="5"><i></i>R3</span>
+      <span class="ind" data-b="0"><i></i>A</span><span class="ind" data-b="1"><i></i>B</span><span class="ind" data-b="2"><i></i>X</span><span class="ind" data-b="3"><i></i>Y</span>
+      <span class="ind" data-b="13"><i></i>Up</span><span class="ind" data-b="10"><i></i>Down</span><span class="ind" data-b="12"><i></i>Left</span><span class="ind" data-b="11"><i></i>Right</span>
+      <span class="ind" data-b="6"><i></i>View</span><span class="ind" data-b="14"><i></i>Menu</span><span class="ind" data-b="16"><i></i>Steam</span><span class="ind" data-b="4"><i></i>QAM</span>
+    </div>
+    <div class="lbl" style="margin-top:12px">Quaternion fields show
+      <select id="qmode" style="margin-left:6px">
+        <option value="imu">IMU quaternion (normal firmware)</option>
+        <option value="cap">Raw capsense — *_capsense_dbg firmware</option>
+        <option value="tp">Trackpad controller counters — *_tp*_dbg firmware</option>
+        <option value="puck">Puck link counters — *_puck_dbg firmware</option>
+      </select></div>
+    <div class="grid" id="capGrid" style="display:none">
+      <div class="stat"><div class="k">L stick touch raw</div><div class="v" id="cLs">—</div><div class="u">touch above 720 · release below 576</div><div class="cbar"><b id="bLs"></b><u style="left:72%"></u></div></div>
+      <div class="stat"><div class="k">R stick touch raw</div><div class="v" id="cRs">—</div><div class="u">touch above 720 · release below 576</div><div class="cbar"><b id="bRs"></b><u style="left:72%"></u></div></div>
+      <div class="stat"><div class="k">L grip value</div><div class="v" id="cLg">—</div><div class="u">peak <span id="pLg">—</span></div><div class="cbar"><b id="bLg"></b></div></div>
+      <div class="stat"><div class="k">R grip value</div><div class="v" id="cRg">—</div><div class="u">peak <span id="pRg">—</span></div><div class="cbar"><b id="bRg"></b></div></div>
+    </div>
+    <div class="grid" id="cntGrid" style="display:none">
+      <div class="stat"><div class="k" id="q0k">w</div><div class="v" id="q0">—</div></div>
+      <div class="stat"><div class="k" id="q1k">x</div><div class="v" id="q1">—</div></div>
+      <div class="stat"><div class="k" id="q2k">y</div><div class="v" id="q2">—</div></div>
+      <div class="stat"><div class="k" id="q3k">z</div><div class="v" id="q3">—</div></div>
+    </div>
   </div>
 
   <div class="panel">
@@ -101,11 +141,11 @@
 "use strict";
 const $=s=>document.querySelector(s);
 const TP={lx:17,ly:19,lp:21,rx:23,ry:25,rp:27};
-let lastTp=null;
+let lastTp=null; const capPk={l:0,r:0};
 const OFF={seq:0,ts:29,ax:33,ay:35,az:37,gx:39,gy:41,gz:43,q:45};
 let devs=[], ev=[], idStats={}, lastSeq=null, drops=0, lastTs=null, lastG=null, gyroHist=[], lastRaw=null;
 
-function reset(){lastTp=null;ev=[];idStats={};lastSeq=null;drops=0;lastTs=null;lastG=null;gyroHist=[];}
+function reset(){lastTp=null;capPk.l=0;capPk.r=0;ev=[];idStats={};lastSeq=null;drops=0;lastTs=null;lastG=null;gyroHist=[];}
 $("#reset").onclick=reset;
 
 async function connect(){
@@ -133,6 +173,7 @@ function onReport(e){
   if(id!==wantedId()) return;
   lastRaw=dv;
   const rec={t};
+  if(dv.byteLength>=5) rec.btn=dv.getUint32(1,true);
   if(dv.byteLength>=TP.rp+2){
     const tp=[dv.getInt16(TP.lx,true),dv.getInt16(TP.ly,true),dv.getUint16(TP.lp,true),dv.getInt16(TP.rx,true),dv.getInt16(TP.ry,true),dv.getUint16(TP.rp,true)];
     rec.tp=tp; rec.lT=tp[2]>0||tp[0]!==0||tp[1]!==0; rec.rT=tp[5]>0||tp[3]!==0||tp[4]!==0;
@@ -187,6 +228,14 @@ function draw(){
         if(touched.length>20){ $(f).textContent=(n/touched.length*rate).toFixed(0); $(rr).textContent=(100*(1-n/touched.length)).toFixed(1); }
         else { $(f).textContent="—"; $(rr).textContent="—"; } }
       const lt=tps.length?tps[tps.length-1].tp:null; if(lt){ $("#tLv").textContent=lt.slice(0,3).join(" / "); $("#tRv").textContent=lt.slice(3).join(" / "); } }
+    { const lastB=[...w].reverse().find(r=>r.btn!==undefined); if(lastB) document.querySelectorAll("#inds .ind").forEach(e=>e.classList.toggle("on",!!(lastB.btn>>>(+e.dataset.b)&1)));
+      const m=$("#qmode").value, lq=[...w].reverse().find(r=>r.q); $("#capGrid").style.display=m==="cap"?"":"none"; $("#cntGrid").style.display=(m==="tp"||m==="puck")?"":"none";
+      if(lq&&m==="cap"){ const [ls,rs,lg,rg]=lq.q; capPk.l=Math.max(capPk.l,lg); capPk.r=Math.max(capPk.r,rg);
+        $("#cLs").textContent=ls; $("#cRs").textContent=rs; $("#cLg").textContent=lg; $("#cRg").textContent=rg; $("#pLg").textContent=capPk.l; $("#pRg").textContent=capPk.r;
+        const pct=(v,mx)=>Math.max(0,Math.min(100,v/mx*100))+"%"; $("#bLs").style.width=pct(ls,1000); $("#bRs").style.width=pct(rs,1000);
+        const gm=Math.max(1500,capPk.l,capPk.r); $("#bLg").style.width=pct(lg,gm); $("#bRg").style.width=pct(rg,gm); }
+      if(lq&&(m==="tp"||m==="puck")){ const L=m==="tp"?["pad frames/s","all frames/s","thread wakes/s","read errors/s"]:["frames from Puck/s","ACKs delivered/s","reports built/s","stale replaced/s"];
+        L.forEach((t,i)=>{$("#q"+i+"k").textContent=t; $("#q"+i).textContent=lq.q[i];}); } }
     hist(iv);
   }
   plot();
