@@ -23,6 +23,17 @@
 #define OLYMPUS_LE16(value) \
 	{ (uint8_t)((uint16_t)(value) & 0xffu), (uint8_t)(((uint16_t)(value) >> 8) & 0xffu) }
 
+/*
+ * Measurements 7 and 8 drive every electrode at the two hop frequencies
+ * (0x12/0x11) and have no result route: they only feed the noise detector.
+ * They use the longest aperture (0x27) and dominate the frame time.
+ */
+#if defined(CONFIG_IBEX_OLYMPUS_NOISE_APERTURE) && CONFIG_IBEX_OLYMPUS_NOISE_APERTURE > 0
+#define OLYMPUS_NOISE_APERTURE CONFIG_IBEX_OLYMPUS_NOISE_APERTURE
+#else
+#define OLYMPUS_NOISE_APERTURE 0x27
+#endif
+
 struct olympus_config_block
 {
 	uint32_t base;
@@ -280,7 +291,7 @@ static const struct olympus_measurement_config olympus_measurement_configs[] = {
 	    .gain = 0x04,
 	    .channel_offset_multiplier = 0x01,
 	    .toggle_frequency = 0x12,
-	    .aperture_length = 0x27,
+	    .aperture_length = OLYMPUS_NOISE_APERTURE,
 	},
 	{
 	    .control = 0x84,
@@ -290,7 +301,7 @@ static const struct olympus_measurement_config olympus_measurement_configs[] = {
 	    .gain = 0x04,
 	    .channel_offset_multiplier = 0x01,
 	    .toggle_frequency = 0x11,
-	    .aperture_length = 0x27,
+	    .aperture_length = OLYMPUS_NOISE_APERTURE,
 	},
 };
 

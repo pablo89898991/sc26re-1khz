@@ -299,6 +299,14 @@ config IBEX_OLYMPUS_DEBUG_IN_QUAT
 	bool "Trackpad controller frame rates in the quaternion fields (diagnostics)"
 	default n
 
+
+config IBEX_OLYMPUS_NOISE_APERTURE
+	int "Aperture of the two noise-sense measurements (0 = stock 0x27 = 39)"
+	range 0 63
+	default 0
+	help
+	  Experimental: shorter noise measurements shorten every trackpad frame.
+
 endmenu
 
 source "Kconfig.zephyr"
