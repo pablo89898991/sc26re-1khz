@@ -14,7 +14,9 @@ p = max(d["puck"].values(), key=lambda m: m["version_unix"])["version_hex"]
 print(c, p)
 PY
 )
-TAG="stock-1k-${CTRL}-${PUCK}"
+# the patcher revision is part of the tag, so a patcher improvement republishes automatically
+PREV=$(sha256sum web/patcher.html | cut -c1-7)
+TAG="stock-1k-${CTRL}-${PUCK}-p${PREV}"
 if gh release view "$TAG" >/dev/null 2>&1; then
   echo "release $TAG already exists"; exit 0
 fi
@@ -27,6 +29,7 @@ NOTES="$W/notes.md"
   echo
   echo "- Controller: \`IBEX_FW_${CTRL}\`"
   echo "- Puck: \`PROTEUS_FW_${PUCK}\`"
+  echo "- Patcher revision: \`${PREV}\` (web/patcher.html)"
   echo
   echo "These get every Valve fix the day it ships. For the highest rates (~980 reports/s over USB, ~828 over the Puck) use the sc26re build instead."
   echo
@@ -61,5 +64,5 @@ done
 if [ ${#ASSETS[@]} -eq 0 ]; then
   echo "nothing could be patched"; cat "$NOTES"; exit 1
 fi
-gh release create "$TAG" "${ASSETS[@]}" --title "Stock ${CTRL} + Puck ${PUCK} (1 kHz patched)" --notes-file "$NOTES"
+gh release create "$TAG" "${ASSETS[@]}" --title "Stock ${CTRL} + Puck ${PUCK} (1 kHz patched, patcher ${PREV})" --latest=false --notes-file "$NOTES"
 echo "released $TAG"

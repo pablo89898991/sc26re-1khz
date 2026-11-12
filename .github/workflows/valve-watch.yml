@@ -3,7 +3,7 @@ name: valve-watch
 # Daily: look for new Valve controller / Puck firmware (OpenSteamController/Ibex-Firmware).
 #  - controller: open an issue with a change report vs. the last ported version and
 #    a pull request that ports settings-table changes automatically
-#  - controller or Puck: publish Valve's new stock firmware patched by the SC2 Patcher engine
+#  - controller or Puck, or a changed patcher: publish Valve's newest stock firmware patched by the SC2 Patcher engine
 on:
   schedule:
     - cron: '41 6 * * *'
@@ -95,8 +95,7 @@ jobs:
           { echo "$PRLINE"; echo; cat "$BODY.cut"; } > "$BODY.final"
           gh issue create --title "Valve controller firmware ${VER}" --label valve-update --body-file "$BODY.final"
 
-      - name: Patched stock release
-        if: steps.check.outputs.controller != '0' || steps.check.outputs.puck != '0' || inputs.release_latest
+      - name: Patched stock release (new Valve firmware or new patcher revision)
         env:
           GH_TOKEN: ${{ github.token }}
         run: bash tools/valve/release_stock.sh /tmp/stock
