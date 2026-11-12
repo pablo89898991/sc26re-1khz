@@ -579,9 +579,9 @@ static atomic_t trigger_haptic_until_ms[2];
 #endif
 
 #if CONFIG_IBEX_HAPTICS_GYRO_ON_GRIPS
-/* Report units: 1 LSB = 0.061 dps. ~2 dps already counts as the controller being turned
+/* Report units: 1 LSB = 0.061 dps. ~1 dps already counts as the controller being turned
  * (Steam's rotational bumps fire from 1 degree of slow rotation). */
-#define GYRO_HAPTIC_ACTIVE_LSB 33
+#define GYRO_HAPTIC_ACTIVE_LSB 16
 #define GYRO_HAPTIC_HOLD_MS 300
 /* Finger resting on a pad (e.g. touch-to-enable gyro) = no movement for this long. */
 #define PAD_STILL_MS 100
