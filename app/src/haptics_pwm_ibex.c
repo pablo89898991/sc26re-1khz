@@ -1817,7 +1817,10 @@ static void grip_tick_build(void)
 		float w = 0.5f - 0.5f * cosf(IBEX_HAPTICS_TWO_PI * (float)i / (float)(GRIP_TICK_SAMPLES - 1));
 		float v = sinf(IBEX_HAPTICS_TWO_PI * (float)CONFIG_IBEX_HAPTICS_GRIP_TICK_HZ * t) * w;
 
-		grip_tick_waveform[i] = (int16_t)(v * 32000.0f);
+		/* The offset is baked into the table so Steam's own gain (Low/Medium/High) keeps its
+		 * full range instead of hitting the -24 dB floor of the gain lookup. */
+		grip_tick_waveform[i] = (int16_t)(v * 32000.0f *
+		                                  powf(10.0f, (float)CONFIG_IBEX_HAPTICS_GRIP_TICK_GAIN_DB / 20.0f));
 	}
 	grip_tick_ready = true;
 }
@@ -1835,7 +1838,7 @@ static int submit_grip_tick(uint8_t grip_channels, int8_t gain_db,
 		.waveform_len = GRIP_TICK_SAMPLES,
 		.waveform_format = HAPTICS_WAVEFORM_SAMPLE_FORMAT_S16,
 		.waveform_rate_hz = GRIP_TICK_RATE_HZ,
-		.gain_db = (int8_t)CLAMP(gain_db + CONFIG_IBEX_HAPTICS_GRIP_TICK_GAIN_DB, -60, 24),
+		.gain_db = gain_db,
 	};
 
 	return submit_channels_start(grip_channels, slot, apply_waveform, &context,
