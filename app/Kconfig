@@ -227,7 +227,7 @@ config IBEX_STICK_TOUCH_RELEASE
 
 config IBEX_HAPTICS_TRIGGERS_ON_GRIPS
 	bool "Play Steam trigger haptics on the grip actuators instead of the trackpads"
-	default y
+	default n
 	help
 	  While a trigger is pulled (and 150 ms after release) and the trackpad on the
 	  same side is not touched, haptic pulses/commands aimed at that side's trackpad
@@ -235,7 +235,7 @@ config IBEX_HAPTICS_TRIGGERS_ON_GRIPS
 
 config IBEX_HAPTICS_GYRO_ON_GRIPS
 	bool "Play Steam gyro haptics on the grip actuators instead of the trackpads"
-	default y
+	default n
 	help
 	  While the controller is being turned (> ~20 dps, and 150 ms after) and the
 	  trackpad on a side is either not touched or the finger rests still on it
@@ -245,7 +245,7 @@ config IBEX_HAPTICS_GYRO_ON_GRIPS
 config IBEX_HAPTICS_GRIP_TICK_HZ
 	int "Tick/click on grip actuators: sine burst frequency, 0 = trackpad waveform"
 	range 0 1000
-	default 150
+	default 0
 
 config IBEX_HAPTICS_GRIP_TICK_MS
 	int "Tick/click on grip actuators: burst length in ms"

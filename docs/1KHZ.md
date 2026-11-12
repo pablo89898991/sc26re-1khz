@@ -42,3 +42,7 @@ timestamp words were dropped again in the following commits.
   same retained magic as OFW (0xd5cee019 @ 0x2001ffd4), so after the restart the controller
   goes straight back to wireless instead of charge-only / USB mode when a charger or the
   puck cradle is attached. If a PC enumerates USB the controller still switches to USB.
+- Grip touch default sensitivity 75 (threshold 900, release 720); Steam's Grip Sensor Range slider still overrides it.
+- Trigger step calibration (feature 0xC0, ported from OFW 6AE90BC5) + wizard in the Report Meter.
+- Optional, off by default: IBEX_HAPTICS_TRIGGERS_ON_GRIPS / IBEX_HAPTICS_GYRO_ON_GRIPS / IBEX_HAPTICS_GRIP_TICK_*
+  (route Steam trigger/gyro ticks to the grip LRAs), IBEX_HAPTICS_DEBUG_IN_QUAT (haptic report log in the meter).
