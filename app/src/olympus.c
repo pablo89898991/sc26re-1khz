@@ -965,6 +965,13 @@ static void olympus_invalidate_report(void)
 #if CONFIG_IBEX_OLYMPUS_DEBUG_IN_QUAT
 static atomic_t dbg_frames, dbg_sensor, dbg_errors, dbg_wakes;
 #endif
+#if CONFIG_IBEX_OLYMPUS_TIMING_IN_QUAT
+/* sums in cycles over the current 1 s window */
+static volatile uint32_t tm_irq_cyc, tm_last_irq_cyc;
+static uint64_t tm_sum_interval, tm_sum_read, tm_sum_proc, tm_sum_lat;
+static uint32_t tm_n_interval, tm_n;
+static struct k_spinlock tm_lock;
+#endif
 
 static int olympus_read_frame(void)
 {
@@ -973,6 +980,9 @@ static int olympus_read_frame(void)
 	uint16_t payload_size;
 	int err;
 
+#if CONFIG_IBEX_OLYMPUS_TIMING_IN_QUAT
+	uint32_t t0 = k_cycle_get_32(), irq = tm_irq_cyc;
+#endif
 #if CONFIG_IBEX_OLYMPUS_SINGLE_READ
 	/*
 	 * Each read restarts at the frame header, so fetch header + the usual sensor
@@ -984,6 +994,9 @@ static int olympus_read_frame(void)
 	{
 		return err;
 	}
+#if CONFIG_IBEX_OLYMPUS_TIMING_IN_QUAT
+	uint32_t t1 = k_cycle_get_32();
+#endif
 	payload_size = sys_get_le16(&frame[3]);
 	if(frame[2] != 0x0e || payload_size == 0xa5a5 || payload_size > OLYMPUS_MAX_PAYLOAD_SIZE)
 	{
@@ -995,6 +1008,24 @@ static int olympus_read_frame(void)
 		atomic_inc(&dbg_sensor);
 #endif
 		olympus_process_sensor_payload(&frame[5]);
+#if CONFIG_IBEX_OLYMPUS_TIMING_IN_QUAT
+		{
+			uint32_t t2 = k_cycle_get_32();
+			k_spinlock_key_t key = k_spin_lock(&tm_lock);
+
+			tm_sum_read += t1 - t0;
+			tm_sum_proc += t2 - t1;
+			tm_sum_lat += t0 - irq;
+			tm_n++;
+			if(tm_last_irq_cyc != 0 && irq != tm_last_irq_cyc)
+			{
+				tm_sum_interval += irq - tm_last_irq_cyc;
+				tm_n_interval++;
+			}
+			tm_last_irq_cyc = irq;
+			k_spin_unlock(&tm_lock, key);
+		}
+#endif
 		return 0;
 	}
 	if(payload_size <= OLYMPUS_SENSOR_PAYLOAD_SIZE)
@@ -1036,6 +1067,9 @@ static void olympus_irq_changed(const struct device *port, struct gpio_callback 
 	ARG_UNUSED(port);
 	ARG_UNUSED(callback);
 	ARG_UNUSED(pins);
+#if CONFIG_IBEX_OLYMPUS_TIMING_IN_QUAT
+	tm_irq_cyc = k_cycle_get_32();
+#endif
 	k_sem_give(&olympus_irq_sem);
 }
 
@@ -1154,7 +1188,7 @@ int olympus_init(void)
 #endif
 	k_thread_create(&olympus_thread, olympus_thread_stack,
 	                K_THREAD_STACK_SIZEOF(olympus_thread_stack), olympus_thread_entry, NULL, NULL,
-	                NULL, 9, 0, K_NO_WAIT);
+	                NULL, CONFIG_IBEX_OLYMPUS_THREAD_PRIORITY, 0, K_NO_WAIT);
 	k_thread_name_set(&olympus_thread, "olympus");
 	atomic_set(&olympus_ready, 1);
 	LOG_INF("Olympus configured at I2C address 0x%02x", olympus_i2c.addr);
@@ -1175,6 +1209,31 @@ static void olympus_debug_quat(struct controller_report *report)
 		x = (int16_t)atomic_set(&dbg_frames, 0);
 		y = (int16_t)atomic_set(&dbg_wakes, 0);
 		z = (int16_t)atomic_set(&dbg_errors, 0);
+		win = now;
+	}
+	report->gyro_quat_w = w;
+	report->gyro_quat_x = x;
+	report->gyro_quat_y = y;
+	report->gyro_quat_z = z;
+#elif CONFIG_IBEX_OLYMPUS_TIMING_IN_QUAT
+	/* means in us: w = IRQ-to-IRQ frame interval, x = I2C read, y = processing,
+	 * z = IRQ to read start */
+	static int64_t win;
+	static int16_t w, x, y, z;
+	int64_t now = k_uptime_get();
+
+	if(now - win >= 1000)
+	{
+		k_spinlock_key_t key = k_spin_lock(&tm_lock);
+		uint32_t n = MAX(tm_n, 1U), ni = MAX(tm_n_interval, 1U);
+
+		w = (int16_t)MIN(k_cyc_to_us_floor64(tm_sum_interval / ni), INT16_MAX);
+		x = (int16_t)MIN(k_cyc_to_us_floor64(tm_sum_read / n), INT16_MAX);
+		y = (int16_t)MIN(k_cyc_to_us_floor64(tm_sum_proc / n), INT16_MAX);
+		z = (int16_t)MIN(k_cyc_to_us_floor64(tm_sum_lat / n), INT16_MAX);
+		tm_sum_interval = tm_sum_read = tm_sum_proc = tm_sum_lat = 0;
+		tm_n = tm_n_interval = 0;
+		k_spin_unlock(&tm_lock, key);
 		win = now;
 	}
 	report->gyro_quat_w = w;

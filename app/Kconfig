@@ -312,6 +312,17 @@ config IBEX_CAPSENSE_DEBUG_IN_QUAT
 	bool "Raw stick-touch and grip values in the quaternion fields (diagnostics)"
 	default n
 
+
+config IBEX_OLYMPUS_TIMING_IN_QUAT
+	bool "Trackpad frame timing (interval/read/process/latency us) in the quaternion fields"
+	default n
+
+
+config IBEX_OLYMPUS_THREAD_PRIORITY
+	int "Trackpad (Olympus) thread priority (stock 9; lower = more urgent)"
+	range 1 14
+	default 9
+
 endmenu
 
 source "Kconfig.zephyr"

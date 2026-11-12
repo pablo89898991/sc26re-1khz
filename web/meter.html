@@ -107,6 +107,7 @@
         <option value="imu">IMU quaternion (normal firmware)</option>
         <option value="cap">Raw capsense — *_capsense_dbg firmware</option>
         <option value="tp">Trackpad controller counters — *_tp*_dbg firmware</option>
+        <option value="tpt">Trackpad timing µs — *_tptiming_dbg firmware</option>
         <option value="puck">Puck link counters — *_puck_dbg firmware</option>
       </select></div>
     <div class="grid" id="capGrid" style="display:none">
@@ -229,12 +230,12 @@ function draw(){
         else { $(f).textContent="—"; $(rr).textContent="—"; } }
       const lt=tps.length?tps[tps.length-1].tp:null; if(lt){ $("#tLv").textContent=lt.slice(0,3).join(" / "); $("#tRv").textContent=lt.slice(3).join(" / "); } }
     { const lastB=[...w].reverse().find(r=>r.btn!==undefined); if(lastB) document.querySelectorAll("#inds .ind").forEach(e=>e.classList.toggle("on",!!(lastB.btn>>>(+e.dataset.b)&1)));
-      const m=$("#qmode").value, lq=[...w].reverse().find(r=>r.q); $("#capGrid").style.display=m==="cap"?"":"none"; $("#cntGrid").style.display=(m==="tp"||m==="puck")?"":"none";
+      const m=$("#qmode").value, lq=[...w].reverse().find(r=>r.q); $("#capGrid").style.display=m==="cap"?"":"none"; $("#cntGrid").style.display=(m==="tp"||m==="puck"||m==="tpt")?"":"none";
       if(lq&&m==="cap"){ const [ls,rs,lg,rg]=lq.q; capPk.l=Math.max(capPk.l,lg); capPk.r=Math.max(capPk.r,rg);
         $("#cLs").textContent=ls; $("#cRs").textContent=rs; $("#cLg").textContent=lg; $("#cRg").textContent=rg; $("#pLg").textContent=capPk.l; $("#pRg").textContent=capPk.r;
         const pct=(v,mx)=>Math.max(0,Math.min(100,v/mx*100))+"%"; $("#bLs").style.width=pct(ls,1000); $("#bRs").style.width=pct(rs,1000);
         const gm=Math.max(1500,capPk.l,capPk.r); $("#bLg").style.width=pct(lg,gm); $("#bRg").style.width=pct(rg,gm); }
-      if(lq&&(m==="tp"||m==="puck")){ const L=m==="tp"?["pad frames/s","all frames/s","thread wakes/s","read errors/s"]:["frames from Puck/s","ACKs delivered/s","reports built/s","stale replaced/s"];
+      if(lq&&(m==="tp"||m==="puck"||m==="tpt")){ const L=m==="tp"?["pad frames/s","all frames/s","thread wakes/s","read errors/s"]:m==="tpt"?["frame interval µs (IRQ→IRQ)","I²C read µs","processing µs","IRQ → read start µs"]:["frames from Puck/s","ACKs delivered/s","reports built/s","stale replaced/s"];
         L.forEach((t,i)=>{$("#q"+i+"k").textContent=t; $("#q"+i).textContent=lq.q[i];}); } }
     hist(iv);
   }
