@@ -72,6 +72,15 @@
     </div>
     <div class="lbl">Gyro X/Y/Z (last 1.5 s)</div>
     <canvas id="gplot" width="1600" height="360"></canvas>
+    <div class="lbl" style="margin-top:16px">Trackpads — move a finger continuously on a pad; counts only reports while that pad is touched</div>
+    <div class="grid">
+      <div class="stat"><div class="k">Left pad fresh</div><div class="v" id="tLf">—</div><div class="u">new positions / s while touched</div></div>
+      <div class="stat"><div class="k">Left pad repeated</div><div class="v" id="tLr">—</div><div class="u">% touched reports, same x/y</div></div>
+      <div class="stat"><div class="k">Right pad fresh</div><div class="v" id="tRf">—</div><div class="u">new positions / s while touched</div></div>
+      <div class="stat"><div class="k">Right pad repeated</div><div class="v" id="tRr">—</div><div class="u">% touched reports, same x/y</div></div>
+      <div class="stat" style="grid-column:span 2"><div class="k">Left x / y / pressure</div><div class="v" id="tLv" style="font-size:15px">—</div></div>
+      <div class="stat" style="grid-column:span 2"><div class="k">Right x / y / pressure</div><div class="v" id="tRv" style="font-size:15px">—</div></div>
+    </div>
   </div>
 
   <div class="panel">
@@ -91,10 +100,12 @@
 <script>
 "use strict";
 const $=s=>document.querySelector(s);
+const TP={lx:17,ly:19,lp:21,rx:23,ry:25,rp:27};
+let lastTp=null;
 const OFF={seq:0,ts:29,ax:33,ay:35,az:37,gx:39,gy:41,gz:43,q:45};
 let devs=[], ev=[], idStats={}, lastSeq=null, drops=0, lastTs=null, lastG=null, gyroHist=[], lastRaw=null;
 
-function reset(){ev=[];idStats={};lastSeq=null;drops=0;lastTs=null;lastG=null;gyroHist=[];}
+function reset(){lastTp=null;ev=[];idStats={};lastSeq=null;drops=0;lastTs=null;lastG=null;gyroHist=[];}
 $("#reset").onclick=reset;
 
 async function connect(){
@@ -122,6 +133,12 @@ function onReport(e){
   if(id!==wantedId()) return;
   lastRaw=dv;
   const rec={t};
+  if(dv.byteLength>=TP.rp+2){
+    const tp=[dv.getInt16(TP.lx,true),dv.getInt16(TP.ly,true),dv.getUint16(TP.lp,true),dv.getInt16(TP.rx,true),dv.getInt16(TP.ry,true),dv.getUint16(TP.rp,true)];
+    rec.tp=tp; rec.lT=tp[2]>0||tp[0]!==0||tp[1]!==0; rec.rT=tp[5]>0||tp[3]!==0||tp[4]!==0;
+    rec.lN=rec.lT&&(!lastTp||tp[0]!==lastTp[0]||tp[1]!==lastTp[1]); rec.rN=rec.rT&&(!lastTp||tp[3]!==lastTp[3]||tp[4]!==lastTp[4]);
+    lastTp=tp;
+  }
   if(dv.byteLength>OFF.seq){ const s=dv.getUint8(OFF.seq); if(lastSeq!==null){ const d=(s-lastSeq+256)&255; if(d>1&&d<200) drops+=d-1; } lastSeq=s; }
   if(dv.byteLength>=OFF.gz+2){
     const ts=dv.getUint32(OFF.ts,true), g=[dv.getInt16(OFF.gx,true),dv.getInt16(OFF.gy,true),dv.getInt16(OFF.gz,true)];
@@ -164,6 +181,12 @@ function draw(){
       if(last.a) $("#sAcc").textContent=last.a.join(" / ")+((last.a[0]|last.a[1]|last.a[2])?"":"  ← IMU off (host)");
       if(last.q) $("#sQuat").textContent=last.q.join(" / ");
     }
+    { const tps=w.filter(r=>r.tp);
+      for(const [k,T,N,f,rr] of [["l","lT","lN","#tLf","#tLr"],["r","rT","rN","#tRf","#tRr"]]){
+        const touched=tps.filter(r=>r[T]), n=touched.filter(r=>r[N]).length;
+        if(touched.length>20){ $(f).textContent=(n/touched.length*rate).toFixed(0); $(rr).textContent=(100*(1-n/touched.length)).toFixed(1); }
+        else { $(f).textContent="—"; $(rr).textContent="—"; } }
+      const lt=tps.length?tps[tps.length-1].tp:null; if(lt){ $("#tLv").textContent=lt.slice(0,3).join(" / "); $("#tRv").textContent=lt.slice(3).join(" / "); } }
     hist(iv);
   }
   plot();
