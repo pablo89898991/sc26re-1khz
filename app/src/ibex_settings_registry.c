@@ -81,7 +81,8 @@ static const struct ibex_setting_entry setting_entries[IBEX_SETTING_COUNT] = {
 	[35] = SETTING_ENTRY(80, 25, 100, "trackpad_relative_mode_invert_y", NULL),
 	[36] = UNKNOWN_SETTING_ENTRY(0, 0, 100, "unknown_36", NULL),
 	[37] = OFW_SETTING_ENTRY(0, 0, 1, "rgbw_led_override_enabled", NULL),
-	[38] = UNKNOWN_SETTING_ENTRY(50, 1, 1000, "unknown_38", NULL),
+	/* 6ACFF323 turned this into a boolean (default 1). */
+	[38] = UNKNOWN_SETTING_ENTRY(1, 0, 1, "unknown_38", NULL),
 	[39] = SETTING_ENTRY(0, 0, 1, "trackpad_outer_radius_release_on_transition", NULL),
 	[40] = SETTING_ENTRY(20, 1, 180, "radial_mode_angle", NULL),
 	[41] = SETTING_ENTRY(3900, 0, 25000, "haptic_intensity_mouse_mode", NULL),
@@ -115,7 +116,8 @@ static const struct ibex_setting_entry setting_entries[IBEX_SETTING_COUNT] = {
 	[69] = SETTING_ENTRY(1, 0, 1, "trackpad_frequency_hopping", NULL),
 	[70] = OFW_SETTING_ENTRY(1, 0, 2, "haptics_enabled", "settings/haptics/enabled"),
 	[71] = OFW_SETTING_ENTRY(1, 0, 1, "steam_watchdog_enable", NULL),
-	[72] = SETTING_ENTRY(1200, 0, 16000, "timp_touch_threshold_on", NULL),
+	/* 6ACFF323 raised the default from 1200 to 1300. */
+	[72] = SETTING_ENTRY(1300, 0, 16000, "timp_touch_threshold_on", NULL),
 	[73] = SETTING_ENTRY(1000, 0, 16000, "timp_touch_threshold_off", NULL),
 	[74] = SETTING_ENTRY(3, 0, 3, "freq_hopping", NULL),
 	[75] = OFW_SETTING_ENTRY(0, 0, 1, "haptic_amplifier_mode", "settings/haptics/amplifier_mode"),
