@@ -568,6 +568,58 @@ static uint8_t haptics_command_channels(uint8_t side)
 	}
 }
 
+#if CONFIG_IBEX_HAPTICS_TRIGGERS_ON_GRIPS
+/* A trigger counts as "in use" while pulled past ~3% and for a short time after release. */
+#define TRIGGER_HAPTIC_ACTIVE_LEVEL (INT16_MAX / 32)
+#define TRIGGER_HAPTIC_HOLD_MS 150
+static atomic_t trigger_haptic_until_ms[2];
+static atomic_t trackpad_touched[2];
+#endif
+
+void haptics_trigger_update(int16_t left, int16_t right)
+{
+#if CONFIG_IBEX_HAPTICS_TRIGGERS_ON_GRIPS
+	int32_t now = (int32_t)k_uptime_get_32();
+
+	if(left > TRIGGER_HAPTIC_ACTIVE_LEVEL)
+	{
+		atomic_set(&trigger_haptic_until_ms[0], now + TRIGGER_HAPTIC_HOLD_MS);
+	}
+	if(right > TRIGGER_HAPTIC_ACTIVE_LEVEL)
+	{
+		atomic_set(&trigger_haptic_until_ms[1], now + TRIGGER_HAPTIC_HOLD_MS);
+	}
+#else
+	ARG_UNUSED(left);
+	ARG_UNUSED(right);
+#endif
+}
+
+/*
+ * Steam sends trigger effects to the trackpad (_0) actuators. When the trigger on a side is
+ * in use and that side's trackpad is not being touched, move the effect to the grip (_1)
+ * actuator of the same side.
+ */
+static uint8_t haptics_redirect_trigger_channels(uint8_t channels)
+{
+#if CONFIG_IBEX_HAPTICS_TRIGGERS_ON_GRIPS
+	static const uint8_t pad[2] = { HAPTICS_CHANNEL_LEFT_0, HAPTICS_CHANNEL_RIGHT_0 };
+	static const uint8_t grip[2] = { HAPTICS_CHANNEL_LEFT_1, HAPTICS_CHANNEL_RIGHT_1 };
+	int32_t now = (int32_t)k_uptime_get_32();
+
+	for(int i = 0; i < 2; ++i)
+	{
+		if((channels & pad[i]) != 0 &&
+		   (int32_t)(atomic_get(&trigger_haptic_until_ms[i]) - now) > 0 &&
+		   atomic_get(&trackpad_touched[i]) == 0)
+		{
+			channels = (channels & ~pad[i]) | grip[i];
+		}
+	}
+#endif
+	return channels;
+}
+
 static uint8_t haptics_pulse_channels(uint8_t side)
 {
 	/* OFW handles raw pulse sides 0/1 before applying the shared side table. */
@@ -760,6 +812,9 @@ void haptics_touchpad_update(bool right, bool pressure_active, bool touch_active
 	int16_t increment = 5500;
 	int16_t click_pressure = 40;
 
+#if CONFIG_IBEX_HAPTICS_TRIGGERS_ON_GRIPS
+	atomic_set(&trackpad_touched[right ? 1 : 0], touch_active ? 1 : 0);
+#endif
 	(void)ibex_setting_get(SETTING_HAPTICS_ENABLED, &enabled);
 	(void)ibex_setting_get(SETTING_LIZARD_MODE, &lizard_mode);
 	if(enabled != 1 || lizard_mode == 0)
@@ -1274,7 +1329,7 @@ static int handle_haptic_pulse(const uint8_t *data, size_t len, bool log)
 		return -EMSGSIZE;
 	}
 
-	channels = haptics_pulse_channels(data[0]);
+	channels = haptics_redirect_trigger_channels(haptics_pulse_channels(data[0]));
 	on_us = sys_get_le16(&data[1]);
 	off_us = sys_get_le16(&data[3]);
 	repeat_count = sys_get_le16(&data[5]);
@@ -1344,7 +1399,7 @@ static int handle_haptic_command(const uint8_t *data, size_t len, bool log)
 		return -EMSGSIZE;
 	}
 
-	channels = haptics_command_channels(data[0]);
+	channels = haptics_redirect_trigger_channels(haptics_command_channels(data[0]));
 	if(log)
 	{
 		LOG_INF("haptics command side=0x%02x channels=%s command=%u %s gain_db=%d", data[0],
@@ -1394,7 +1449,7 @@ static int handle_haptic_lfo_tone(const uint8_t *data, size_t len, bool log)
 		return -EMSGSIZE;
 	}
 
-	channels = haptics_command_channels(data[0]);
+	channels = haptics_redirect_trigger_channels(haptics_command_channels(data[0]));
 	frequency_hz = sys_get_le16(&data[2]);
 	duration_ms = sys_get_le16(&data[4]);
 	if(log)
@@ -1430,7 +1485,7 @@ static int handle_haptic_log_sweep(const uint8_t *data, size_t len, bool log)
 		return -EMSGSIZE;
 	}
 
-	channels = haptics_command_channels(data[0]);
+	channels = haptics_redirect_trigger_channels(haptics_command_channels(data[0]));
 	duration_ms = sys_get_le16(&data[2]);
 	start_frequency_hz = sys_get_le16(&data[4]);
 	end_frequency_hz = sys_get_le16(&data[6]);
@@ -1470,7 +1525,7 @@ static int handle_haptic_script(const uint8_t *data, size_t len, bool log)
 		return -EMSGSIZE;
 	}
 
-	channels = haptics_command_channels(data[0]);
+	channels = haptics_redirect_trigger_channels(haptics_command_channels(data[0]));
 	if(log)
 	{
 		LOG_INF("haptics script side=0x%02x channels=%s script_id=%u gain_db=%d", data[0],

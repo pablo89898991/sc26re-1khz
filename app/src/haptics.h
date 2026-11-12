@@ -101,3 +101,6 @@ int haptics_backend_set_master_gain_db(int16_t gain_db);
 int haptics_backend_set_amplifier_mode(bool forced_on);
 int haptics_backend_pulse(void);
 int haptics_backend_tone(uint32_t frequency_hz, uint32_t duration_ms);
+
+/* Route trigger-driven haptics (Steam trigger effects) to the grip actuators. */
+void haptics_trigger_update(int16_t left, int16_t right);

@@ -225,6 +225,14 @@ config IBEX_STICK_TOUCH_RELEASE
 	range 0 16000
 	default 0
 
+config IBEX_HAPTICS_TRIGGERS_ON_GRIPS
+	bool "Play Steam trigger haptics on the grip actuators instead of the trackpads"
+	default y
+	help
+	  While a trigger is pulled (and 150 ms after release) and the trackpad on the
+	  same side is not touched, haptic pulses/commands aimed at that side's trackpad
+	  actuator are sent to the grip actuator of that side instead.
+
 config IBEX_GRIP_TOUCH_PERCENT
 	int "Default grip touch sensitivity (setting 34), threshold = 225 + 9 * value"
 	range 25 400

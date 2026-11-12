@@ -15,6 +15,7 @@
 
 #include "analog.h"
 #include "calibration.h"
+#include "haptics.h"
 #include "ibex_settings_registry.h"
 
 LOG_MODULE_REGISTER(analog);
@@ -646,6 +647,7 @@ int analog_read_report(struct controller_report *report)
 	    trigger_to_report(averaged[ANALOG_TRIGGER_LEFT], &calibration.trigger_left);
 	report->trigger_right =
 	    trigger_to_report(averaged[ANALOG_TRIGGER_RIGHT], &calibration.trigger_right);
+	haptics_trigger_update(report->trigger_left, report->trigger_right);
 	if(trigger_click_active(report->trigger_left, &trigger_left_click_latched))
 	{
 		report->buttons |= BIT(CONTROLLER_BUTTON_LEFT_TRIGGER_CLICK);
