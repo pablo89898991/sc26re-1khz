@@ -255,7 +255,12 @@ config IBEX_HAPTICS_GRIP_TICK_MS
 config IBEX_HAPTICS_GRIP_TICK_GAIN_DB
 	int "Tick/click on grip actuators: gain offset in dB"
 	range -48 24
-	default -24
+	default -12
+
+config IBEX_HAPTICS_GRIP_TICK_GAIN_SCALE_PCT
+	int "Tick/click on grip actuators: percent of Steam's gain range kept (dB scale)"
+	range 10 100
+	default 50
 
 config IBEX_HAPTICS_DEBUG_IN_QUAT
 	bool "Diagnostics: report received haptic output reports in the quaternion fields"
