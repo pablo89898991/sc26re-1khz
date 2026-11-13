@@ -237,8 +237,25 @@ config IBEX_DROP_SCREAM
 	bool "Stock drop easter egg: Wilhelm scream / meow when the controller falls"
 	default y
 	help
-	  Port of OFW 6AE90BC5: on a detected free fall, ~19% Wilhelm scream (script 16),
-	  ~31% meow (script 17), otherwise nothing. Needs the IMU stream to be running.
+	  Port of OFW 6AE90BC5: on a detected free fall play the Wilhelm scream (script 16)
+	  or the meow (script 17) with the chances below, otherwise nothing.
+	  Needs the IMU stream to be running.
+
+config IBEX_DROP_SCREAM_PERCENT
+	int "Chance of the Wilhelm scream on a drop (%)"
+	default 35
+	range 0 100
+	depends on IBEX_DROP_SCREAM
+	help
+	  Stock is about 19%.
+
+config IBEX_DROP_MEOW_PERCENT
+	int "Chance of the meow on a drop (%)"
+	default 35
+	range 0 100
+	depends on IBEX_DROP_SCREAM
+	help
+	  Stock is about 31%. Scream + meow above 100% means a sound on every drop.
 
 config IBEX_DROP_FREE_FALL_MS
 	int "Free-fall time before the drop sound (ms)"
