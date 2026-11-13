@@ -5,10 +5,12 @@
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
 #include <zephyr/settings/settings.h>
+#include <zephyr/storage/flash_map.h>
 #include <zephyr/sys/byteorder.h>
 #include <zephyr/sys/util.h>
 
 #include "ibex_settings_registry.h"
+#include "valve_nvs.h"
 
 LOG_MODULE_REGISTER(ibex_settings);
 
@@ -179,6 +181,8 @@ static void notify_set(uint8_t id, int16_t value)
 	}
 }
 
+static bool haptics_setting_from_cfw[3]; /* enabled, amplifier_mode, master gain */
+
 static int haptics_settings_set(const char *name, size_t len, settings_read_cb read_cb,
                                 void *cb_arg)
 {
@@ -218,6 +222,7 @@ static int haptics_settings_set(const char *name, size_t len, settings_read_cb r
 		return -EINVAL;
 	}
 	value = (int16_t)sys_get_le16(encoded);
+	haptics_setting_from_cfw[id == SETTING_HAPTICS_ENABLED ? 0 : id == SETTING_TEST_CONTROL ? 1 : 2] = true;
 	value = CLAMP(value, setting_entries[id].min_value, setting_entries[id].max_value);
 	k_mutex_lock(&registry_mutex, K_FOREVER);
 	if(setting_values[id] != value)
@@ -232,6 +237,70 @@ static int haptics_settings_set(const char *name, size_t len, settings_read_cb r
 SETTINGS_STATIC_HANDLER_DEFINE(ibex_haptics, "settings/haptics", NULL, haptics_settings_set, NULL,
                                NULL);
 
+#if FIXED_PARTITION_EXISTS(valve_storage)
+static int ofw_haptics_read(const void *context, uint32_t offset, void *data, size_t len)
+{
+	return flash_area_read(context, offset, data, len);
+}
+
+/*
+ * The Valve bootloader erases the CFW settings on every flash, but the haptics settings the
+ * user made under the original firmware (Steam's haptic strength = master gain, amplifier
+ * mode, enabled) live on in valve_storage. Without them sc26re fell back to -3 dB and
+ * sounded weaker than the original firmware with the same Steam settings.
+ */
+static void import_ofw_haptics_settings(void)
+{
+	static const struct
+	{
+		const char *path;
+		uint8_t id;
+	} map[3] = {
+		{ "settings/haptics/enabled", SETTING_HAPTICS_ENABLED },
+		{ "settings/haptics/amplifier_mode", SETTING_TEST_CONTROL },
+		{ "settings/haptics/haptic_master_gain_db", SETTING_HAPTIC_MASTER_GAIN_DB },
+	};
+	const struct flash_area *fa;
+	struct valve_nvs nvs;
+
+	if(flash_area_open(PARTITION_ID(valve_storage), &fa) != 0)
+	{
+		return;
+	}
+	if(valve_nvs_open(&nvs, ofw_haptics_read, fa, fa->fa_size) == 0)
+	{
+		for(int i = 0; i < 3; ++i)
+		{
+			uint8_t raw[2];
+			int len;
+			int16_t value;
+
+			if(haptics_setting_from_cfw[i])
+			{
+				continue;
+			}
+			len = valve_nvs_read_setting(&nvs, map[i].path, raw, sizeof(raw));
+			if(len != (int)sizeof(raw))
+			{
+				continue;
+			}
+			value = (int16_t)sys_get_le16(raw);
+			value = CLAMP(value, setting_entries[map[i].id].min_value,
+			              setting_entries[map[i].id].max_value);
+			LOG_INF("imported OFW %s = %d", map[i].path, value);
+			k_mutex_lock(&registry_mutex, K_FOREVER);
+			if(setting_values[map[i].id] != value)
+			{
+				setting_values[map[i].id] = value;
+				notify_changed(map[i].id, value);
+			}
+			k_mutex_unlock(&registry_mutex);
+		}
+	}
+	flash_area_close(fa);
+}
+#endif
+
 void ibex_settings_registry_init(void)
 {
 	int err;
@@ -245,6 +314,9 @@ void ibex_settings_registry_init(void)
 			LOG_WRN("failed to load persistent haptics settings: %d", err);
 		}
 	}
+#if FIXED_PARTITION_EXISTS(valve_storage)
+	import_ofw_haptics_settings();
+#endif
 }
 
 void ibex_settings_registry_reset_defaults(void)

@@ -493,6 +493,19 @@ int haptics_init(void)
 			atomic_set(&haptics_settings_callback_ready, 0);
 			return err;
 		}
+		/* apply the values loaded before the callback existed (CFW or imported OFW settings) */
+		{
+			int16_t value;
+
+			if(ibex_setting_get(SETTING_HAPTIC_MASTER_GAIN_DB, &value))
+			{
+				haptics_setting_changed(SETTING_HAPTIC_MASTER_GAIN_DB, value);
+			}
+			if(ibex_setting_get(SETTING_TEST_CONTROL, &value))
+			{
+				haptics_setting_changed(SETTING_TEST_CONTROL, value);
+			}
+		}
 	}
 
 	if(atomic_cas(&haptics_started, 0, 1))
@@ -1026,10 +1039,16 @@ void haptics_debug_quat(struct controller_report *report)
 		}
 		window_start = now;
 	}
-	report->gyro_quat_w = out[0];
-	report->gyro_quat_x = out[1];
-	report->gyro_quat_y = out[2];
-	report->gyro_quat_z = out[3];
+	{
+		int16_t gain = 0, amp = 0;
+
+		(void)ibex_setting_get(SETTING_HAPTIC_MASTER_GAIN_DB, &gain);
+		(void)ibex_setting_get(SETTING_TEST_CONTROL, &amp);
+		report->gyro_quat_w = out[0];
+		report->gyro_quat_x = (int16_t)((out[1] + out[2]) & 0x7fff); /* drops + overflow bytes */
+		report->gyro_quat_y = (int16_t)(gain * 16 + (amp & 1)); /* master gain dB, amp mode */
+		report->gyro_quat_z = out[3];
+	}
 }
 #else
 #define PCM_DBG_RX(n) do { } while(0)

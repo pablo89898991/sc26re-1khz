@@ -286,7 +286,7 @@ function draw(){
         $("#cLs").textContent=ls; $("#cRs").textContent=rs; $("#cLg").textContent=lg; $("#cRg").textContent=rg; $("#pLg").textContent=capPk.l; $("#pRg").textContent=capPk.r;
         const pct=(v,mx)=>Math.max(0,Math.min(100,v/mx*100))+"%"; $("#bLs").style.width=pct(ls,1000); $("#bRs").style.width=pct(rs,1000);
         const gm=Math.max(1500,capPk.l,capPk.r); $("#bLg").style.width=pct(lg,gm); $("#bRg").style.width=pct(rg,gm); }
-      if(lq&&(m==="tp"||m==="puck"||m==="tpt"||m==="pcm")){ const L=m==="pcm"?["PCM bytes received/s","PCM messages dropped/s (queue full)","bytes dropped/s (ring full)","underruns/s (ring ran empty)"]:m==="tp"?["pad frames/s","all frames/s","thread wakes/s","read errors/s"]:m==="tpt"?["frame interval µs (IRQ→IRQ)","I²C read µs","processing µs","IRQ → read start µs"]:["frames from Puck/s","ACKs delivered/s","reports built/s","stale replaced/s"];
+      if(lq&&(m==="tp"||m==="puck"||m==="tpt"||m==="pcm")){ const L=m==="pcm"?["PCM bytes received/s","dropped/s (queue + ring)","master gain ×16 + amp mode (÷16 = dB)","underruns/s (ring ran empty)"]:m==="tp"?["pad frames/s","all frames/s","thread wakes/s","read errors/s"]:m==="tpt"?["frame interval µs (IRQ→IRQ)","I²C read µs","processing µs","IRQ → read start µs"]:["frames from Puck/s","ACKs delivered/s","reports built/s","stale replaced/s"];
         L.forEach((t,i)=>{$("#q"+i+"k").textContent=t; $("#q"+i).textContent=lq.q[i];}); } }
     hist(iv);
   }
