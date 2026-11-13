@@ -93,15 +93,12 @@ static void trigger_apply_direction(int i, int32_t raw, struct trigger_calibrati
 	{
 		return;
 	}
-	if(memcmp(&trigger_dir_for[i], cal, sizeof(*cal)) != 0)
-	{
-		if(trigger_dir_samples[i] >= TRIGGER_DIR_BOOT_SAMPLES)
-		{
-			/* calibration changed after boot (user calibrated): trust it */
-			trigger_dir_inverted[i] = (int8_t)(cal->inverted != 0);
-		}
-		trigger_dir_for[i] = *cal;
-	}
+	/*
+	 * The physical direction never changes, so once decided it stays for this power cycle,
+	 * whatever "inverted" byte a later calibration write carries (Steam's controller settings
+	 * re-send calibration records whose flag does not match the hardware).
+	 */
+	trigger_dir_for[i] = *cal;
 	if(trigger_dir_samples[i] < TRIGGER_DIR_BOOT_SAMPLES)
 	{
 		int32_t lo = MIN(cal->pressed, cal->idle), hi = MAX(cal->pressed, cal->idle);
