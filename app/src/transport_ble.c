@@ -108,6 +108,7 @@ static uint8_t input_sequence;
 static bool ble_started;
 static bool ble_settings_loaded;
 static bool ble_pairing_mode_initialized;
+static bool ble_pairing_chime_played;
 static bool ble_restart_after_recycle;
 static bool ble_advertising_suspended;
 static uint8_t ble_identity;
@@ -571,6 +572,11 @@ static int ble_start_advertising_locked(void)
 	{
 		advertising_flags = BT_LE_AD_LIMITED | BT_LE_AD_NO_BREDR;
 		LOG_INF("advertising in physical-chord pairing mode");
+		if(!ble_pairing_chime_played)
+		{
+			ble_pairing_chime_played = true;
+			(void)haptics_play_system_sound(HAPTICS_SOUND_PAIRING);
+		}
 	}
 	else
 	{
@@ -680,6 +686,7 @@ static void ble_pairing_complete_cb(struct bt_conn *conn, bool bonded)
 		atomic_clear(&ble_pairing_allowed);
 		(void)k_work_cancel_delayable(&ble_pairing_expiry_work);
 		LOG_INF("BLE pairing complete; future connections restricted to bonds");
+		(void)haptics_play_system_sound(HAPTICS_SOUND_PAIRED);
 	}
 }
 

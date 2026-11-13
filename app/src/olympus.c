@@ -78,6 +78,63 @@ static int64_t olympus_last_valid_frame_ms;
 static struct k_thread olympus_thread;
 static K_THREAD_STACK_DEFINE(olympus_thread_stack, 2048);
 
+/*
+ * OFW 6AE90BC5 trackpad position filter (0x1c03c / 0x3c2f8), enabled by setting 65
+ * trackpad_filt_ctrl (default 1): a One Euro filter on each axis in +-16383 units with
+ * min cutoff 0.001 Hz, beta 0.1, derivative cutoff 1.2 Hz, the cutoff only decaying by 1% per
+ * sample. OFW assumes a fixed 250 Hz frame rate; here the measured frame interval is used.
+ */
+#define OLYMPUS_EURO_MIN_CUTOFF_HZ 0.001f
+#define OLYMPUS_EURO_BETA 0.1f
+#define OLYMPUS_EURO_D_CUTOFF_HZ 1.2f
+#define OLYMPUS_EURO_DEFAULT_RATE_HZ 250.0f
+
+struct one_euro_filter
+{
+	bool primed;
+	float x;
+	float raw;
+	float dx;
+	float cutoff;
+};
+
+static float one_euro_alpha(float cutoff_hz, float rate_hz)
+{
+	float tau = 1.0f / (2.0f * 3.14159265f * cutoff_hz);
+
+	return 1.0f / (1.0f + tau * rate_hz);
+}
+
+static float one_euro_step(struct one_euro_filter *f, float value, float rate_hz)
+{
+	float d = 0.0f;
+	float a_d = one_euro_alpha(OLYMPUS_EURO_D_CUTOFF_HZ, rate_hz);
+	float cutoff;
+	float a;
+
+	if(!f->primed)
+	{
+		f->primed = true;
+		f->x = value;
+		f->raw = value;
+		f->dx = 0.0f;
+		f->cutoff = 0.0f;
+		return value;
+	}
+	d = (value - f->raw) * rate_hz;
+	f->raw = value;
+	f->dx = f->dx + a_d * (d - f->dx);
+	cutoff = OLYMPUS_EURO_MIN_CUTOFF_HZ + OLYMPUS_EURO_BETA * fabsf(f->dx);
+	if(f->cutoff > cutoff && f->cutoff * 0.99f >= cutoff)
+	{
+		cutoff = f->cutoff * 0.99f;
+	}
+	f->cutoff = cutoff;
+	a = one_euro_alpha(cutoff, rate_hz);
+	f->x = f->x + a * (value - f->x);
+	return f->x;
+}
+
 struct olympus_pad_state
 {
 	bool touched;
@@ -92,6 +149,9 @@ struct olympus_pad_state
 	int16_t grip_samples[2];
 	float filtered_x;
 	float filtered_y;
+	struct one_euro_filter euro_x;
+	struct one_euro_filter euro_y;
+	uint32_t euro_last_cycles;
 	int32_t filtered_touch_pressure;
 	int16_t filtered_pressure;
 };
@@ -722,6 +782,33 @@ static void decode_pad(struct olympus_pad_state *state, const int16_t *x_samples
 
 	*x = normalized_to_axis(normalized_x);
 	*y = invert_axis(normalized_to_axis(normalized_y));
+
+	if(state->touched && registry_setting_or_default(SETTING_TRACKPAD_FILT_CTRL, 1) != 0)
+	{
+		uint32_t now = k_cycle_get_32();
+		float rate_hz = OLYMPUS_EURO_DEFAULT_RATE_HZ;
+
+		if(state->euro_x.primed)
+		{
+			uint32_t us = k_cyc_to_us_floor32(now - state->euro_last_cycles);
+
+			if(us >= 200U && us <= 20000U)
+			{
+				rate_hz = 1000000.0f / (float)us;
+			}
+		}
+		state->euro_last_cycles = now;
+		/* OFW filters in +-16383 units, then doubles */
+		*x = (int16_t)CLAMP(2.0f * one_euro_step(&state->euro_x, (float)*x * 0.5f, rate_hz),
+		                    -32767.0f, 32767.0f);
+		*y = (int16_t)CLAMP(2.0f * one_euro_step(&state->euro_y, (float)*y * 0.5f, rate_hz),
+		                    -32767.0f, 32767.0f);
+	}
+	else
+	{
+		state->euro_x.primed = false;
+		state->euro_y.primed = false;
+	}
 
 	if(!state->click_filter_initialized)
 	{

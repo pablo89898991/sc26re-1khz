@@ -197,11 +197,8 @@ int main(void)
 	}
 
 	LOG_INF("SC26re started in %s mode", radio_personality_name());
-	/* stock power-on chime; not after a software reset (personality switch, Steam reboot) */
-	if((power_boot_reset_reason() & (POWER_RESETREAS_SREQ_Msk | POWER_RESETREAS_LOCKUP_Msk)) == 0U)
-	{
-		(void)haptics_play_power_sound(true);
-	}
+	/* stock power-on / connection chime (also after "continue wireless" reboots, like OFW) */
+	(void)haptics_play_system_sound(HAPTICS_SOUND_POWER_ON);
 	(void)ibex_setting_get(SETTING_SLEEP_INACTIVITY_TIMEOUT, &inactivity_timeout_seconds);
 	last_activity_ms = k_uptime_get();
 

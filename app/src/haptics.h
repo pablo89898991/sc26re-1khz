@@ -109,4 +109,12 @@ struct controller_report;
 void haptics_debug_quat(struct controller_report *report);
 #include <stddef.h>
 void haptics_debug_note_feature(const uint8_t *request, size_t len);
+enum haptics_system_sound
+{
+	HAPTICS_SOUND_POWER_ON,
+	HAPTICS_SOUND_POWER_OFF,
+	HAPTICS_SOUND_PAIRING,
+	HAPTICS_SOUND_PAIRED,
+};
+int haptics_play_system_sound(enum haptics_system_sound sound);
 int haptics_play_power_sound(bool on);

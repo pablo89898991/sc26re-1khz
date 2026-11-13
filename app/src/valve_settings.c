@@ -15,6 +15,7 @@
 #include "imu.h"
 #include "valve_nvs.h"
 #include "valve_settings.h"
+#include "haptics.h"
 
 LOG_MODULE_REGISTER(valve_settings);
 
@@ -778,6 +779,7 @@ static int commit_setting_path(const char *path)
 		bond_id[1] = sys_get_le32(&bond_slot->staged.data[4]);
 		k_mutex_unlock(&esb_settings_mutex);
 		LOG_INF("committed ESB bond slot %d %08x/%08x", slot, bond_id[0], bond_id[1]);
+		(void)haptics_play_system_sound(HAPTICS_SOUND_PAIRED);
 		notify_esb_bond_changed();
 		return 0;
 	}
@@ -921,4 +923,14 @@ int valve_settings_save_esb_bond(uint8_t slot, const uint8_t *bond, size_t len, 
 uint8_t valve_settings_haptic_boot_level(void)
 {
 	return haptic_boot_level;
+}
+
+bool valve_settings_active_wireless_transport(uint8_t *transport)
+{
+	k_spinlock_key_t key = k_spin_lock(&active_esb_bond_lock);
+	bool valid = active_wireless_transport_valid;
+
+	*transport = active_wireless_transport;
+	k_spin_unlock(&active_esb_bond_lock, key);
+	return valid;
 }

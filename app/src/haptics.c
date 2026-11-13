@@ -2185,16 +2185,53 @@ int haptics_debug_play_pulse(uint8_t channels)
 	return haptics_submit_effect(&command);
 }
 
-/* OFW 6AE90BC5 system sounds (0x1e7a8): power-on chime = script 1, power-off = script 5,
- * both on the grip actuators, gain by user/haptic_boot_level (1 = -18 dB, 2 = -12 dB). */
-int haptics_play_power_sound(bool on)
+/* OFW 6AE90BC5 system sounds (0x1e7a8 / 0x452f6), played on the grip actuators with the gain
+ * from user/haptic_boot_level (1 = -18 dB, 2 = -12 dB; pairing sounds 1 dB quieter):
+ *   power on  USB -> script 1; wireless -> transport 0/2 script 1, transport 1/3 script 2
+ *   power off -> script 5, pairing started -> script 8, paired -> script 9 */
+int haptics_play_system_sound(enum haptics_system_sound sound)
 {
 	uint8_t level = valve_settings_haptic_boot_level();
+	int8_t gain_db;
+	uint8_t script;
 
 	if(!IS_ENABLED(CONFIG_IBEX_HAPTICS_POWER_SOUNDS) || level == 0U)
 	{
 		return 0;
 	}
-	return haptics_start_script(HAPTICS_CHANNEL_LEFT_1 | HAPTICS_CHANNEL_RIGHT_1, on ? 1U : 5U,
-	                            level == 1U ? -18 : -12);
+	gain_db = level == 1U ? -18 : -12;
+	switch(sound)
+	{
+		case HAPTICS_SOUND_POWER_ON:
+		{
+			uint8_t transport;
+
+			script = 1U;
+			if(!transport_usb_attached() && valve_settings_active_wireless_transport(&transport) &&
+			   (transport & 1U) != 0U)
+			{
+				script = 2U;
+			}
+			break;
+		}
+		case HAPTICS_SOUND_POWER_OFF:
+			script = 5U;
+			break;
+		case HAPTICS_SOUND_PAIRING:
+			script = 8U;
+			gain_db -= 1;
+			break;
+		case HAPTICS_SOUND_PAIRED:
+			script = 9U;
+			gain_db -= 1;
+			break;
+		default:
+			return -EINVAL;
+	}
+	return haptics_start_script(HAPTICS_CHANNEL_LEFT_1 | HAPTICS_CHANNEL_RIGHT_1, script, gain_db);
+}
+
+int haptics_play_power_sound(bool on)
+{
+	return haptics_play_system_sound(on ? HAPTICS_SOUND_POWER_ON : HAPTICS_SOUND_POWER_OFF);
 }
