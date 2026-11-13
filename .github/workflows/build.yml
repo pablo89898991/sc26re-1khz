@@ -75,6 +75,21 @@ jobs:
           - **SC26RE_1k_puck_dbg.fw** – same, with Puck link counters in the quaternion fields
           Puck firmware: patch your own PROTEUS_FW in the [web patcher](https://pablo89898991.github.io/sc26re-1khz/patcher.html)."
 
+      - name: Publish versioned release from docs/releases (master)
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/master'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          f=$(ls docs/releases/v*.md 2>/dev/null | sort -V | tail -1)
+          [ -n "$f" ] || exit 0
+          tag=$(basename "$f" .md)
+          if gh release view "$tag" >/dev/null 2>&1; then
+            echo "$tag already released"
+            exit 0
+          fi
+          gh release create "$tag" out/*.fw --target "$GITHUB_SHA" --latest \
+            --title "sc26re 1 kHz $tag" --notes-file "$f"
+
       - name: Publish tagged release
         if: startsWith(github.ref, 'refs/tags/v')
         env:
