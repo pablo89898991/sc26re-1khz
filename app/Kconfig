@@ -271,13 +271,13 @@ config IBEX_HAPTICS_GYRO_GRIP_LEVELS
 
 config IBEX_HAPTICS_GYRO_STEAM_LOW_DB
 	int "Steam gain sent for Rotational Haptics = Low"
-	default -21
+	default -9
 config IBEX_HAPTICS_GYRO_STEAM_MEDIUM_DB
 	int "Steam gain sent for Rotational Haptics = Medium"
-	default -15
+	default -6
 config IBEX_HAPTICS_GYRO_STEAM_HIGH_DB
 	int "Steam gain sent for Rotational Haptics = High"
-	default -9
+	default -3
 config IBEX_HAPTICS_GYRO_GRIP_LOW_DB
 	int "Grip level for Low"
 	default -30
