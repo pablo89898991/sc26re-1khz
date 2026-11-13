@@ -10,3 +10,4 @@ enum charge_mode_result
 };
 
 enum charge_mode_result charge_mode_run_if_needed(void);
+void charge_mode_dock_led_poll(void);

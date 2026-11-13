@@ -328,3 +328,98 @@ enum charge_mode_result charge_mode_run_if_needed(void)
 		}
 	}
 }
+
+#if CONFIG_IBEX_DOCK_CHARGE_LED
+/*
+ * Running controller placed on the Puck: show the same amber "breathing" charge animation
+ * the charge-only mode uses (OFW-style), steady amber for 10 s once full, then the normal LED.
+ * Lifting the controller restores whatever the LED showed before.
+ */
+#define DOCK_LED_STEP_MS 20
+#define DOCK_LED_LOST_MS 2000
+#define DOCK_LED_PERIOD_MS 3600U
+
+static struct rgbw_color dock_led_breathe(uint32_t t)
+{
+	t %= DOCK_LED_PERIOD_MS;
+	if(t < 200U)
+	{
+		return (struct rgbw_color){ lerp8(0, led_dim_amber.r, t, 200), lerp8(0, led_dim_amber.g, t, 200), 0, 0 };
+	}
+	t -= 200U;
+	if(t < 1600U)
+	{
+		return (struct rgbw_color){ lerp8(led_dim_amber.r, led_peak_amber.r, t, 1600),
+		                            lerp8(led_dim_amber.g, led_peak_amber.g, t, 1600), 0, 0 };
+	}
+	t -= 1600U;
+	if(t < 1600U)
+	{
+		return (struct rgbw_color){ lerp8(led_peak_amber.r, led_dim_amber.r, t, 1600),
+		                            lerp8(led_peak_amber.g, led_dim_amber.g, t, 1600), 0, 0 };
+	}
+	t -= 1600U;
+	return (struct rgbw_color){ lerp8(led_dim_amber.r, 0, t, 200), lerp8(led_dim_amber.g, 0, t, 200), 0, 0 };
+}
+
+void charge_mode_dock_led_poll(void)
+{
+	static int64_t last_step, last_sample, last_seen, docked_since, full_since;
+	static bool docked;
+	static struct rgbw_color saved;
+	int64_t now = k_uptime_get();
+
+	if(now - last_step < DOCK_LED_STEP_MS)
+	{
+		return;
+	}
+	last_step = now;
+
+	if(now - last_sample >= CHARGE_MODE_CONTACT_RESAMPLE_MS || puck_interface_active())
+	{
+		last_sample = now;
+		if(puck_contact_present())
+		{
+			last_seen = now;
+		}
+	}
+
+	bool contact = last_seen != 0 && now - last_seen < DOCK_LED_LOST_MS;
+
+	if(contact && !docked)
+	{
+		docked = true;
+		docked_since = now;
+		full_since = 0;
+		saved = rgbw_led_get();
+		LOG_INF("on the Puck: charge LED");
+	}
+	else if(!contact && docked)
+	{
+		docked = false;
+		rgbw_led_set(saved);
+		LOG_INF("off the Puck: LED restored");
+		return;
+	}
+	if(!docked)
+	{
+		return;
+	}
+
+	if(charge_full())
+	{
+		if(full_since == 0)
+		{
+			full_since = now;
+		}
+		rgbw_led_set(now - full_since < CHARGE_MODE_FULL_LED_MS ? led_peak_amber : saved);
+		return;
+	}
+	full_since = 0;
+	rgbw_led_set(dock_led_breathe((uint32_t)(now - docked_since)));
+}
+#else
+void charge_mode_dock_led_poll(void)
+{
+}
+#endif

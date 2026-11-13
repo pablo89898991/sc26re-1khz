@@ -233,6 +233,11 @@ config IBEX_HAPTICS_TRIGGERS_ON_GRIPS
 	  same side is not touched, haptic pulses/commands aimed at that side's trackpad
 	  actuator are sent to the grip actuator of that side instead.
 
+config IBEX_DOCK_CHARGE_LED
+	bool "Show the charge animation on the LED while the running controller sits on the Puck"
+	default y
+	depends on IBEX_RGBW_LED
+
 config IBEX_HAPTICS_TRIGGER_GRIP_BOOST_DB
 	int "Extra gain (dB) for trigger haptics moved to the grips"
 	range -12 12
