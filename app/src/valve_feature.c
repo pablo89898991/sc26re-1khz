@@ -10,6 +10,7 @@
 
 #include "analog.h"
 #include "controller.h"
+#include "haptics.h"
 #include "ibex_settings_registry.h"
 #include "imu.h"
 #include "lizard.h"
@@ -549,6 +550,9 @@ static int handle_feature_request(enum valve_feature_link link, const uint8_t *r
 	}
 
 	log_feature_request(link, request, len);
+#if CONFIG_IBEX_HAPTICS_DEBUG_IN_QUAT
+	haptics_debug_note_feature(request, len);
+#endif
 
 	if(request_path(request, len, path, sizeof(path), &value_offset))
 	{

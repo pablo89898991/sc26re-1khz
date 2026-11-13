@@ -107,3 +107,5 @@ void haptics_trigger_update(int16_t left, int16_t right);
 void haptics_gyro_update(int16_t gx, int16_t gy, int16_t gz);
 struct controller_report;
 void haptics_debug_quat(struct controller_report *report);
+#include <stddef.h>
+void haptics_debug_note_feature(const uint8_t *request, size_t len);

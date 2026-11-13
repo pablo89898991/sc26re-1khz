@@ -121,7 +121,7 @@
         <option value="tp">Trackpad controller counters — *_tp*_dbg firmware</option>
         <option value="tpt">Trackpad timing µs — *_tptiming_dbg firmware</option>
         <option value="puck">Puck link counters — *_puck_dbg firmware</option>
-        <option value="hap">Haptic reports log — *_haptics_dbg firmware</option>
+        <option value="hap">Haptic + feature (Steam command) log — *_haptics_dbg firmware</option>
         <option value="trg">Trigger raw + calibration — *_trigger_dbg firmware</option>
         <option value="pcm">PCM haptic stream counters — *_pcm_dbg firmware</option>
       </select></div>
@@ -189,6 +189,7 @@ function hapIngest(q,t){
   const id=q[1]&0xff, side=(q[1]>>8)&0xff, d1=q[2]&0xff, d2=(q[2]>>8)&0xff, d3=q[3]&0xff, f=(q[3]>>8)&0xff;
   const fl=[f&1?"TL":"",f&2?"TR":"",f&4?"PL":"",f&8?"PR":"",f&16?"G":""].filter(Boolean).join(" ");
   const h=x=>x.toString(16).padStart(2,"0");
+  if(f&0x80){ hapLines.push(`${((t-hapT0)/1000).toFixed(3).padStart(8)}s #${seq} FEATURE 0x${h(id)} len=${side} data=${h(d1)} ${h(d2)} ${h(d3)}${id===0x87?`  (setting ${d1} = ${(d2|(d3<<8))<<16>>16})`:""}`); hapDirty=true; return; }
   hapLines.push(`${((t-hapT0)/1000).toFixed(3).padStart(8)}s #${seq} id=0x${h(id)} ${(HAPN[id]||"").padEnd(9)} side=${side} data=${h(d1)} ${h(d2)} ${h(d3)}  [${fl}]`);
   if(hapLines.length>5000) hapLines.splice(0,hapLines.length-5000);
   hapDirty=true;

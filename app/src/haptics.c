@@ -2014,6 +2014,19 @@ static void hdbg_record(uint8_t id, const uint8_t *data, size_t len)
 	k_spin_unlock(&hdbg_lock, key);
 }
 
+/* feature reports (Steam -> controller commands) share the ring, flagged with bit 7 */
+void haptics_debug_note_feature(const uint8_t *request, size_t len)
+{
+	if(len == 0)
+	{
+		return;
+	}
+	hdbg_record(request[0], &request[1], len - 1);
+	k_spinlock_key_t key = k_spin_lock(&hdbg_lock);
+	hdbg_ring[(hdbg_seq - 1) % HDBG_RING].flags |= 0x80;
+	k_spin_unlock(&hdbg_lock, key);
+}
+
 void haptics_debug_quat(struct controller_report *report)
 {
 	k_spinlock_key_t key = k_spin_lock(&hdbg_lock);
