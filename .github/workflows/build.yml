@@ -4,7 +4,7 @@ on:
   push:
     branches: [master, imu-1khz]
     tags: ['v*']
-    paths-ignore: ['web/**', 'docs/*', '**.md', 'valve/**', 'tools/**']
+    paths-ignore: ['web/**', 'docs/*', '*.md', 'valve/**', 'tools/**']
   pull_request:
   workflow_dispatch:
 
