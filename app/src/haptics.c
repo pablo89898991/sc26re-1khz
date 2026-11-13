@@ -630,8 +630,12 @@ void haptics_trigger_update(int16_t left, int16_t right)
  * in use and that side's trackpad is not being touched, move the effect to the grip (_1)
  * actuator of the same side.
  */
+/* set when the last redirect moved an effect to a grip because a trigger was in use */
+static bool trigger_redirect_pending;
+
 static uint8_t haptics_redirect_trigger_channels(uint8_t channels)
 {
+	trigger_redirect_pending = false;
 #if CONFIG_IBEX_HAPTICS_TRIGGERS_ON_GRIPS
 	static const uint8_t pad[2] = { HAPTICS_CHANNEL_LEFT_0, HAPTICS_CHANNEL_RIGHT_0 };
 	static const uint8_t grip[2] = { HAPTICS_CHANNEL_LEFT_1, HAPTICS_CHANNEL_RIGHT_1 };
@@ -644,6 +648,7 @@ static uint8_t haptics_redirect_trigger_channels(uint8_t channels)
 		   atomic_get(&trackpad_touched[i]) == 0)
 		{
 			channels = (channels & ~pad[i]) | grip[i];
+			trigger_redirect_pending = true;
 		}
 	}
 #endif
@@ -770,7 +775,26 @@ static const char *haptics_effect_name(enum haptics_effect_type type)
 	}
 }
 
+static int haptics_submit_effect_raw(const struct haptics_effect *effect);
+
 static int haptics_submit_effect(const struct haptics_effect *effect)
+{
+#if CONFIG_IBEX_HAPTICS_TRIGGERS_ON_GRIPS && CONFIG_IBEX_HAPTICS_TRIGGER_GRIP_BOOST_DB != 0
+	if(trigger_redirect_pending &&
+	   (effect->channels & (HAPTICS_CHANNEL_LEFT_1 | HAPTICS_CHANNEL_RIGHT_1)) != 0)
+	{
+		struct haptics_effect boosted = *effect;
+
+		trigger_redirect_pending = false;
+		boosted.gain_db = (int8_t)CLAMP((int)effect->gain_db + CONFIG_IBEX_HAPTICS_TRIGGER_GRIP_BOOST_DB,
+		                                -24, 24);
+		return haptics_submit_effect_raw(&boosted);
+	}
+#endif
+	return haptics_submit_effect_raw(effect);
+}
+
+static int haptics_submit_effect_raw(const struct haptics_effect *effect)
 {
 	struct k_msgq *msgq = &haptics_msgq;
 	int err;
