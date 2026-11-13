@@ -176,6 +176,10 @@ int main(void)
 		{
 			LOG_INF("boot chord selected %s personality",
 			        requested_personality == RADIO_PERSONALITY_ESB ? "ESB" : "BLE");
+			/* an explicit boot chord is a deliberate choice: save it now instead of
+			 * after the 60 s confirmation, so turning the controller off soon after
+			 * does not fall back to the previous mode */
+			radio_personality_persist_after(requested_personality, 0);
 			radio_personality_reboot_into(requested_personality);
 		}
 		radio_personality_persist_after(radio_personality_get(), PERSONALITY_PERSIST_DELAY_MS);
