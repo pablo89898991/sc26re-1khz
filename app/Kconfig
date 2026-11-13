@@ -235,7 +235,7 @@ config IBEX_HAPTICS_TRIGGERS_ON_GRIPS
 
 config IBEX_HAPTICS_GYRO_ON_GRIPS
 	bool "Play Steam gyro haptics on the grip actuators instead of the trackpads"
-	default n
+	default y
 	help
 	  While the controller is being turned (> ~20 dps, and 150 ms after) and the
 	  trackpad on a side is either not touched or the finger rests still on it
@@ -245,7 +245,7 @@ config IBEX_HAPTICS_GYRO_ON_GRIPS
 config IBEX_HAPTICS_GRIP_TICK_HZ
 	int "Tick/click on grip actuators: sine burst frequency, 0 = trackpad waveform"
 	range 0 1000
-	default 0
+	default 150
 
 config IBEX_HAPTICS_GRIP_TICK_MS
 	int "Tick/click on grip actuators: burst length in ms"
@@ -265,6 +265,7 @@ config IBEX_HAPTICS_GRIP_TICK_GAIN_SCALE_PCT
 config IBEX_HAPTICS_GYRO_GRIP_LEVELS
 	bool "Map Steam Rotational Haptics Low/Medium/High to fixed grip levels"
 	depends on IBEX_HAPTICS_GRIP_TICK_HZ > 0
+	default y
 	help
 	  Ticks that end up on the grip actuators get one of three fixed levels (dB re
 	  full scale), chosen by which Steam level (nearest dB) was sent.
