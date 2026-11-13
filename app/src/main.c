@@ -9,6 +9,7 @@
 
 #include "battery.h"
 #include "charge_mode.h"
+#include "haptics.h"
 #include "controller.h"
 #include "ibex_settings_registry.h"
 #include "lizard.h"
@@ -196,6 +197,11 @@ int main(void)
 	}
 
 	LOG_INF("SC26re started in %s mode", radio_personality_name());
+	/* stock power-on chime; not after a software reset (personality switch, Steam reboot) */
+	if((power_boot_reset_reason() & (POWER_RESETREAS_SREQ_Msk | POWER_RESETREAS_LOCKUP_Msk)) == 0U)
+	{
+		(void)haptics_play_power_sound(true);
+	}
 	(void)ibex_setting_get(SETTING_SLEEP_INACTIVITY_TIMEOUT, &inactivity_timeout_seconds);
 	last_activity_ms = k_uptime_get();
 

@@ -109,3 +109,4 @@ struct controller_report;
 void haptics_debug_quat(struct controller_report *report);
 #include <stddef.h>
 void haptics_debug_note_feature(const uint8_t *request, size_t len);
+int haptics_play_power_sound(bool on);

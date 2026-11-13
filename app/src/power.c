@@ -20,6 +20,7 @@
 #include "battery.h"
 #include "controller.h"
 #include "power.h"
+#include "haptics.h"
 #include "puck_interface.h"
 #include "rgbw_led.h"
 #include "watchdog.h"
@@ -52,11 +53,13 @@
 
 LOG_MODULE_REGISTER(power);
 
+#define POWER_OFF_CHIME_MS 420
 static uint32_t boot_reset_reason;
 static uint32_t boot_gpio_latches[2];
 static bool boot_state_captured;
 static atomic_t power_off_claimed;
 static uint32_t power_off_release_mask;
+static bool power_off_quiet_request;
 K_SEM_DEFINE(power_off_sem, 0, 1);
 
 static void power_arm_systemoff_wake(void)
@@ -205,6 +208,12 @@ int power_reboot_normal(void)
 	return 0;
 }
 
+void power_off_quiet(void)
+{
+	power_off_quiet_request = true;
+	power_off();
+}
+
 void power_off(void)
 {
 	power_off_after_buttons_released(STEAM_BUTTON_MASK);
@@ -221,6 +230,13 @@ static void power_off_thread_entry(void *unused1, void *unused2, void *unused3)
 	k_sem_take(&power_off_sem, K_FOREVER);
 	release_mask = power_off_release_mask;
 
+	int64_t chime_until = 0;
+
+	if(!power_off_quiet_request && haptics_play_power_sound(false) == 0)
+	{
+		chime_until = k_uptime_get() + POWER_OFF_CHIME_MS;
+	}
+
 	power_prepare_shutdown();
 
 	if(release_mask != 0U)
@@ -233,6 +249,12 @@ static void power_off_thread_entry(void *unused1, void *unused2, void *unused3)
 			watchdog_feed();
 		}
 		k_msleep(POWER_OFF_RELEASE_DEBOUNCE_MS);
+	}
+	while(k_uptime_get() < chime_until)
+	{
+		/* let the power-off chime finish before the amplifier loses power */
+		k_msleep(20);
+		watchdog_feed();
 	}
 
 	power_enter_system_off();

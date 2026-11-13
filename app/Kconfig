@@ -233,6 +233,13 @@ config IBEX_HAPTICS_TRIGGERS_ON_GRIPS
 	  same side is not touched, haptic pulses/commands aimed at that side's trackpad
 	  actuator are sent to the grip actuator of that side instead.
 
+config IBEX_HAPTICS_POWER_SOUNDS
+	bool "Play the stock power-on / power-off chimes on the grip actuators"
+	default y
+	help
+	  Ports OFW 6AE90BC5 system sounds: rising chime (script 1) at power-on and
+	  falling chime (script 5) at power-off, level from user/haptic_boot_level.
+
 config IBEX_DOCK_CHARGE_LED
 	bool "Show the charge animation on the LED while the running controller sits on the Puck"
 	default y

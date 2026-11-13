@@ -13,4 +13,6 @@ void power_capture_boot_state(void);
 uint32_t power_boot_reset_reason(void);
 void power_boot_gpio_latches(uint32_t latches[2]);
 void power_off(void);
+/* power off without the power-off chime (charge-only mode) */
+void power_off_quiet(void);
 void power_off_after_buttons_released(uint32_t release_mask);

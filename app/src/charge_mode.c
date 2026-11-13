@@ -141,7 +141,7 @@ static enum charge_mode_result charge_mode_check_exit(void)
 	if(!charge_mode_contact_present())
 	{
 		LOG_INF("charger removed, powering off");
-		power_off();
+		power_off_quiet();
 	}
 	if(transport_usb_configured())
 	{

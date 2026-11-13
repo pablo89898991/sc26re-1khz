@@ -23,6 +23,9 @@ LOG_MODULE_REGISTER(valve_settings);
 #define VALVE_NVS_CHUNK_SIZE 48
 #define VALVE_NVS_INFO_SIZE 8
 #define VALVE_WIRELESS_TRANSPORT_PATH "user/wireless_transport"
+/* OFW 6AE90BC5: power on/off chime level, 0 = off, 1 = low (-18 dB), 2 = high (-12 dB, default) */
+#define VALVE_HAPTIC_BOOT_LEVEL_PATH "user/haptic_boot_level"
+#define VALVE_HAPTIC_BOOT_LEVEL_DEFAULT 2U
 
 static const char *const esb_bond_paths[VALVE_ESB_BOND_SLOT_COUNT] = {
 	"esb/bond",
@@ -46,6 +49,8 @@ static struct esb_bond_slot esb_bonds[VALVE_ESB_BOND_SLOT_COUNT];
 static uint8_t wireless_transport;
 static bool wireless_transport_valid;
 static bool wireless_transport_dirty;
+static uint8_t haptic_boot_level = VALVE_HAPTIC_BOOT_LEVEL_DEFAULT;
+static bool haptic_boot_level_valid;
 K_MUTEX_DEFINE(esb_settings_mutex);
 K_MUTEX_DEFINE(valve_settings_commit_mutex);
 static struct k_spinlock active_esb_bond_lock;
@@ -189,6 +194,18 @@ static void import_ofw_esb_bonds_locked(void)
 			LOG_INF("imported OFW wireless transport %u", transport);
 		}
 	}
+	if(!haptic_boot_level_valid)
+	{
+		uint8_t level;
+
+		if(valve_nvs_read_setting(&nvs, VALVE_HAPTIC_BOOT_LEVEL_PATH, &level, sizeof(level)) ==
+		   (int)sizeof(level))
+		{
+			haptic_boot_level = MIN(level, 2U);
+			haptic_boot_level_valid = true;
+			LOG_INF("imported OFW haptic boot level %u", level);
+		}
+	}
 	flash_area_close(fa);
 }
 
@@ -270,6 +287,17 @@ void valve_settings_load_feature_state(void)
 	wireless_transport_valid = false;
 	(void)settings_load_subtree_direct(VALVE_WIRELESS_TRANSPORT_PATH, load_feature_state_cb,
 	                                   &transport_target);
+	{
+		struct feature_state_load_target boot_level_target = {
+			.value = &haptic_boot_level,
+			.value_size = sizeof(haptic_boot_level),
+			.valid = &haptic_boot_level_valid,
+		};
+
+		(void)settings_load_subtree_direct(VALVE_HAPTIC_BOOT_LEVEL_PATH, load_feature_state_cb,
+		                                   &boot_level_target);
+		haptic_boot_level = MIN(haptic_boot_level, 2U);
+	}
 	import_ofw_esb_bonds_locked();
 	select_available_wireless_transport();
 	wireless_transport_dirty = false;
@@ -483,6 +511,17 @@ bool valve_settings_read(const char *path, uint8_t *buf, size_t capacity, size_t
 		return true;
 	}
 
+	if(strcmp(path, VALVE_HAPTIC_BOOT_LEVEL_PATH) == 0)
+	{
+		if(capacity < 1U)
+		{
+			return false;
+		}
+		buf[0] = haptic_boot_level;
+		*len = 1U;
+		return true;
+	}
+
 	if(strcmp(path, VALVE_WIRELESS_TRANSPORT_PATH) == 0)
 	{
 		if(capacity < sizeof(wireless_transport))
@@ -596,6 +635,17 @@ int valve_settings_stage(const char *path, const uint8_t *value, size_t len)
 		bond_slot->dirty = true;
 		k_mutex_unlock(&esb_settings_mutex);
 		LOG_INF("staged ESB bond slot %d over feature settings", slot);
+		return 0;
+	}
+
+	if(strcmp(path, VALVE_HAPTIC_BOOT_LEVEL_PATH) == 0)
+	{
+		if(len < 1U || value[0] > 2U)
+		{
+			return -EINVAL;
+		}
+		haptic_boot_level = value[0];
+		haptic_boot_level_valid = true;
 		return 0;
 	}
 
@@ -732,6 +782,14 @@ static int commit_setting_path(const char *path)
 		return 0;
 	}
 
+	if(strcmp(path, VALVE_HAPTIC_BOOT_LEVEL_PATH) == 0)
+	{
+		err = settings_save_one(VALVE_HAPTIC_BOOT_LEVEL_PATH, &haptic_boot_level,
+		                        sizeof(haptic_boot_level));
+		LOG_INF("haptic boot level %u (%d)", haptic_boot_level, err);
+		return err;
+	}
+
 	if(strcmp(path, VALVE_WIRELESS_TRANSPORT_PATH) == 0)
 	{
 		k_spinlock_key_t key;
@@ -858,4 +916,9 @@ int valve_settings_save_esb_bond(uint8_t slot, const uint8_t *bond, size_t len, 
 		return err;
 	}
 	return valve_settings_commit(VALVE_WIRELESS_TRANSPORT_PATH);
+}
+
+uint8_t valve_settings_haptic_boot_level(void)
+{
+	return haptic_boot_level;
 }

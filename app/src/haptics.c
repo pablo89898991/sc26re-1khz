@@ -12,6 +12,7 @@
 
 #include "controller.h"
 #include "haptics.h"
+#include "valve_settings.h"
 #include "ibex_settings_registry.h"
 #include "sdl/controller_structs.h"
 
@@ -2182,4 +2183,18 @@ int haptics_debug_play_pulse(uint8_t channels)
 	};
 
 	return haptics_submit_effect(&command);
+}
+
+/* OFW 6AE90BC5 system sounds (0x1e7a8): power-on chime = script 1, power-off = script 5,
+ * both on the grip actuators, gain by user/haptic_boot_level (1 = -18 dB, 2 = -12 dB). */
+int haptics_play_power_sound(bool on)
+{
+	uint8_t level = valve_settings_haptic_boot_level();
+
+	if(!IS_ENABLED(CONFIG_IBEX_HAPTICS_POWER_SOUNDS) || level == 0U)
+	{
+		return 0;
+	}
+	return haptics_start_script(HAPTICS_CHANNEL_LEFT_1 | HAPTICS_CHANNEL_RIGHT_1, on ? 1U : 5U,
+	                            level == 1U ? -18 : -12);
 }

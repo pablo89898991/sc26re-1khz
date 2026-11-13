@@ -11,6 +11,8 @@
 typedef void (*valve_settings_esb_bond_changed_cb_t)(void);
 
 void valve_settings_load_feature_state(void);
+/* power on/off chime level: 0 off, 1 low, 2 high (OFW user/haptic_boot_level) */
+uint8_t valve_settings_haptic_boot_level(void);
 bool valve_settings_read(const char *path, uint8_t *buf, size_t capacity, size_t *len);
 int valve_settings_stage(const char *path, const uint8_t *value, size_t len);
 int valve_settings_commit(const char *path);
