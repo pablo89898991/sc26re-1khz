@@ -68,6 +68,8 @@ static const struct gpio_dt_spec battery_meter_enable =
 static bool trigger_left_click_latched;
 static bool trigger_right_click_latched;
 
+static int16_t trigger_to_report(int32_t sample, const struct trigger_calibration *cal);
+
 /* Trigger step calibration (port of OFW 6AE90BC5 get_id_set_trigger_step_cal). */
 #define TRIGGER_CAL_MIN_SPAN_MV 100
 static struct k_spinlock trigger_cal_lock;
@@ -75,6 +77,9 @@ static uint8_t trigger_cal_stage;
 static bool trigger_cal_seen[2][2]; /* [trigger][stage 1/2] */
 /* [trigger][0] = normal record, [trigger][1] = inverted record, as in OFW */
 static struct trigger_calibration trigger_cal_candidate[2][2];
+/* sum of stage-1 (released) samples, used to reject a calibration that would read pressed at rest */
+static int64_t trigger_cal_rest_sum[2];
+static uint32_t trigger_cal_rest_n[2];
 
 static void trigger_cal_sample(const int32_t value[2])
 {
@@ -89,6 +94,8 @@ static void trigger_cal_sample(const int32_t value[2])
 
 		if(stage == 1)
 		{
+			trigger_cal_rest_sum[i] += v;
+			trigger_cal_rest_n[i]++;
 			a->idle = MIN(a->idle, v);
 			b->pressed = MAX(b->pressed, v);
 		}
@@ -124,6 +131,8 @@ int analog_trigger_step_cal(uint8_t stage)
 			    .type = 2, .pressed = 0, .idle = 0x7fff, .inverted = 1};
 			trigger_cal_seen[i][0] = false;
 			trigger_cal_seen[i][1] = false;
+			trigger_cal_rest_sum[i] = 0;
+			trigger_cal_rest_n[i] = 0;
 		}
 	}
 	if(stage != 3)
@@ -144,6 +153,13 @@ int analog_trigger_step_cal(uint8_t stage)
 		chosen[i] = span_a < span_b ? *b : *a;
 		ok[i] = trigger_cal_seen[i][0] && trigger_cal_seen[i][1] &&
 		        MAX(span_a, span_b) >= TRIGGER_CAL_MIN_SPAN_MV;
+		if(ok[i] && trigger_cal_rest_n[i] > 0)
+		{
+			/* sanity: the released position must read (almost) zero with the new values */
+			int32_t rest = (int32_t)(trigger_cal_rest_sum[i] / trigger_cal_rest_n[i]);
+
+			ok[i] = trigger_to_report(rest, &chosen[i]) < INT16_MAX / 10;
+		}
 	}
 	trigger_cal_stage = 0;
 	k_spin_unlock(&trigger_cal_lock, key);
