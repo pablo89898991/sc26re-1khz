@@ -633,10 +633,17 @@ void haptics_trigger_update(int16_t left, int16_t right)
 /* set when the last redirect moved an effect to a grip because a trigger was in use */
 static bool trigger_redirect_pending;
 
-static uint8_t haptics_redirect_trigger_channels(uint8_t channels)
+/*
+ * Steam's trigger haptics (soft/full pull) are PULSE reports (on 600 us) to the trackpad of the
+ * trigger's side, one on press and one on release. Only those may move to the grip because of a
+ * trigger; every other report type only follows the gyro rule.
+ */
+static uint8_t haptics_redirect_channels(uint8_t channels, bool trigger_pulse, bool gyro_tick)
 {
 	trigger_redirect_pending = false;
 #if CONFIG_IBEX_HAPTICS_TRIGGERS_ON_GRIPS
+	if(trigger_pulse)
+	{
 	static const uint8_t pad[2] = { HAPTICS_CHANNEL_LEFT_0, HAPTICS_CHANNEL_RIGHT_0 };
 	static const uint8_t grip[2] = { HAPTICS_CHANNEL_LEFT_1, HAPTICS_CHANNEL_RIGHT_1 };
 	int32_t now = (int32_t)k_uptime_get_32();
@@ -651,8 +658,10 @@ static uint8_t haptics_redirect_trigger_channels(uint8_t channels)
 			trigger_redirect_pending = true;
 		}
 	}
+	}
 #endif
 #if CONFIG_IBEX_HAPTICS_GYRO_ON_GRIPS
+	if(gyro_tick)
 	{
 		static const uint8_t gpad[2] = { HAPTICS_CHANNEL_LEFT_0, HAPTICS_CHANNEL_RIGHT_0 };
 		static const uint8_t ggrip[2] = { HAPTICS_CHANNEL_LEFT_1, HAPTICS_CHANNEL_RIGHT_1 };
@@ -1469,7 +1478,8 @@ static int handle_haptic_pulse(const uint8_t *data, size_t len, bool log)
 		return -EMSGSIZE;
 	}
 
-	channels = haptics_redirect_trigger_channels(haptics_pulse_channels(data[0]));
+	channels = haptics_redirect_channels(haptics_pulse_channels(data[0]),
+	                                     (data[1] | data[2]) != 0, false);
 	on_us = sys_get_le16(&data[1]);
 	off_us = sys_get_le16(&data[3]);
 	repeat_count = sys_get_le16(&data[5]);
@@ -1553,6 +1563,13 @@ static int8_t gyro_grip_level_db(int8_t steam_db)
 }
 #endif
 
+static bool is_gyro_level(int8_t steam_db)
+{
+	return steam_db == CONFIG_IBEX_HAPTICS_GYRO_STEAM_LOW_DB ||
+	       steam_db == CONFIG_IBEX_HAPTICS_GYRO_STEAM_MEDIUM_DB ||
+	       steam_db == CONFIG_IBEX_HAPTICS_GYRO_STEAM_HIGH_DB;
+}
+
 #if CONFIG_IBEX_HAPTICS_GYRO_GRIP_LEVELS
 static bool is_gyro_bump(int8_t steam_db)
 {
@@ -1585,7 +1602,8 @@ static int handle_haptic_command(const uint8_t *data, size_t len, bool log)
 		return -EMSGSIZE;
 	}
 
-	channels = haptics_redirect_trigger_channels(haptics_command_channels(data[0]));
+	channels = haptics_redirect_channels(haptics_command_channels(data[0]), false,
+	                                     data[1] == HAPTIC_TYPE_TICK && is_gyro_level((int8_t)data[2]));
 	if(log)
 	{
 		LOG_INF("haptics command side=0x%02x channels=%s command=%u %s gain_db=%d", data[0],
@@ -1651,7 +1669,7 @@ static int handle_haptic_lfo_tone(const uint8_t *data, size_t len, bool log)
 		return -EMSGSIZE;
 	}
 
-	channels = haptics_redirect_trigger_channels(haptics_command_channels(data[0]));
+	channels = haptics_redirect_channels(haptics_command_channels(data[0]), false, false);
 	frequency_hz = sys_get_le16(&data[2]);
 	duration_ms = sys_get_le16(&data[4]);
 	if(log)
@@ -1687,7 +1705,7 @@ static int handle_haptic_log_sweep(const uint8_t *data, size_t len, bool log)
 		return -EMSGSIZE;
 	}
 
-	channels = haptics_redirect_trigger_channels(haptics_command_channels(data[0]));
+	channels = haptics_redirect_channels(haptics_command_channels(data[0]), false, false);
 	duration_ms = sys_get_le16(&data[2]);
 	start_frequency_hz = sys_get_le16(&data[4]);
 	end_frequency_hz = sys_get_le16(&data[6]);
@@ -1727,7 +1745,7 @@ static int handle_haptic_script(const uint8_t *data, size_t len, bool log)
 		return -EMSGSIZE;
 	}
 
-	channels = haptics_redirect_trigger_channels(haptics_command_channels(data[0]));
+	channels = haptics_redirect_channels(haptics_command_channels(data[0]), false, false);
 	if(log)
 	{
 		LOG_INF("haptics script side=0x%02x channels=%s script_id=%u gain_db=%d", data[0],
