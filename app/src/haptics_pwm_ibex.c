@@ -47,8 +47,11 @@ LOG_MODULE_DECLARE(haptics);
 #define IBEX_HAPTICS_SECONDARY_FRAME_BYTES (2U * sizeof(int16_t))
 #define IBEX_HAPTICS_SECONDARY_BLOCK_BYTES \
 	(IBEX_HAPTICS_SECONDARY_BLOCK_FRAMES * IBEX_HAPTICS_SECONDARY_FRAME_BYTES)
-#define IBEX_HAPTICS_I2S_BLOCK_COUNT 2U
-#define IBEX_HAPTICS_I2S_START_BLOCKS 2U
+#define IBEX_HAPTICS_I2S_BLOCK_COUNT 3U
+/* keep the grip I2S stream + amplifier running this long after the last effect, so
+ * back-to-back effects (script steps, PCM packets) do not restart the stream and pop */
+#define IBEX_HAPTICS_I2S_HOLD_BLOCKS (150U / IBEX_HAPTICS_SECONDARY_BLOCK_MS)
+#define IBEX_HAPTICS_I2S_START_BLOCKS 3U
 
 #define IBEX_HAPTICS_THREAD_STACK_SIZE 2048
 #define IBEX_HAPTICS_THREAD_PRIORITY 8
@@ -752,6 +755,10 @@ static float render_sine_sample(struct ibex_haptics_channel_state *state)
 
 	sample = sinf(state->phase) * state->gain;
 	state->phase += state->phase_step;
+	if(state->phase > IBEX_HAPTICS_TWO_PI)
+	{
+		state->phase -= IBEX_HAPTICS_TWO_PI; /* OFW wraps too; keeps sinf precise */
+	}
 
 	if(state->lfo_depth != 0.0f && state->lfo_phase_step != 0.0f)
 	{
@@ -1288,6 +1295,8 @@ static int secondary_recover_block(void *block)
 	return 1;
 }
 
+static bool haptics_secondary_hold;
+
 static bool secondary_queue_full(int err)
 {
 	return err == -ENOMEM || err == -EAGAIN || err == -ENOMSG;
@@ -1304,7 +1313,8 @@ static int secondary_queue_block(uint32_t silence_frames)
 		return err;
 	}
 
-	if(!render_secondary_block((int16_t *)block, silence_frames) && !amplifier_forced_on())
+	if(!render_secondary_block((int16_t *)block, silence_frames) && !amplifier_forced_on() &&
+	   !haptics_secondary_hold)
 	{
 		k_mem_slab_free(&haptics_i2s_slab, block);
 		return 0;
@@ -1418,6 +1428,8 @@ static void haptics_primary_thread_main(void *arg1, void *arg2, void *arg3)
 
 static void haptics_secondary_thread_main(void *arg1, void *arg2, void *arg3)
 {
+	uint32_t idle_blocks = 0;
+
 	ARG_UNUSED(arg1);
 	ARG_UNUSED(arg2);
 	ARG_UNUSED(arg3);
@@ -1430,11 +1442,27 @@ static void haptics_secondary_thread_main(void *arg1, void *arg2, void *arg3)
 		k_mutex_lock(&haptics_state_mutex, K_FOREVER);
 		secondary_active = any_secondary_active_locked();
 		k_mutex_unlock(&haptics_state_mutex);
-		if(!secondary_active && !amplifier_forced_on())
+		if(secondary_active)
 		{
-			secondary_stop();
-			k_sem_take(&haptics_secondary_sem, K_FOREVER);
-			continue;
+			idle_blocks = 0;
+			haptics_secondary_hold = false;
+		}
+		else if(!amplifier_forced_on())
+		{
+			if(haptics_secondary_running && idle_blocks < IBEX_HAPTICS_I2S_HOLD_BLOCKS)
+			{
+				/* pad with silence; paced by the I2S slab */
+				idle_blocks++;
+				haptics_secondary_hold = true;
+			}
+			else
+			{
+				idle_blocks = 0;
+				haptics_secondary_hold = false;
+				secondary_stop();
+				k_sem_take(&haptics_secondary_sem, K_FOREVER);
+				continue;
+			}
 		}
 
 		err = secondary_write_block();
