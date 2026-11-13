@@ -233,6 +233,20 @@ config IBEX_HAPTICS_TRIGGERS_ON_GRIPS
 	  same side is not touched, haptic pulses/commands aimed at that side's trackpad
 	  actuator are sent to the grip actuator of that side instead.
 
+config IBEX_DROP_SCREAM
+	bool "Stock drop easter egg: Wilhelm scream / meow when the controller falls"
+	default y
+	help
+	  Port of OFW 6AE90BC5: on a detected free fall, ~19% Wilhelm scream (script 16),
+	  ~31% meow (script 17), otherwise nothing. Needs the IMU stream to be running.
+
+config IBEX_DROP_FREE_FALL_MS
+	int "Free-fall time before the drop sound (ms)"
+	default 260
+	depends on IBEX_DROP_SCREAM
+	help
+	  OFW uses FF_DUR 63 IMU samples; at the stock accel rate that is about a quarter second.
+
 config IBEX_HAPTICS_POWER_SOUNDS
 	bool "Play the stock power-on / power-off chimes on the grip actuators"
 	default y

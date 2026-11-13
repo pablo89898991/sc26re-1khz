@@ -15,6 +15,7 @@
 #include <zephyr/sys/byteorder.h>
 #include <zephyr/sys/util.h>
 
+#include "haptics.h"
 #include "controller.h"
 #if CONFIG_IBEX_IMU_DEBUG_IN_QUAT
 #include <zephyr/drivers/sensor_clock.h>
@@ -783,6 +784,48 @@ static int decode_latest_fifo_timestamp(const struct sensor_decoder_api *decoder
 	return 0;
 }
 
+#if CONFIG_IBEX_DROP_SCREAM
+/*
+ * OFW 6AE90BC5 enables the LSM6DSV16X free-fall detector (156 mg threshold, FF_DUR 63) and,
+ * on a fall, runs 0x45468: random byte < 48 -> Wilhelm scream (script 16), < 128 -> meow
+ * (script 17), otherwise nothing. Here the same is done in software on the accel stream:
+ * |a| below 156 mg for IBEX_DROP_FREE_FALL_MS counts as one fall.
+ */
+#define IMU_FREE_FALL_MS2 (0.156f * 9.80665f)
+#define IMU_FREE_FALL_REARM_MS2 (0.5f * 9.80665f)
+#define IMU_FREE_FALL_COOLDOWN_MS 2000
+
+static void imu_free_fall_update(const float accel[3])
+{
+	static int64_t below_since_ms = -1;
+	static int64_t last_fall_ms = -IMU_FREE_FALL_COOLDOWN_MS;
+	static bool fired;
+	float mag2 = accel[0] * accel[0] + accel[1] * accel[1] + accel[2] * accel[2];
+	int64_t now = k_uptime_get();
+
+	if(mag2 < IMU_FREE_FALL_MS2 * IMU_FREE_FALL_MS2)
+	{
+		if(below_since_ms < 0)
+		{
+			below_since_ms = now;
+		}
+		if(!fired && now - below_since_ms >= CONFIG_IBEX_DROP_FREE_FALL_MS &&
+		   now - last_fall_ms >= IMU_FREE_FALL_COOLDOWN_MS)
+		{
+			fired = true;
+			last_fall_ms = now;
+			(void)haptics_play_drop_sound();
+		}
+		return;
+	}
+	below_since_ms = -1;
+	if(mag2 > IMU_FREE_FALL_REARM_MS2 * IMU_FREE_FALL_REARM_MS2)
+	{
+		fired = false;
+	}
+}
+#endif
+
 static int build_imu_report_from_stream(const uint8_t *buf)
 {
 	const struct sensor_decoder_api *decoder;
@@ -834,6 +877,9 @@ static int build_imu_report_from_stream(const uint8_t *buf)
 	err = decode_latest_three_axis(decoder, buf, SENSOR_CHAN_ACCEL_XYZ, accel);
 	if(err == 0)
 	{
+#if CONFIG_IBEX_DROP_SCREAM
+		imu_free_fall_update(accel);
+#endif
 		oriented[0] = accel_axis_to_report(accel[0]);
 		oriented[1] = accel_axis_to_report(accel[1]);
 		oriented[2] = accel_axis_to_report(accel[2]);

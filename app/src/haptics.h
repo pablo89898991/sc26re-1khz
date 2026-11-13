@@ -119,3 +119,4 @@ enum haptics_system_sound
 };
 int haptics_play_system_sound(enum haptics_system_sound sound);
 int haptics_play_power_sound(bool on);
+int haptics_play_drop_sound(void);

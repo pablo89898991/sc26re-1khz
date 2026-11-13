@@ -4,6 +4,7 @@
 #include <string.h>
 
 #include <zephyr/kernel.h>
+#include <zephyr/random/random.h>
 #include <zephyr/logging/log.h>
 #include <zephyr/sys/atomic.h>
 #include <zephyr/sys/byteorder.h>
@@ -2258,4 +2259,20 @@ int haptics_play_system_sound(enum haptics_system_sound sound)
 int haptics_play_power_sound(bool on)
 {
 	return haptics_play_system_sound(on ? HAPTICS_SOUND_POWER_ON : HAPTICS_SOUND_POWER_OFF);
+}
+
+/* OFW 6AE90BC5 0x45468: drop easter egg on the left grip actuator at 0 dB */
+int haptics_play_drop_sound(void)
+{
+	uint8_t roll = sys_rand8_get();
+
+	if(roll < 48U)
+	{
+		return haptics_start_script(HAPTICS_CHANNEL_LEFT_1, 16U, 0);
+	}
+	if(roll < 128U)
+	{
+		return haptics_start_script(HAPTICS_CHANNEL_LEFT_1, 17U, 0);
+	}
+	return 0;
 }
