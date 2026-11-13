@@ -81,5 +81,11 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         # a hand-written release for the tag may already exist: only attach the CI builds then
         run: |
-          gh release upload "$GITHUB_REF_NAME" out/*.fw --clobber ||
-            gh release create "$GITHUB_REF_NAME" out/*.fw --title "sc26re 1 kHz $GITHUB_REF_NAME" --generate-notes
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" out/*.fw --clobber
+          elif [ -f "docs/releases/$GITHUB_REF_NAME.md" ]; then
+            gh release create "$GITHUB_REF_NAME" out/*.fw --latest --title "sc26re 1 kHz $GITHUB_REF_NAME" \
+              --notes-file "docs/releases/$GITHUB_REF_NAME.md"
+          else
+            gh release create "$GITHUB_REF_NAME" out/*.fw --latest --title "sc26re 1 kHz $GITHUB_REF_NAME" --generate-notes
+          fi
