@@ -59,7 +59,7 @@ config IBEX_USB_MANUFACTURER
 
 config IBEX_USB_PRODUCT
 	string "USB product string"
-	default "SC26re Ibex CFW"
+	default "SC26RE-1kHz"
 
 endif
 
