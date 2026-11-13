@@ -227,7 +227,7 @@ config IBEX_STICK_TOUCH_RELEASE
 
 config IBEX_HAPTICS_TRIGGERS_ON_GRIPS
 	bool "Play Steam trigger haptics on the grip actuators instead of the trackpads"
-	default n
+	default y
 	help
 	  While a trigger is pulled (and 150 ms after release) and the trackpad on the
 	  same side is not touched, haptic pulses/commands aimed at that side's trackpad
@@ -281,13 +281,13 @@ config IBEX_HAPTICS_GYRO_STEAM_HIGH_DB
 	default -3
 config IBEX_HAPTICS_GYRO_GRIP_LOW_DB
 	int "Grip level for Low"
-	default -30
+	default -25
 config IBEX_HAPTICS_GYRO_GRIP_MEDIUM_DB
 	int "Grip level for Medium"
-	default -20
+	default -15
 config IBEX_HAPTICS_GYRO_GRIP_HIGH_DB
 	int "Grip level for High"
-	default -10
+	default -5
 
 config IBEX_TRIGGER_DEBUG_IN_QUAT
 	bool "Diagnostics: trigger raw mV and active calibration in the quaternion fields"
