@@ -68,7 +68,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release delete latest --yes --cleanup-tag || true
-          gh release create latest out/*.fw --target "$GITHUB_SHA" --latest \
+          gh release create latest out/*.fw --target "$GITHUB_SHA" --latest=false --prerelease \
             --title "sc26re 1 kHz — latest build ($(date -u +%Y-%m-%d) ${GITHUB_SHA::7})" \
             --notes "Automatic build of \`master\` at ${GITHUB_SHA}.
           - **SC26RE_1k.fw** – controller firmware (flash with Ibex Web Utilities or flash.py)
@@ -79,4 +79,7 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/v')
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "$GITHUB_REF_NAME" out/*.fw --title "sc26re 1 kHz $GITHUB_REF_NAME" --generate-notes
+        # a hand-written release for the tag may already exist: only attach the CI builds then
+        run: |
+          gh release upload "$GITHUB_REF_NAME" out/*.fw --clobber ||
+            gh release create "$GITHUB_REF_NAME" out/*.fw --title "sc26re 1 kHz $GITHUB_REF_NAME" --generate-notes
