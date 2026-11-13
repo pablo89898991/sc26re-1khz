@@ -1553,6 +1553,28 @@ static int8_t gyro_grip_level_db(int8_t steam_db)
 }
 #endif
 
+#if CONFIG_IBEX_HAPTICS_GYRO_GRIP_LEVELS
+static bool is_gyro_bump(int8_t steam_db)
+{
+	static const int8_t src[3] = { CONFIG_IBEX_HAPTICS_GYRO_STEAM_LOW_DB,
+	                               CONFIG_IBEX_HAPTICS_GYRO_STEAM_MEDIUM_DB,
+	                               CONFIG_IBEX_HAPTICS_GYRO_STEAM_HIGH_DB };
+	bool level = false;
+
+#if CONFIG_IBEX_HAPTICS_GYRO_ON_GRIPS
+	if((int32_t)(atomic_get(&gyro_haptic_until_ms) - (int32_t)k_uptime_get_32()) <= 0)
+	{
+		return false;
+	}
+#endif
+	for(int i = 0; i < 3; ++i)
+	{
+		level |= steam_db == src[i];
+	}
+	return level;
+}
+#endif
+
 static int handle_haptic_command(const uint8_t *data, size_t len, bool log)
 {
 	struct haptics_effect command;
@@ -1587,10 +1609,19 @@ static int handle_haptic_command(const uint8_t *data, size_t len, bool log)
 				.duration_ms = HAPTICS_TICK_DURATION_MS,
 			};
 #if CONFIG_IBEX_HAPTICS_GYRO_GRIP_LEVELS
+			/*
+			 * Steam's rotational bumps are TICK commands at -9/-6/-3 dB (Low/Medium/High)
+			 * while the controller turns. Every tick on a grip gets one of the fixed levels;
+			 * only ticks that are not gyro bumps get the trigger boost on top.
+			 */
 			if((channels & (HAPTICS_CHANNEL_LEFT_1 | HAPTICS_CHANNEL_RIGHT_1)) != 0 &&
 			   (channels & (HAPTICS_CHANNEL_LEFT_0 | HAPTICS_CHANNEL_RIGHT_0)) == 0)
 			{
 				command.gain_db = gyro_grip_level_db((int8_t)data[2]);
+				if(is_gyro_bump((int8_t)data[2]))
+				{
+					trigger_redirect_pending = false; /* gyro bump: no trigger boost */
+				}
 			}
 #endif
 			return haptics_submit_effect(&command);
