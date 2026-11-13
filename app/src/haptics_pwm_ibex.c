@@ -453,10 +453,14 @@ static void pcm_ring_clear(struct ibex_haptics_channel_state *state)
 	state->pcm_next_sample = 0.0f;
 }
 
+atomic_t haptics_pcm_overflow_bytes;
+atomic_t haptics_pcm_underruns;
+
 static void pcm_ring_push(struct ibex_haptics_channel_state *state, uint8_t *buffer, uint8_t sample)
 {
 	if(state->pcm_count == IBEX_HAPTICS_PCM_RING_BYTES)
 	{
+		atomic_inc(&haptics_pcm_overflow_bytes);
 		return;
 	}
 	buffer[state->pcm_head] = sample;
@@ -881,6 +885,7 @@ static float render_pcm_sample(struct ibex_haptics_channel_state *state, const u
 	{
 		if(!pcm_ring_read_source_sample(state, buffer, true, &sample))
 		{
+			atomic_inc(&haptics_pcm_underruns);
 			pcm_ring_clear(state);
 			channel_stop(state);
 			return 0.0f;
@@ -892,12 +897,14 @@ static float render_pcm_sample(struct ibex_haptics_channel_state *state, const u
 	{
 		if(!pcm_ring_read_source_sample(state, buffer, true, &state->pcm_current_sample))
 		{
+			atomic_inc(&haptics_pcm_underruns);
 			pcm_ring_clear(state);
 			channel_stop(state);
 			return 0.0f;
 		}
 		if(!pcm_ring_read_source_sample(state, buffer, false, &state->pcm_next_sample))
 		{
+			atomic_inc(&haptics_pcm_underruns);
 			sample = state->pcm_current_sample;
 			channel_deactivate_pcm_preserve_buffer(state);
 			return sample;
@@ -1498,6 +1505,7 @@ struct waveform_context
 	uint8_t waveform_format;
 	uint32_t waveform_rate_hz;
 	int8_t gain_db;
+	bool use_gain; /* OFW ignores the gain for table waveforms; our grip tick honours it */
 };
 
 static void apply_waveform(struct ibex_haptics_channel_state *state, size_t index, void *context)
@@ -1507,6 +1515,10 @@ static void apply_waveform(struct ibex_haptics_channel_state *state, size_t inde
 	channel_start_waveform(state, waveform->waveform, waveform->waveform_len,
 	                       waveform->waveform_format, waveform->waveform_rate_hz, waveform->gain_db,
 	                       channel_sample_rate_hz(index));
+	if(waveform->use_gain)
+	{
+		state->gain = gain_from_db(waveform->gain_db);
+	}
 }
 
 struct sine_context
@@ -1838,6 +1850,7 @@ static int submit_grip_tick(uint8_t grip_channels, int8_t gain_db,
 		.waveform_len = GRIP_TICK_SAMPLES,
 		.waveform_format = HAPTICS_WAVEFORM_SAMPLE_FORMAT_S16,
 		.waveform_rate_hz = GRIP_TICK_RATE_HZ,
+		.use_gain = true,
 		/* Grip LRAs have a narrow usable range: compress Steam's dB range around 0 dB. */
 #if CONFIG_IBEX_HAPTICS_GYRO_GRIP_LEVELS
 		.gain_db = gain_db, /* already mapped to a fixed level */

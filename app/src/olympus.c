@@ -1240,7 +1240,7 @@ static void olympus_debug_quat(struct controller_report *report)
 	report->gyro_quat_x = x;
 	report->gyro_quat_y = y;
 	report->gyro_quat_z = z;
-#elif CONFIG_IBEX_HAPTICS_DEBUG_IN_QUAT
+#elif CONFIG_IBEX_HAPTICS_DEBUG_IN_QUAT || CONFIG_IBEX_HAPTICS_PCM_DEBUG_IN_QUAT
 	haptics_debug_quat(report);
 #elif CONFIG_IBEX_CAPSENSE_DEBUG_IN_QUAT
 	/* w/x = raw stick-touch value left/right, y/z = grip value left/right */

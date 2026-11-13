@@ -122,6 +122,7 @@
         <option value="tpt">Trackpad timing µs — *_tptiming_dbg firmware</option>
         <option value="puck">Puck link counters — *_puck_dbg firmware</option>
         <option value="hap">Haptic reports log — *_haptics_dbg firmware</option>
+        <option value="pcm">PCM haptic stream counters — *_pcm_dbg firmware</option>
       </select></div>
     <div class="grid" id="capGrid" style="display:none">
       <div class="stat"><div class="k">L stick touch raw</div><div class="v" id="cLs">—</div><div class="u">touch above 720 · release below 576</div><div class="cbar"><b id="bLs"></b><u style="left:72%"></u></div></div>
@@ -272,12 +273,12 @@ function draw(){
         else { $(f).textContent="—"; $(rr).textContent="—"; } }
       const lt=tps.length?tps[tps.length-1].tp:null; if(lt){ $("#tLv").textContent=lt.slice(0,3).join(" / "); $("#tRv").textContent=lt.slice(3).join(" / "); } }
     { const lastB=[...w].reverse().find(r=>r.btn!==undefined); if(lastB) document.querySelectorAll("#inds .ind").forEach(e=>e.classList.toggle("on",!!(lastB.btn>>>(+e.dataset.b)&1)));
-      const m=$("#qmode").value, lq=[...w].reverse().find(r=>r.q); $("#capGrid").style.display=m==="cap"?"":"none"; $("#cntGrid").style.display=(m==="tp"||m==="puck"||m==="tpt")?"":"none"; $("#hapBox").style.display=m==="hap"?"":"none";
+      const m=$("#qmode").value, lq=[...w].reverse().find(r=>r.q); $("#capGrid").style.display=m==="cap"?"":"none"; $("#cntGrid").style.display=(m==="tp"||m==="puck"||m==="tpt"||m==="pcm")?"":"none"; $("#hapBox").style.display=m==="hap"?"":"none";
       if(lq&&m==="cap"){ const [ls,rs,lg,rg]=lq.q; capPk.l=Math.max(capPk.l,lg); capPk.r=Math.max(capPk.r,rg);
         $("#cLs").textContent=ls; $("#cRs").textContent=rs; $("#cLg").textContent=lg; $("#cRg").textContent=rg; $("#pLg").textContent=capPk.l; $("#pRg").textContent=capPk.r;
         const pct=(v,mx)=>Math.max(0,Math.min(100,v/mx*100))+"%"; $("#bLs").style.width=pct(ls,1000); $("#bRs").style.width=pct(rs,1000);
         const gm=Math.max(1500,capPk.l,capPk.r); $("#bLg").style.width=pct(lg,gm); $("#bRg").style.width=pct(rg,gm); }
-      if(lq&&(m==="tp"||m==="puck"||m==="tpt")){ const L=m==="tp"?["pad frames/s","all frames/s","thread wakes/s","read errors/s"]:m==="tpt"?["frame interval µs (IRQ→IRQ)","I²C read µs","processing µs","IRQ → read start µs"]:["frames from Puck/s","ACKs delivered/s","reports built/s","stale replaced/s"];
+      if(lq&&(m==="tp"||m==="puck"||m==="tpt"||m==="pcm")){ const L=m==="pcm"?["PCM bytes received/s","PCM messages dropped/s (queue full)","bytes dropped/s (ring full)","underruns/s (ring ran empty)"]:m==="tp"?["pad frames/s","all frames/s","thread wakes/s","read errors/s"]:m==="tpt"?["frame interval µs (IRQ→IRQ)","I²C read µs","processing µs","IRQ → read start µs"]:["frames from Puck/s","ACKs delivered/s","reports built/s","stale replaced/s"];
         L.forEach((t,i)=>{$("#q"+i+"k").textContent=t; $("#q"+i).textContent=lq.q[i];}); } }
     hist(iv);
   }

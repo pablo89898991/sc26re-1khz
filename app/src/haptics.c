@@ -966,6 +966,43 @@ static int haptics_submit_pcm_config(uint8_t channels, uint8_t pcm_format)
 	return haptics_submit_effect(&command);
 }
 
+#if CONFIG_IBEX_HAPTICS_PCM_DEBUG_IN_QUAT
+extern atomic_t haptics_pcm_overflow_bytes;
+extern atomic_t haptics_pcm_underruns;
+static atomic_t pcm_dbg_rx_bytes;
+static atomic_t pcm_dbg_drops;
+#define PCM_DBG_RX(n) atomic_add(&pcm_dbg_rx_bytes, (atomic_val_t)(n))
+#define PCM_DBG_DROP(err) do { if((err) == -EBUSY) atomic_inc(&pcm_dbg_drops); } while(0)
+
+void haptics_debug_quat(struct controller_report *report)
+{
+	static int64_t window_start;
+	static int16_t out[4];
+	static atomic_val_t base[4];
+	int64_t now = k_uptime_get();
+	atomic_val_t cur[4] = { atomic_get(&pcm_dbg_rx_bytes), atomic_get(&pcm_dbg_drops),
+	                        atomic_get(&haptics_pcm_overflow_bytes),
+	                        atomic_get(&haptics_pcm_underruns) };
+
+	if(now - window_start >= 1000)
+	{
+		for(int i = 0; i < 4; ++i)
+		{
+			out[i] = (int16_t)CLAMP(cur[i] - base[i], 0, INT16_MAX);
+			base[i] = cur[i];
+		}
+		window_start = now;
+	}
+	report->gyro_quat_w = out[0];
+	report->gyro_quat_x = out[1];
+	report->gyro_quat_y = out[2];
+	report->gyro_quat_z = out[3];
+}
+#else
+#define PCM_DBG_RX(n) do { } while(0)
+#define PCM_DBG_DROP(err) do { } while(0)
+#endif
+
 static int haptics_submit_pcm(uint8_t channels, const uint8_t *samples, size_t sample_count)
 {
 	struct haptics_effect command = {
@@ -980,7 +1017,13 @@ static int haptics_submit_pcm(uint8_t channels, const uint8_t *samples, size_t s
 
 	command.sample_count = MIN(sample_count, (size_t)HAPTICS_PCM_MAX_SAMPLES);
 	memcpy(command.samples, samples, command.sample_count);
-	return haptics_submit_effect(&command);
+	PCM_DBG_RX(command.sample_count);
+	{
+		int err = haptics_submit_effect(&command);
+
+		PCM_DBG_DROP(err);
+		return err;
+	}
 }
 
 static int haptics_submit_pcm_stereo(const uint8_t *left, const uint8_t *right, size_t sample_count)
@@ -1003,7 +1046,13 @@ static int haptics_submit_pcm_stereo(const uint8_t *left, const uint8_t *right, 
 	command.sample_count = sample_count;
 	memcpy(command.samples, left, command.sample_count);
 	memcpy(&command.samples[HAPTICS_PCM_STEREO_MAX_SAMPLES], right, command.sample_count);
-	return haptics_submit_effect(&command);
+	PCM_DBG_RX(2U * command.sample_count);
+	{
+		int err = haptics_submit_effect(&command);
+
+		PCM_DBG_DROP(err);
+		return err;
+	}
 }
 
 static k_timeout_t haptics_script_timeout(uint16_t delay_ms)
