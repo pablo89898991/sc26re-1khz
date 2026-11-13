@@ -40,11 +40,13 @@ if(CONFIG_IBEX_HAPTICS_PWM)
 			--input haptics_waveform_tick=${CMAKE_CURRENT_SOURCE_DIR}/assets/haptics/tick.wav
 			--input haptics_waveform_click=${CMAKE_CURRENT_SOURCE_DIR}/assets/haptics/click.wav
 			--input haptics_waveform_scream=${CMAKE_CURRENT_SOURCE_DIR}/assets/haptics/scream.wav
+			--input haptics_waveform_meow=${CMAKE_CURRENT_SOURCE_DIR}/assets/haptics/meow.wav
 		DEPENDS
 			${CMAKE_CURRENT_SOURCE_DIR}/../scripts/haptics-wav-to-header.py
 			${CMAKE_CURRENT_SOURCE_DIR}/assets/haptics/tick.wav
 			${CMAKE_CURRENT_SOURCE_DIR}/assets/haptics/click.wav
 			${CMAKE_CURRENT_SOURCE_DIR}/assets/haptics/scream.wav
+			${CMAKE_CURRENT_SOURCE_DIR}/assets/haptics/meow.wav
 		COMMENT "Generating Ibex haptics waveform header"
 		VERBATIM
 	)

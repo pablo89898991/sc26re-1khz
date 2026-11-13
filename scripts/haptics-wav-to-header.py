@@ -53,10 +53,41 @@ def quantized_int8(data: list[int]) -> list[int] | None:
     return out
 
 
+def ulaw_decode(code: int) -> int:
+    code = ~code & 0xFF
+    sign = code & 0x80
+    exponent = (code >> 4) & 7
+    mantissa = code & 0x0F
+    value = (((mantissa << 3) + 0x84) << exponent) - 0x84
+    return -value if sign else value
+
+
+_ULAW_TABLE = {}
+for _code in range(256):
+    _ULAW_TABLE.setdefault(ulaw_decode(_code), _code)
+
+
+def ulaw_codes(data: list[int]) -> list[int] | None:
+    """Return G.711 mu-law codes if every sample is exactly a mu-law level (lossless)."""
+    out: list[int] = []
+
+    for sample in data:
+        code = _ULAW_TABLE.get(sample)
+        if code is None:
+            return None
+        out.append(code)
+    return out
+
+
 def emit_array(symbol: str, sample_rate: int, data: list[int]) -> list[str]:
     suffix = c_ident_suffix(symbol)
     int8_data = quantized_int8(data)
-    if int8_data is not None:
+    ulaw_data = None if int8_data is not None else ulaw_codes(data)
+    if ulaw_data is not None:
+        c_type = "uint8_t"
+        sample_format = "HAPTICS_WAVEFORM_SAMPLE_FORMAT_ULAW"
+        values = ulaw_data
+    elif int8_data is not None:
         c_type = "int8_t"
         sample_format = "HAPTICS_WAVEFORM_SAMPLE_FORMAT_S8"
         values = int8_data
@@ -103,6 +134,7 @@ def main() -> int:
         "",
         "#define HAPTICS_WAVEFORM_SAMPLE_FORMAT_S8 1",
         "#define HAPTICS_WAVEFORM_SAMPLE_FORMAT_S16 2",
+        "#define HAPTICS_WAVEFORM_SAMPLE_FORMAT_ULAW 3",
         "",
     ]
 

@@ -72,6 +72,7 @@ enum haptics_script_step_type
 	HAPTICS_SCRIPT_STEP_LFO_TONE,
 	HAPTICS_SCRIPT_STEP_LOG_SWEEP,
 	HAPTICS_SCRIPT_STEP_SCREAM,
+	HAPTICS_SCRIPT_STEP_MEOW,
 };
 
 struct haptics_script_step
@@ -171,6 +172,12 @@ struct haptics_touchpad_state
 		.frequency_hz = (start_freq), \
 		.end_frequency_hz = (end_freq), \
 		.duration_ms = (duration), \
+	}
+#define HAPTICS_SCRIPT_MEOW(delay) \
+	{ \
+		.delay_ms = (delay), \
+		.type = HAPTICS_SCRIPT_STEP_MEOW, \
+		.channels = HAPTICS_SCRIPT_CURRENT_CHANNEL, \
 	}
 #define HAPTICS_SCRIPT_SCREAM(delay) \
 	{ \
@@ -330,6 +337,11 @@ static const struct haptics_script_step haptics_script_16[] = {
 	HAPTICS_SCRIPT_SCREAM(0),
 	HAPTICS_SCRIPT_END(240),
 };
+/* OFW 6AE90BC5 script 17 (0x564b4): "meow" sample, played like the scream */
+static const struct haptics_script_step haptics_script_17[] = {
+	HAPTICS_SCRIPT_MEOW(0),
+	HAPTICS_SCRIPT_END(240),
+};
 
 #define HAPTICS_SCRIPT_ENTRY(id) [((id)-1)] = { .steps = haptics_script_##id }
 static const struct haptics_script haptics_scripts[] = {
@@ -349,6 +361,7 @@ static const struct haptics_script haptics_scripts[] = {
 	HAPTICS_SCRIPT_ENTRY(14),
 	HAPTICS_SCRIPT_ENTRY(15),
 	HAPTICS_SCRIPT_ENTRY(16),
+	HAPTICS_SCRIPT_ENTRY(17),
 };
 /* clang-format on */
 
@@ -428,6 +441,7 @@ __weak int haptics_backend_effect(const struct haptics_effect *effect)
 		case HAPTICS_EFFECT_PCM_S8:
 		case HAPTICS_EFFECT_PCM_STEREO:
 		case HAPTICS_EFFECT_SCREAM:
+		case HAPTICS_EFFECT_MEOW:
 			return -ENOTSUP;
 		case HAPTICS_EFFECT_PULSE_ONE_SHOT:
 		case HAPTICS_EFFECT_PULSE_CLICK:
@@ -793,6 +807,8 @@ static const char *haptics_effect_name(enum haptics_effect_type type)
 			return "pcm_stereo";
 		case HAPTICS_EFFECT_SCREAM:
 			return "scream";
+		case HAPTICS_EFFECT_MEOW:
+			return "meow";
 		default:
 			return "?";
 	}
@@ -1178,6 +1194,14 @@ static void haptics_script_run_step(uint8_t channel, int8_t gain_db,
 		case HAPTICS_SCRIPT_STEP_SCREAM:
 			effect = (struct haptics_effect){
 				.type = HAPTICS_EFFECT_SCREAM,
+				.channels = channels,
+				.gain_db = haptics_script_gain(gain_db, step),
+			};
+			(void)haptics_submit_effect(&effect);
+			return;
+		case HAPTICS_SCRIPT_STEP_MEOW:
+			effect = (struct haptics_effect){
+				.type = HAPTICS_EFFECT_MEOW,
 				.channels = channels,
 				.gain_db = haptics_script_gain(gain_db, step),
 			};

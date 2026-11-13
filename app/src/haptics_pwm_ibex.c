@@ -90,10 +90,11 @@ BUILD_ASSERT(HAPTICS_WAVEFORM_CLICK_SAMPLE_RATE_HZ == IBEX_HAPTICS_PRIMARY_SAMPL
 BUILD_ASSERT(HAPTICS_WAVEFORM_TICK_SAMPLE_FORMAT == HAPTICS_WAVEFORM_SAMPLE_FORMAT_S8);
 BUILD_ASSERT(HAPTICS_WAVEFORM_CLICK_SAMPLE_FORMAT == HAPTICS_WAVEFORM_SAMPLE_FORMAT_S8);
 BUILD_ASSERT(HAPTICS_WAVEFORM_SCREAM_SAMPLE_RATE_HZ == IBEX_HAPTICS_SECONDARY_SAMPLE_RATE_HZ);
-BUILD_ASSERT(HAPTICS_WAVEFORM_SCREAM_SAMPLE_FORMAT == HAPTICS_WAVEFORM_SAMPLE_FORMAT_S16);
+BUILD_ASSERT(HAPTICS_WAVEFORM_SCREAM_SAMPLE_FORMAT == HAPTICS_WAVEFORM_SAMPLE_FORMAT_ULAW);
 BUILD_ASSERT(HAPTICS_WAVEFORM_TICK_SAMPLES == ARRAY_SIZE(haptics_waveform_tick));
 BUILD_ASSERT(HAPTICS_WAVEFORM_CLICK_SAMPLES == ARRAY_SIZE(haptics_waveform_click));
 BUILD_ASSERT(HAPTICS_WAVEFORM_SCREAM_SAMPLES == ARRAY_SIZE(haptics_waveform_scream));
+BUILD_ASSERT(HAPTICS_WAVEFORM_MEOW_SAMPLE_RATE_HZ == IBEX_HAPTICS_SECONDARY_SAMPLE_RATE_HZ);
 BUILD_ASSERT(2U * HAPTICS_PCM_STEREO_MAX_SAMPLES == HAPTICS_PCM_MAX_SAMPLES);
 
 enum ibex_haptics_channel_index
@@ -700,6 +701,15 @@ static float waveform_raw_sample(const struct ibex_haptics_channel_state *state,
 	{
 		case HAPTICS_WAVEFORM_SAMPLE_FORMAT_S16:
 			return (float)((const int16_t *)state->waveform)[index] / 32767.0f;
+		case HAPTICS_WAVEFORM_SAMPLE_FORMAT_ULAW:
+		{
+			/* G.711 mu-law, as OFW stores the scream / meow samples */
+			uint8_t code = (uint8_t)~((const uint8_t *)state->waveform)[index];
+			int32_t value = ((((int32_t)code & 0x0F) << 3) + 0x84) << ((code >> 4) & 7);
+
+			value -= 0x84;
+			return (float)((code & 0x80) ? -value : value) / 32767.0f;
+		}
 		case HAPTICS_WAVEFORM_SAMPLE_FORMAT_S8:
 		default:
 			return (float)((const int8_t *)state->waveform)[index] / 127.0f;
@@ -2066,6 +2076,19 @@ int haptics_backend_effect(const struct haptics_effect *effect)
 
 			return submit_channels(effect->channels, IBEX_HAPTICS_SLOT_SCREAM, apply_waveform,
 			                       &context, ARRAY_SIZE(haptics_waveform_scream));
+		}
+		case HAPTICS_EFFECT_MEOW:
+		{
+			struct waveform_context context = {
+				.waveform = haptics_waveform_meow,
+				.waveform_len = ARRAY_SIZE(haptics_waveform_meow),
+				.waveform_format = HAPTICS_WAVEFORM_MEOW_SAMPLE_FORMAT,
+				.waveform_rate_hz = HAPTICS_WAVEFORM_MEOW_SAMPLE_RATE_HZ,
+				.gain_db = effect->gain_db,
+			};
+
+			return submit_channels(effect->channels, IBEX_HAPTICS_SLOT_SCREAM, apply_waveform,
+			                       &context, ARRAY_SIZE(haptics_waveform_meow));
 		}
 		default:
 			return -EINVAL;

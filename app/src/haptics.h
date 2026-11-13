@@ -34,6 +34,7 @@ enum haptics_effect_type
 	HAPTICS_EFFECT_PCM_S8,
 	HAPTICS_EFFECT_PCM_STEREO,
 	HAPTICS_EFFECT_SCREAM,
+	HAPTICS_EFFECT_MEOW,
 };
 
 struct haptics_effect
