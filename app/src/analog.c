@@ -7,6 +7,7 @@
 #include <zephyr/drivers/adc.h>
 #include <zephyr/drivers/adc/voltage_divider.h>
 #include <zephyr/drivers/gpio.h>
+#include <string.h>
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
 #include <zephyr/sys/util.h>
@@ -69,6 +70,72 @@ static bool trigger_left_click_latched;
 static bool trigger_right_click_latched;
 
 static int16_t trigger_to_report(int32_t sample, const struct trigger_calibration *cal);
+
+/*
+ * Direction of a trigger, decided at power-on from where it rests.
+ * Valve's factory records are not consistent about the "inverted" byte (seen: left 1, right 0
+ * on a controller whose two triggers both read ~1400 mV released and ~570 mV pressed), so a
+ * factory record could make a released trigger read 100 %. At boot the triggers are released:
+ * the endpoint the trigger sits at during the first 300 ms is taken as "released".
+ * A calibration the user makes later (validated at save time) is used as is.
+ */
+#define TRIGGER_DIR_BOOT_SAMPLES 300
+static int8_t trigger_dir_inverted[2] = { -1, -1 };
+static uint16_t trigger_dir_hits[2][2];
+static struct trigger_calibration trigger_dir_for[2];
+static uint32_t trigger_dir_samples[2];
+
+static void trigger_apply_direction(int i, int32_t raw, struct trigger_calibration *cal)
+{
+	if(!calibration_trigger_valid(cal))
+	{
+		return;
+	}
+	if(memcmp(&trigger_dir_for[i], cal, sizeof(*cal)) != 0)
+	{
+		if(trigger_dir_samples[i] >= TRIGGER_DIR_BOOT_SAMPLES)
+		{
+			/* calibration changed after boot (user calibrated): trust it */
+			trigger_dir_inverted[i] = (int8_t)(cal->inverted != 0);
+		}
+		trigger_dir_for[i] = *cal;
+	}
+	if(trigger_dir_samples[i] < TRIGGER_DIR_BOOT_SAMPLES)
+	{
+		int32_t lo = MIN(cal->pressed, cal->idle), hi = MAX(cal->pressed, cal->idle);
+		int32_t band = (hi - lo) / 8;
+
+		trigger_dir_samples[i]++;
+		if(raw >= hi - band)
+		{
+			trigger_dir_hits[i][1]++;
+		}
+		else if(raw <= lo + band)
+		{
+			trigger_dir_hits[i][0]++;
+		}
+		if(trigger_dir_samples[i] == TRIGGER_DIR_BOOT_SAMPLES)
+		{
+			if(trigger_dir_hits[i][1] > TRIGGER_DIR_BOOT_SAMPLES * 9 / 10)
+			{
+				trigger_dir_inverted[i] = 1; /* rests high: pressing lowers the voltage */
+			}
+			else if(trigger_dir_hits[i][0] > TRIGGER_DIR_BOOT_SAMPLES * 9 / 10)
+			{
+				trigger_dir_inverted[i] = 0;
+			}
+			if(trigger_dir_inverted[i] >= 0 && trigger_dir_inverted[i] != (cal->inverted != 0))
+			{
+				LOG_WRN("%s trigger: calibration direction disagrees with rest position, "
+				        "using inverted=%d", i ? "right" : "left", trigger_dir_inverted[i]);
+			}
+		}
+	}
+	if(trigger_dir_inverted[i] >= 0)
+	{
+		cal->inverted = (uint8_t)trigger_dir_inverted[i];
+	}
+}
 
 #if CONFIG_IBEX_TRIGGER_DEBUG_IN_QUAT
 static int32_t trg_dbg_raw[2];
@@ -662,6 +729,8 @@ int analog_read_report(struct controller_report *report)
 		                                      averaged[ANALOG_TRIGGER_RIGHT]});
 	}
 	calibration_analog_snapshot(&calibration);
+	trigger_apply_direction(0, averaged[ANALOG_TRIGGER_LEFT], &calibration.trigger_left);
+	trigger_apply_direction(1, averaged[ANALOG_TRIGGER_RIGHT], &calibration.trigger_right);
 #if CONFIG_IBEX_TRIGGER_DEBUG_IN_QUAT
 	trg_dbg_raw[0] = averaged[ANALOG_TRIGGER_LEFT];
 	trg_dbg_raw[1] = averaged[ANALOG_TRIGGER_RIGHT];
