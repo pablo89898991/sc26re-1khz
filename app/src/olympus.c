@@ -212,9 +212,11 @@ static float pad_pressure_normalized(bool right, int16_t filtered_pressure)
 	{
 		return 0.0f;
 	}
+	/* OFW 6AE90BC5 (0x1c1ec) disables the [0,1] clamp of this curve: pressing harder than the
+	 * calibrated max keeps rising, so the report reaches 32767 (usat) like stock. */
 	return CLAMP(((float)filtered_pressure - (low + OLYMPUS_PRESSURE_CURVE_TRIM * range)) /
 	                 (OLYMPUS_PRESSURE_CURVE_SPAN * range),
-	             0.0f, 1.0f);
+	             0.0f, 64.0f);
 }
 
 static bool pad_pressure_activation(bool right, float *activation)
