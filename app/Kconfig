@@ -243,7 +243,7 @@ config IBEX_DROP_SCREAM
 
 config IBEX_DROP_SCREAM_PERCENT
 	int "Chance of the Wilhelm scream on a drop (%)"
-	default 35
+	default 50
 	range 0 100
 	depends on IBEX_DROP_SCREAM
 	help
@@ -251,7 +251,7 @@ config IBEX_DROP_SCREAM_PERCENT
 
 config IBEX_DROP_MEOW_PERCENT
 	int "Chance of the meow on a drop (%)"
-	default 35
+	default 50
 	range 0 100
 	depends on IBEX_DROP_SCREAM
 	help

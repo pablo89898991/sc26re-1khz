@@ -2261,7 +2261,8 @@ int haptics_play_power_sound(bool on)
 	return haptics_play_system_sound(on ? HAPTICS_SOUND_POWER_ON : HAPTICS_SOUND_POWER_OFF);
 }
 
-/* OFW 6AE90BC5 0x45468: drop easter egg on the left grip actuator at 0 dB.
+/* OFW 6AE90BC5 0x45468: drop easter egg at 0 dB (stock plays it on the left grip only;
+ * here on both grips).
  * Stock odds are 48/256 scream and 80/256 meow; here they come from Kconfig. */
 int haptics_play_drop_sound(void)
 {
@@ -2269,11 +2270,11 @@ int haptics_play_drop_sound(void)
 
 	if(roll < CONFIG_IBEX_DROP_SCREAM_PERCENT)
 	{
-		return haptics_start_script(HAPTICS_CHANNEL_LEFT_1, 16U, 0);
+		return haptics_start_script(HAPTICS_CHANNEL_LEFT_1 | HAPTICS_CHANNEL_RIGHT_1, 16U, 0);
 	}
 	if(roll < CONFIG_IBEX_DROP_SCREAM_PERCENT + CONFIG_IBEX_DROP_MEOW_PERCENT)
 	{
-		return haptics_start_script(HAPTICS_CHANNEL_LEFT_1, 17U, 0);
+		return haptics_start_script(HAPTICS_CHANNEL_LEFT_1 | HAPTICS_CHANNEL_RIGHT_1, 17U, 0);
 	}
 	return 0;
 }
