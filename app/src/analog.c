@@ -79,11 +79,13 @@ static int16_t trigger_to_report(int32_t sample, const struct trigger_calibratio
  * the endpoint the trigger sits at during the first 300 ms is taken as "released".
  * A calibration the user makes later (validated at save time) is used as is.
  */
-#define TRIGGER_DIR_BOOT_SAMPLES 300
+#define TRIGGER_DIR_WARMUP_SAMPLES 500 /* ignore ADC/filter start-up */
+#define TRIGGER_DIR_BOOT_SAMPLES (TRIGGER_DIR_WARMUP_SAMPLES + 300)
 static int8_t trigger_dir_inverted[2] = { -1, -1 };
 static uint16_t trigger_dir_hits[2][2];
 static struct trigger_calibration trigger_dir_for[2];
 static uint32_t trigger_dir_samples[2];
+static bool trigger_dir_decided[2];
 
 static void trigger_apply_direction(int i, int32_t raw, struct trigger_calibration *cal)
 {
@@ -106,23 +108,30 @@ static void trigger_apply_direction(int i, int32_t raw, struct trigger_calibrati
 		int32_t band = (hi - lo) / 8;
 
 		trigger_dir_samples[i]++;
-		if(raw >= hi - band)
+		if(trigger_dir_samples[i] > TRIGGER_DIR_WARMUP_SAMPLES)
 		{
-			trigger_dir_hits[i][1]++;
-		}
-		else if(raw <= lo + band)
-		{
-			trigger_dir_hits[i][0]++;
+			if(raw >= hi - band)
+			{
+				trigger_dir_hits[i][1]++;
+			}
+			else if(raw <= lo + band)
+			{
+				trigger_dir_hits[i][0]++;
+			}
 		}
 		if(trigger_dir_samples[i] == TRIGGER_DIR_BOOT_SAMPLES)
 		{
-			if(trigger_dir_hits[i][1] > TRIGGER_DIR_BOOT_SAMPLES * 9 / 10)
+			const uint32_t window = TRIGGER_DIR_BOOT_SAMPLES - TRIGGER_DIR_WARMUP_SAMPLES;
+
+			if(trigger_dir_hits[i][1] > window * 9 / 10)
 			{
 				trigger_dir_inverted[i] = 1; /* rests high: pressing lowers the voltage */
+				trigger_dir_decided[i] = true;
 			}
-			else if(trigger_dir_hits[i][0] > TRIGGER_DIR_BOOT_SAMPLES * 9 / 10)
+			else if(trigger_dir_hits[i][0] > window * 9 / 10)
 			{
 				trigger_dir_inverted[i] = 0;
+				trigger_dir_decided[i] = true;
 			}
 			if(trigger_dir_inverted[i] >= 0 && trigger_dir_inverted[i] != (cal->inverted != 0))
 			{
@@ -134,6 +143,12 @@ static void trigger_apply_direction(int i, int32_t raw, struct trigger_calibrati
 	if(trigger_dir_inverted[i] >= 0)
 	{
 		cal->inverted = (uint8_t)trigger_dir_inverted[i];
+	}
+	else
+	{
+		/* not decided yet (start-up, or trigger held at power-on): the SC2 triggers rest at
+		 * the high-voltage end (~1.4 V released, ~0.57 V pressed on both sides) */
+		cal->inverted = 1;
 	}
 }
 
@@ -151,7 +166,7 @@ void analog_trigger_debug_quat(struct controller_report *report)
 	report->gyro_quat_x = (int16_t)trg_dbg_cal[side].pressed;
 	report->gyro_quat_y = (int16_t)trg_dbg_cal[side].idle;
 	report->gyro_quat_z = (int16_t)((side << 8) | ((trg_dbg_cal[side].inverted & 0xf) << 4) |
-	                                (trg_dbg_cal[side].type & 0xf));
+	                                (trigger_dir_decided[side] ? 8 : 0) | (trg_dbg_cal[side].type & 7));
 }
 #endif
 

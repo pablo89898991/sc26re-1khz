@@ -279,9 +279,9 @@ function draw(){
       const m=$("#qmode").value, lq=[...w].reverse().find(r=>r.q); $("#capGrid").style.display=m==="cap"?"":"none"; $("#cntGrid").style.display=(m==="tp"||m==="puck"||m==="tpt"||m==="pcm")?"":"none"; $("#hapBox").style.display=m==="hap"?"":"none"; $("#trgBox").style.display=m==="trg"?"":"none";
       if(m==="trg"){ for(const r of w) if(r.q){ const sd=(r.q[3]>>8)&1; trgDbg[sd]=r.q; }
         $("#trgBox").textContent=[0,1].map(sd=>{const q=trgDbg[sd]; if(!q) return (sd?"RIGHT":"LEFT")+": —";
-          const raw=q[0], pr=q[1]&0xffff, idl=q[2]&0xffff, inv=(q[3]>>4)&15, ty=q[3]&15, lo=Math.min(pr,idl), hi=Math.max(pr,idl);
+          const raw=q[0], pr=q[1]&0xffff, idl=q[2]&0xffff, inv=(q[3]>>4)&15, ty=q[3]&7, dec=(q[3]>>3)&1, lo=Math.min(pr,idl), hi=Math.max(pr,idl);
           const pct=hi>lo?Math.round(100*(inv?(hi-raw):(raw-lo))/(hi-lo)):NaN;
-          return `${sd?"RIGHT":"LEFT "} trigger: raw ${raw} mV | cal pressed ${pr}  idle ${idl}  inverted ${inv}  type ${ty} | position ≈ ${pct}%`;}).join("\n"); }
+          return `${sd?"RIGHT":"LEFT "} trigger: raw ${raw} mV | cal pressed ${pr}  idle ${idl}  inverted ${inv}${dec?" (auto)":""}  type ${ty} | position ≈ ${pct}%`;}).join("\n"); }
       if(lq&&m==="cap"){ const [ls,rs,lg,rg]=lq.q; capPk.l=Math.max(capPk.l,lg); capPk.r=Math.max(capPk.r,rg);
         $("#cLs").textContent=ls; $("#cRs").textContent=rs; $("#cLg").textContent=lg; $("#cRg").textContent=rg; $("#pLg").textContent=capPk.l; $("#pRg").textContent=capPk.r;
         const pct=(v,mx)=>Math.max(0,Math.min(100,v/mx*100))+"%"; $("#bLs").style.width=pct(ls,1000); $("#bRs").style.width=pct(rs,1000);
