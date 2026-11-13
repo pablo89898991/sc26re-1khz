@@ -70,6 +70,24 @@ static bool trigger_right_click_latched;
 
 static int16_t trigger_to_report(int32_t sample, const struct trigger_calibration *cal);
 
+#if CONFIG_IBEX_TRIGGER_DEBUG_IN_QUAT
+static int32_t trg_dbg_raw[2];
+static struct trigger_calibration trg_dbg_cal[2];
+
+/* alternates left/right: w = raw mV, x = cal pressed, y = cal idle, z = side<<8 | inverted<<4 | type */
+void analog_trigger_debug_quat(struct controller_report *report)
+{
+	static uint8_t side;
+
+	side ^= 1U;
+	report->gyro_quat_w = (int16_t)CLAMP(trg_dbg_raw[side], INT16_MIN, INT16_MAX);
+	report->gyro_quat_x = (int16_t)trg_dbg_cal[side].pressed;
+	report->gyro_quat_y = (int16_t)trg_dbg_cal[side].idle;
+	report->gyro_quat_z = (int16_t)((side << 8) | ((trg_dbg_cal[side].inverted & 0xf) << 4) |
+	                                (trg_dbg_cal[side].type & 0xf));
+}
+#endif
+
 /* Trigger step calibration (port of OFW 6AE90BC5 get_id_set_trigger_step_cal). */
 #define TRIGGER_CAL_MIN_SPAN_MV 100
 static struct k_spinlock trigger_cal_lock;
@@ -644,6 +662,12 @@ int analog_read_report(struct controller_report *report)
 		                                      averaged[ANALOG_TRIGGER_RIGHT]});
 	}
 	calibration_analog_snapshot(&calibration);
+#if CONFIG_IBEX_TRIGGER_DEBUG_IN_QUAT
+	trg_dbg_raw[0] = averaged[ANALOG_TRIGGER_LEFT];
+	trg_dbg_raw[1] = averaged[ANALOG_TRIGGER_RIGHT];
+	trg_dbg_cal[0] = calibration.trigger_left;
+	trg_dbg_cal[1] = calibration.trigger_right;
+#endif
 
 	report->stick_left_x = scale_stick_axis(
 	    averaged[ANALOG_STICK_LEFT_X], calibration.stick_left.x_min, calibration.stick_left.x_max,

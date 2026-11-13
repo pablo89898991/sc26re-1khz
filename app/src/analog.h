@@ -14,3 +14,5 @@ int analog_read_report(struct controller_report *report);
 /* OFW 6AE90BC5 ID_CALIBRATE_ANALOG_TRIGGERS (0xC0) step calibration:
  * 0 = cancel, 1 = start (triggers released), 2 = triggers fully pressed, 3 = save. */
 int analog_trigger_step_cal(uint8_t stage);
+struct controller_report;
+void analog_trigger_debug_quat(struct controller_report *report);

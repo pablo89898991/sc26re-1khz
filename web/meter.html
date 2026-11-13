@@ -122,6 +122,7 @@
         <option value="tpt">Trackpad timing µs — *_tptiming_dbg firmware</option>
         <option value="puck">Puck link counters — *_puck_dbg firmware</option>
         <option value="hap">Haptic reports log — *_haptics_dbg firmware</option>
+        <option value="trg">Trigger raw + calibration — *_trigger_dbg firmware</option>
         <option value="pcm">PCM haptic stream counters — *_pcm_dbg firmware</option>
       </select></div>
     <div class="grid" id="capGrid" style="display:none">
@@ -134,6 +135,7 @@
       <div class="bar"><button id="hapClear">Clear log</button><button id="hapCopy">Copy log</button><span class="note">flags: TL/TR = trigger in use, PL/PR = pad touched, G = controller turning</span></div>
       <pre id="hapLog" style="max-height:340px;overflow:auto;font-size:12px;background:#0b0f14;padding:8px;border-radius:8px"></pre>
     </div>
+    <pre id="trgBox" style="display:none;margin-top:10px;font-size:13px;background:#0b0f14;padding:10px;border-radius:8px"></pre>
     <div class="grid" id="cntGrid" style="display:none">
       <div class="stat"><div class="k" id="q0k">w</div><div class="v" id="q0">—</div></div>
       <div class="stat"><div class="k" id="q1k">x</div><div class="v" id="q1">—</div></div>
@@ -178,6 +180,7 @@ async function connect(){
 }
 $("#connect").onclick=connect;
 
+let trgDbg=[null,null];
 let hapSeen=new Set(), hapLines=[], hapT0=null;
 const HAPN={0x80:"RUMBLE",0x81:"PULSE",0x82:"COMMAND",0x83:"LFO_TONE",0x84:"LOG_SWEEP",0x85:"SCRIPT",0x86:"CLASS",0x87:"PCM_MONO",0x88:"PCM_STEREO",0x89:"PCM_MONO_L",0x8a:"GYRO_BIAS"};
 function hapIngest(q,t){
@@ -273,7 +276,12 @@ function draw(){
         else { $(f).textContent="—"; $(rr).textContent="—"; } }
       const lt=tps.length?tps[tps.length-1].tp:null; if(lt){ $("#tLv").textContent=lt.slice(0,3).join(" / "); $("#tRv").textContent=lt.slice(3).join(" / "); } }
     { const lastB=[...w].reverse().find(r=>r.btn!==undefined); if(lastB) document.querySelectorAll("#inds .ind").forEach(e=>e.classList.toggle("on",!!(lastB.btn>>>(+e.dataset.b)&1)));
-      const m=$("#qmode").value, lq=[...w].reverse().find(r=>r.q); $("#capGrid").style.display=m==="cap"?"":"none"; $("#cntGrid").style.display=(m==="tp"||m==="puck"||m==="tpt"||m==="pcm")?"":"none"; $("#hapBox").style.display=m==="hap"?"":"none";
+      const m=$("#qmode").value, lq=[...w].reverse().find(r=>r.q); $("#capGrid").style.display=m==="cap"?"":"none"; $("#cntGrid").style.display=(m==="tp"||m==="puck"||m==="tpt"||m==="pcm")?"":"none"; $("#hapBox").style.display=m==="hap"?"":"none"; $("#trgBox").style.display=m==="trg"?"":"none";
+      if(m==="trg"){ for(const r of w) if(r.q){ const sd=(r.q[3]>>8)&1; trgDbg[sd]=r.q; }
+        $("#trgBox").textContent=[0,1].map(sd=>{const q=trgDbg[sd]; if(!q) return (sd?"RIGHT":"LEFT")+": —";
+          const raw=q[0], pr=q[1]&0xffff, idl=q[2]&0xffff, inv=(q[3]>>4)&15, ty=q[3]&15, lo=Math.min(pr,idl), hi=Math.max(pr,idl);
+          const pct=hi>lo?Math.round(100*(inv?(hi-raw):(raw-lo))/(hi-lo)):NaN;
+          return `${sd?"RIGHT":"LEFT "} trigger: raw ${raw} mV | cal pressed ${pr}  idle ${idl}  inverted ${inv}  type ${ty} | position ≈ ${pct}%`;}).join("\n"); }
       if(lq&&m==="cap"){ const [ls,rs,lg,rg]=lq.q; capPk.l=Math.max(capPk.l,lg); capPk.r=Math.max(capPk.r,rg);
         $("#cLs").textContent=ls; $("#cRs").textContent=rs; $("#cLg").textContent=lg; $("#cRg").textContent=rg; $("#pLg").textContent=capPk.l; $("#pRg").textContent=capPk.r;
         const pct=(v,mx)=>Math.max(0,Math.min(100,v/mx*100))+"%"; $("#bLs").style.width=pct(ls,1000); $("#bRs").style.width=pct(rs,1000);

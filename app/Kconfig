@@ -288,6 +288,9 @@ config IBEX_HAPTICS_GYRO_GRIP_HIGH_DB
 	int "Grip level for High"
 	default -10
 
+config IBEX_TRIGGER_DEBUG_IN_QUAT
+	bool "Diagnostics: trigger raw mV and active calibration in the quaternion fields"
+
 config IBEX_HAPTICS_PCM_DEBUG_IN_QUAT
 	bool "Diagnostics: PCM haptic stream counters per second in the quaternion fields"
 	depends on !IBEX_HAPTICS_DEBUG_IN_QUAT
