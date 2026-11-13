@@ -1839,7 +1839,12 @@ static int submit_grip_tick(uint8_t grip_channels, int8_t gain_db,
 		.waveform_format = HAPTICS_WAVEFORM_SAMPLE_FORMAT_S16,
 		.waveform_rate_hz = GRIP_TICK_RATE_HZ,
 		/* Grip LRAs have a narrow usable range: compress Steam's dB range around 0 dB. */
+#if CONFIG_IBEX_HAPTICS_GYRO_GRIP_LEVELS
+		.gain_db = gain_db, /* already mapped to a fixed level */
+#else
+		/* Grip LRAs have a narrow usable range: compress Steam's dB range around 0 dB. */
 		.gain_db = (int8_t)(((int32_t)gain_db * CONFIG_IBEX_HAPTICS_GRIP_TICK_GAIN_SCALE_PCT) / 100),
+#endif
 	};
 
 	return submit_channels_start(grip_channels, slot, apply_waveform, &context,

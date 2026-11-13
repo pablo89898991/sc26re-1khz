@@ -1456,6 +1456,30 @@ static int handle_haptic_pulse(const uint8_t *data, size_t len, bool log)
 	return haptics_submit_effect(&command);
 }
 
+#if CONFIG_IBEX_HAPTICS_GYRO_GRIP_LEVELS
+/* Steam's Rotational Haptics Low/Medium/High -> fixed grip levels (dB re full scale). */
+static int8_t gyro_grip_level_db(int8_t steam_db)
+{
+	static const int8_t src[3] = { CONFIG_IBEX_HAPTICS_GYRO_STEAM_LOW_DB,
+	                               CONFIG_IBEX_HAPTICS_GYRO_STEAM_MEDIUM_DB,
+	                               CONFIG_IBEX_HAPTICS_GYRO_STEAM_HIGH_DB };
+	static const int8_t dst[3] = { CONFIG_IBEX_HAPTICS_GYRO_GRIP_LOW_DB,
+	                               CONFIG_IBEX_HAPTICS_GYRO_GRIP_MEDIUM_DB,
+	                               CONFIG_IBEX_HAPTICS_GYRO_GRIP_HIGH_DB };
+	int best = 0;
+
+	for(int i = 1; i < 3; ++i)
+	{
+		if(abs(steam_db - src[i]) < abs(steam_db - src[best]))
+		{
+			best = i;
+		}
+	}
+	/* the grip tick waveform is baked at CONFIG_IBEX_HAPTICS_GRIP_TICK_GAIN_DB */
+	return (int8_t)CLAMP(dst[best] - CONFIG_IBEX_HAPTICS_GRIP_TICK_GAIN_DB, -24, 24);
+}
+#endif
+
 static int handle_haptic_command(const uint8_t *data, size_t len, bool log)
 {
 	struct haptics_effect command;
@@ -1489,6 +1513,13 @@ static int handle_haptic_command(const uint8_t *data, size_t len, bool log)
 				.frequency_hz = HAPTICS_DEFAULT_PULSE_FREQUENCY_HZ,
 				.duration_ms = HAPTICS_TICK_DURATION_MS,
 			};
+#if CONFIG_IBEX_HAPTICS_GYRO_GRIP_LEVELS
+			if((channels & (HAPTICS_CHANNEL_LEFT_1 | HAPTICS_CHANNEL_RIGHT_1)) != 0 &&
+			   (channels & (HAPTICS_CHANNEL_LEFT_0 | HAPTICS_CHANNEL_RIGHT_0)) == 0)
+			{
+				command.gain_db = gyro_grip_level_db((int8_t)data[2]);
+			}
+#endif
 			return haptics_submit_effect(&command);
 		case HAPTIC_TYPE_CLICK:
 			command = (struct haptics_effect){
