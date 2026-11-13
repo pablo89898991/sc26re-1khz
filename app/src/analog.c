@@ -31,6 +31,8 @@ LOG_MODULE_REGISTER(analog);
 #define TRIGGER_ENDPOINT_TRIM_PERCENT 2
 #define TRIGGER_RANGE_MARGIN_PERCENT 15
 #define TRIGGER_CLICK_THRESHOLD_SETTING SETTING_TRIGGER_THRESHOLD_PERCENT
+#define TRIGGER_MODE_SETTING 62
+static uint8_t trigger_mode_dbg;
 #define TRIGGER_CLICK_RELEASE_HYSTERESIS_PERCENT 5
 #define PUCK_PILOT_PRESENT_MIN_MV 2000
 
@@ -162,7 +164,7 @@ void analog_trigger_debug_quat(struct controller_report *report)
 	report->gyro_quat_w = (int16_t)CLAMP(trg_dbg_raw[side], INT16_MIN, INT16_MAX);
 	report->gyro_quat_x = (int16_t)trg_dbg_cal[side].pressed;
 	report->gyro_quat_y = (int16_t)trg_dbg_cal[side].idle;
-	report->gyro_quat_z = (int16_t)((side << 8) | ((trg_dbg_cal[side].inverted & 0xf) << 4) |
+	report->gyro_quat_z = (int16_t)(((trigger_mode_dbg & 3) << 12) | (side << 8) | ((trg_dbg_cal[side].inverted & 0xf) << 4) |
 	                                (trigger_dir_decided[side] ? 8 : 0) | (trg_dbg_cal[side].type & 7));
 }
 #endif
@@ -722,9 +724,19 @@ int analog_read_report(struct controller_report *report)
 			averaged[channel] += samples[sample * ANALOG_CHANNEL_COUNT + channel];
 		}
 	}
+	int32_t trigger_raw[2];
+
 	for(size_t channel = 0; channel < ANALOG_CHANNEL_COUNT; ++channel)
 	{
 		averaged[channel] /= (int32_t)sample_count;
+		if(channel == ANALOG_TRIGGER_LEFT)
+		{
+			trigger_raw[0] = averaged[channel];
+		}
+		else if(channel == ANALOG_TRIGGER_RIGHT)
+		{
+			trigger_raw[1] = averaged[channel];
+		}
 		err = adc_raw_to_millivolts_dt(&analog_channels[channel], &averaged[channel]);
 		if(err)
 		{
@@ -769,6 +781,24 @@ int analog_read_report(struct controller_report *report)
 	report->trigger_right =
 	    trigger_to_report(averaged[ANALOG_TRIGGER_RIGHT], &calibration.trigger_right);
 	haptics_trigger_update(report->trigger_left, report->trigger_right);
+
+	/* OFW setting 62 trigger_mode (6AE90BC5 @0x4549c): Steam Input switches to
+	 * 1 = millivolts or 2 = raw SAADC counts and applies its own calibration;
+	 * the digital click is not reported in those modes. */
+	int16_t mode = 0;
+
+	(void)ibex_setting_get(TRIGGER_MODE_SETTING, &mode);
+	trigger_mode_dbg = (uint8_t)mode;
+	if(mode == 1 || mode == 2)
+	{
+		report->trigger_left = (int16_t)CLAMP(
+		    mode == 1 ? averaged[ANALOG_TRIGGER_LEFT] : trigger_raw[0], 0, INT16_MAX);
+		report->trigger_right = (int16_t)CLAMP(
+		    mode == 1 ? averaged[ANALOG_TRIGGER_RIGHT] : trigger_raw[1], 0, INT16_MAX);
+		trigger_left_click_latched = false;
+		trigger_right_click_latched = false;
+		return 0;
+	}
 	if(trigger_click_active(report->trigger_left, &trigger_left_click_latched))
 	{
 		report->buttons |= BIT(CONTROLLER_BUTTON_LEFT_TRIGGER_CLICK);

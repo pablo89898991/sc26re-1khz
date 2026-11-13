@@ -2021,6 +2021,23 @@ void haptics_debug_note_feature(const uint8_t *request, size_t len)
 	{
 		return;
 	}
+	/* SET_SETTINGS carries several (reg, lo, hi) triplets: log each one */
+	if(request[0] == 0x87 && len >= 5)
+	{
+		size_t body = MIN((size_t)request[1], len - 2);
+
+		for(size_t off = 0; off + 3 <= body; off += 3)
+		{
+			uint8_t tmp[4] = { request[1], request[2 + off], request[3 + off],
+			                   request[4 + off] };
+
+			hdbg_record(0x87, tmp, sizeof(tmp));
+			k_spinlock_key_t key = k_spin_lock(&hdbg_lock);
+			hdbg_ring[(hdbg_seq - 1) % HDBG_RING].flags |= 0x80;
+			k_spin_unlock(&hdbg_lock, key);
+		}
+		return;
+	}
 	hdbg_record(request[0], &request[1], len - 1);
 	k_spinlock_key_t key = k_spin_lock(&hdbg_lock);
 	hdbg_ring[(hdbg_seq - 1) % HDBG_RING].flags |= 0x80;

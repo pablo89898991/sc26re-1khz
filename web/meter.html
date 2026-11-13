@@ -282,7 +282,7 @@ function draw(){
         $("#trgBox").textContent=[0,1].map(sd=>{const q=trgDbg[sd]; if(!q) return (sd?"RIGHT":"LEFT")+": —";
           const raw=q[0], pr=q[1]&0xffff, idl=q[2]&0xffff, inv=(q[3]>>4)&15, ty=q[3]&7, dec=(q[3]>>3)&1, lo=Math.min(pr,idl), hi=Math.max(pr,idl);
           const pct=hi>lo?Math.round(100*(inv?(hi-raw):(raw-lo))/(hi-lo)):NaN;
-          return `${sd?"RIGHT":"LEFT "} trigger: raw ${raw} mV | cal pressed ${pr}  idle ${idl}  inverted ${inv}${dec?" (auto)":""}  type ${ty} | position ≈ ${pct}%`;}).join("\n"); }
+          return `${sd?"RIGHT":"LEFT "} trigger: raw ${raw} mV | cal pressed ${pr}  idle ${idl}  inverted ${inv}${dec?" (auto)":""}  type ${ty} | position ≈ ${pct}% | trigger_mode ${(q[3]>>12)&3}${((q[3]>>12)&3)==1?" (Steam: mV)":((q[3]>>12)&3)==2?" (Steam: raw)":""}`;}).join("\n"); }
       if(lq&&m==="cap"){ const [ls,rs,lg,rg]=lq.q; capPk.l=Math.max(capPk.l,lg); capPk.r=Math.max(capPk.r,rg);
         $("#cLs").textContent=ls; $("#cRs").textContent=rs; $("#cLg").textContent=lg; $("#cRg").textContent=rg; $("#pLg").textContent=capPk.l; $("#pRg").textContent=capPk.r;
         const pct=(v,mx)=>Math.max(0,Math.min(100,v/mx*100))+"%"; $("#bLs").style.width=pct(ls,1000); $("#bRs").style.width=pct(rs,1000);
