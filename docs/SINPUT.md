@@ -21,7 +21,8 @@ Puck (ESB) i Bluetooth działają **bez zmian** (protokół Valve).
 ## Mapowanie
 
 - A/B/X/Y → South/East/West/North, D-pad, L3/R3, LB/RB
-- LT/RT: tylko analog (pełny zakres int16); osobny klik nie jest wysyłany, bo SDL ma tylko 6 przycisków misc
+- LT/RT: analog (pełny zakres int16). Klik triggerów jest w raporcie (przyciski HID 13/14), ale SDL go nie pokazuje — SDL ma tylko misc1–misc6
+- Raport zawiera wszystkie 32 przyciski HID; zwykłe HID/DirectInput/Gamepad API widzą wszystko, SDL tylko to, co da się zmapować
 - Capsense: dotyk lewej/prawej gałki → misc2/misc3, gripsense: lewy/prawy grip → misc4/misc5
 - L4/R4 → paddle 1, L5/R5 → paddle 2
 - ☰ Menu → Start, ⧉ View → Back, Steam → Guide, QAM (…) → Share

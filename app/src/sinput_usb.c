@@ -170,10 +170,13 @@ size_t sinput_build_input_report(uint8_t out[SINPUT_REPORT_SIZE], const struct c
 	b2 |= btn(r, CONTROLLER_BUTTON_LEFT_SHOULDER) ? BIT(2) : 0;
 	b2 |= btn(r, CONTROLLER_BUTTON_RIGHT_SHOULDER) ? BIT(3) : 0;
 	/*
-	 * Trigger clicks (bits 4/5) are not sent: SDL maps dual-stage clicks to
-	 * misc buttons and only has misc1..misc6, which are needed for the
-	 * capacitive sensors below. The analog value still reaches full scale.
+	 * Trigger clicks are on the wire (plain HID / DirectInput / browser
+	 * Gamepad API see all 32 buttons), but left out of the SDL usage mask:
+	 * SDL turns dual-stage clicks into misc buttons and only has
+	 * misc1..misc6, which the capacitive sensors below need.
 	 */
+	b2 |= btn(r, CONTROLLER_BUTTON_LEFT_TRIGGER_CLICK) ? BIT(4) : 0;
+	b2 |= btn(r, CONTROLLER_BUTTON_RIGHT_TRIGGER_CLICK) ? BIT(5) : 0;
 	b2 |= btn(r, CONTROLLER_BUTTON_LEFT_PADDLE1) ? BIT(6) : 0;   /* L4 */
 	b2 |= btn(r, CONTROLLER_BUTTON_RIGHT_PADDLE1) ? BIT(7) : 0;  /* R4 */
 
