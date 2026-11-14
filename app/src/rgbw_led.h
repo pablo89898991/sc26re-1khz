@@ -45,3 +45,5 @@ struct rgbw_color rgbw_led_get(void);
 
 /* Re-read the host LED brightness setting (rate limited); call from the main loop. */
 void rgbw_led_poll_settings(void);
+/* apply Steam's LED brightness (setting 45) right away, e.g. before the boot LED */
+void rgbw_led_load_settings(void);

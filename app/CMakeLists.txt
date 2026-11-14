@@ -17,6 +17,7 @@ target_sources(app PRIVATE
 	src/imu.c
 	src/lizard.c
 	src/main.c
+	src/boot_guard.c
 	src/power.c
 	src/puck_interface.c
 	src/radio_personality.c

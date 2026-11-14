@@ -94,6 +94,17 @@ void rgbw_led_prepare_poweroff(void)
 	rgbw_led_force_pin_off(NRF_GPIO_PIN_MAP(1, 8));
 }
 
+void rgbw_led_load_settings(void)
+{
+	int16_t value;
+
+	if(IS_ENABLED(CONFIG_IBEX_LED_USER_BRIGHTNESS) &&
+	   ibex_setting_get(SETTING_LED_USER_BRIGHTNESS, &value))
+	{
+		user_brightness = (uint8_t)CLAMP(value, 0, 100);
+	}
+}
+
 void rgbw_led_poll_settings(void)
 {
 	static int64_t last_check;

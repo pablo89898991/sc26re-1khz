@@ -8,6 +8,7 @@
 #include <zephyr/settings/settings.h>
 
 #include "battery.h"
+#include "boot_guard.h"
 #include "charge_mode.h"
 #include "haptics.h"
 #include "controller.h"
@@ -109,14 +110,14 @@ int main(void)
 	int err;
 
 	power_capture_boot_state();
+	boot_guard_begin();
 
 	if(IS_ENABLED(CONFIG_SETTINGS))
 	{
 		err = settings_subsys_init();
 		if(err)
 		{
-			LOG_ERR("settings initialization failed: %d", err);
-			return err;
+			boot_guard_fatal("settings init", err);
 		}
 	}
 	radio_personality_init();
@@ -125,15 +126,13 @@ int main(void)
 	err = lizard_init();
 	if(err)
 	{
-		LOG_ERR("lizard mode initialization failed: %d", err);
-		return err;
+		boot_guard_fatal("lizard init", err);
 	}
 
 	err = hardware_init();
 	if(err)
 	{
-		LOG_ERR("hardware initialization failed: %d", err);
-		return err;
+		boot_guard_fatal("hardware init", err);
 	}
 	err = puck_interface_init();
 	if(err)
@@ -155,8 +154,7 @@ int main(void)
 		err = transport_usb_init();
 		if(err)
 		{
-			LOG_ERR("USB initialization failed: %d", err);
-			return err;
+			boot_guard_fatal("USB init", err);
 		}
 	}
 	charge_result = charge_mode_run_if_needed();
@@ -184,9 +182,18 @@ int main(void)
 		}
 		radio_personality_persist_after(radio_personality_get(), PERSONALITY_PERSIST_DELAY_MS);
 	}
+#if CONFIG_IBEX_RGBW_LED
+	rgbw_led_load_settings();
+#endif
 	set_boot_led(transport_usb_attached() && !usb_vbus_charge_radio);
 
-	if(usb_vbus_charge_radio)
+	if(boot_guard_safe_mode())
+	{
+		/* earlier boots never got stable: start without the radio this time */
+		LOG_WRN("safe start after %u failed boots: radio not started", boot_guard_attempts());
+		err = 0;
+	}
+	else if(usb_vbus_charge_radio)
 	{
 		err = transport_set_usb_radio_mode(TRANSPORT_USB_RADIO_VBUS_CHARGE);
 	}
@@ -196,8 +203,8 @@ int main(void)
 	}
 	if(err)
 	{
-		LOG_ERR("transport initialization failed: %d", err);
-		return err;
+		/* keep running (USB, power button) instead of returning from main() */
+		LOG_ERR("transport initialization failed: %d; continuing without radio", err);
 	}
 
 	LOG_INF("SC26re started in %s mode", radio_personality_name());
@@ -282,5 +289,6 @@ int main(void)
 
 		hardware_wait_for_change();
 		watchdog_feed();
+		boot_guard_loop();
 	}
 }
