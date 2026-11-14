@@ -362,10 +362,17 @@ static struct rgbw_color dock_led_breathe(uint32_t t)
 	return (struct rgbw_color){ lerp8(led_dim_amber.r, 0, t, 200), lerp8(led_dim_amber.g, 0, t, 200), 0, 0 };
 }
 
+static bool dock_led_docked;
+
+bool charge_mode_dock_led_active(void)
+{
+	return dock_led_docked;
+}
+
 void charge_mode_dock_led_poll(void)
 {
 	static int64_t last_step, last_sample, last_seen, docked_since, full_since;
-	static bool docked;
+	bool docked = dock_led_docked;
 	static struct rgbw_color saved;
 	int64_t now = k_uptime_get();
 
@@ -388,7 +395,7 @@ void charge_mode_dock_led_poll(void)
 
 	if(contact && !docked)
 	{
-		docked = true;
+		docked = dock_led_docked = true;
 		docked_since = now;
 		full_since = 0;
 		saved = rgbw_led_get();
@@ -396,7 +403,7 @@ void charge_mode_dock_led_poll(void)
 	}
 	else if(!contact && docked)
 	{
-		docked = false;
+		docked = dock_led_docked = false;
 		rgbw_led_set(saved);
 		LOG_INF("off the Puck: LED restored");
 		return;
@@ -421,5 +428,10 @@ void charge_mode_dock_led_poll(void)
 #else
 void charge_mode_dock_led_poll(void)
 {
+}
+
+bool charge_mode_dock_led_active(void)
+{
+	return false;
 }
 #endif

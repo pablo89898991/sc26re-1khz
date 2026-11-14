@@ -1528,3 +1528,8 @@ int transport_ble_send_battery_status(const struct controller_battery_report *re
 	bt_conn_unref(snapshot.conn);
 	return err;
 }
+
+bool transport_ble_pairing_window_open(void)
+{
+	return ble_pairing_window_open();
+}

@@ -97,6 +97,53 @@ static void set_boot_led(bool usb_radio_off)
 #endif
 }
 
+#if CONFIG_IBEX_RGBW_LED
+/*
+ * OFW 6AE90BC5 LED thread (0x17b4e), wireless mode:
+ *  - connected: steady colour
+ *  - pairing window: double flash, 75 ms on / 75 off / 75 on / 300 off
+ *  - not connected: slow blink, 100 ms fade in, 900 ms on, 100 ms fade out, 900 ms off
+ * The blink scales the current colour, so Steam's colour and the dock LED are untouched.
+ */
+static void link_led_poll(bool wireless)
+{
+	static int64_t phase_start_ms;
+	static uint8_t last_state;
+	int64_t now = k_uptime_get();
+	uint8_t state = 0U; /* 0 steady, 1 searching, 2 pairing */
+	uint32_t t;
+	uint8_t level = 100U;
+
+	if(wireless && !charge_mode_dock_led_active())
+	{
+		bool ble = radio_personality_get() == RADIO_PERSONALITY_BLE;
+		bool connected = ble ? transport_ble_connected() : transport_esb_connected();
+
+		if(!connected)
+		{
+			state = ble && transport_ble_pairing_window_open() ? 2U : 1U;
+		}
+	}
+	if(state != last_state)
+	{
+		last_state = state;
+		phase_start_ms = now;
+	}
+	t = (uint32_t)(now - phase_start_ms);
+	if(state == 1U)
+	{
+		t %= 2000U;
+		level = t < 100U ? (uint8_t)(t) : t < 1000U ? 100U : t < 1100U ? (uint8_t)(1100U - t) : 0U;
+	}
+	else if(state == 2U)
+	{
+		t %= 525U;
+		level = (t < 75U || (t >= 150U && t < 225U)) ? 100U : 0U;
+	}
+	rgbw_led_set_indicator_level(level);
+}
+#endif
+
 int main(void)
 {
 	struct controller_report previous = { 0 };
@@ -224,6 +271,8 @@ int main(void)
 #if CONFIG_IBEX_RGBW_LED
 		rgbw_led_poll_settings();
 		charge_mode_dock_led_poll();
+		link_led_poll(!(transport_usb_attached() && !usb_vbus_charge_radio) &&
+		              !boot_guard_safe_mode());
 #endif
 		if(ibex_setting_get(SETTING_SLEEP_INACTIVITY_TIMEOUT, &timeout_seconds) &&
 		   timeout_seconds != inactivity_timeout_seconds)

@@ -30,6 +30,8 @@ static const struct device *const rgbw_leds = DEVICE_DT_GET(PWMRGBLEDS_NODE);
 static struct rgbw_color current = { 0 };
 /* Steam's LED brightness slider (setting 45, led_user_brightness, 0..100). */
 static uint8_t user_brightness = 100;
+/* connection-status blink (0..100 %), applied on top of the colour without changing it */
+static uint8_t indicator_level = 100;
 
 static void rgbw_led_force_pin_off(uint32_t pin)
 {
@@ -48,6 +50,10 @@ static int rgbw_led_set_channel(enum ibex_rgbw_channel channel, uint8_t brightne
 		{
 			percent = 1U;
 		}
+	}
+	if(indicator_level < 100U)
+	{
+		percent = (uint8_t)(((uint16_t)percent * indicator_level) / 100U);
 	}
 
 	return led_set_brightness(rgbw_leds, channel, percent);
@@ -76,6 +82,16 @@ void rgbw_led_set(struct rgbw_color color)
 	   rgbw_led_set_channel(IBEX_RGBW_WHITE, current.w))
 	{
 		LOG_WRN("failed to set one or more LED channels");
+	}
+}
+
+void rgbw_led_set_indicator_level(uint8_t level)
+{
+	level = MIN(level, 100U);
+	if(level != indicator_level)
+	{
+		indicator_level = level;
+		rgbw_led_set(current);
 	}
 }
 

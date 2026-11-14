@@ -145,6 +145,7 @@ int transport_ble_send_input_report(uint8_t report_id, const uint8_t *data, size
 void transport_ble_deactivate(void);
 int transport_ble_clear_bonds(uint8_t id);
 bool transport_ble_connected(void);
+bool transport_ble_pairing_window_open(void);
 
 bool transport_usb_attached(void);
 bool transport_usb_configured(void);

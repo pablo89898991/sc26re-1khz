@@ -47,3 +47,5 @@ struct rgbw_color rgbw_led_get(void);
 void rgbw_led_poll_settings(void);
 /* apply Steam's LED brightness (setting 45) right away, e.g. before the boot LED */
 void rgbw_led_load_settings(void);
+/* scale the output (0..100 %) without changing the colour, for status blinking */
+void rgbw_led_set_indicator_level(uint8_t level);
