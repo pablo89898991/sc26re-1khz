@@ -22,8 +22,11 @@
 LOG_MODULE_REGISTER(valve_feature);
 
 #define VALVE_SETTINGS_PATH_MAX 48
-#define VALVE_PROTOCOL_BUILD_TIMESTAMP 0x6a3bfe74
-#define VALVE_PROTOCOL_BUILD_SHA "a371f66dd017"
+/* Stock firmware version reported to Steam (wireless build_timestamp attribute and the
+ * version attribute). Steam offers a "firmware update" on every connect when this is older
+ * than the firmware it ships, so it tracks the stock release sc26re is ported from. */
+#define VALVE_PROTOCOL_BUILD_TIMESTAMP CONFIG_IBEX_STOCK_VERSION_TIMESTAMP
+#define VALVE_PROTOCOL_BUILD_SHA CONFIG_IBEX_STOCK_VERSION_SHA
 #define VALVE_BLE_CAPABILITIES 0x68d2f92e
 #define VALVE_BLE_HARDWARE_ID 0x49
 #define VALVE_USB_PRODUCT_ID 0x1302

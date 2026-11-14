@@ -12,6 +12,18 @@ config IBEX_BUILD_TIMESTAMP
 	  the packaged Ibex firmware filename. Makefile builds default this to
 	  0xf0550000 plus the repository build number.
 
+config IBEX_STOCK_VERSION_TIMESTAMP
+	hex "Stock firmware version reported to Steam"
+	default 0x6ae90bc5
+	help
+	  Build timestamp of the Valve stock firmware sc26re matches (6AE90BC5). Reported over
+	  wireless and in the version attribute; if it is older than the firmware bundled with
+	  Steam, Steam asks for a firmware update every time the controller connects.
+
+config IBEX_STOCK_VERSION_SHA
+	string "Stock firmware git SHA reported to Steam"
+	default "1c979e4f05d6"
+
 config IBEX_FIRMWARE_IDENTITY
 	string "Custom firmware identity"
 	default "SC26re"
