@@ -501,18 +501,13 @@ static ssize_t build_feature_response(enum valve_feature_link link, const uint8_
 			{
 				size_t setting_len;
 
+				/* OFW 6AE90BC5 (0x455ce): a missing setting answers with length 0, not one
+				 * zero byte. Steam read the extra byte as a broken record ("Failed to read
+				 * triton info ... slot 0", "Got bond for slot 0 (11)") for an empty bond slot. */
 				if(valve_settings_read(path, cursor, end - cursor, &setting_len))
 				{
 					cursor += setting_len;
 				}
-				else
-				{
-					*cursor++ = 0;
-				}
-			}
-			else
-			{
-				*cursor++ = 0;
 			}
 			break;
 		case VALVE_FEATURE_CLEAR_SETTINGS_VALUES:
