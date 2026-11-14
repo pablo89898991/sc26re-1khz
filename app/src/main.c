@@ -82,7 +82,7 @@ static enum radio_personality boot_chord_personality(void)
 /*
  * Settings reset chord: hold Menu + View + LB + RB while switching on, keep
  * holding for 3 s (orange blinking LED, then red + chime). Forgets sc26re's calibration and
- * settings so the stock values are used again; Puck/BT pairings stay.
+ * settings and all Puck/BT pairings (hard reset); stock calibration returns.
  */
 #define FACTORY_RESET_HOLD_MS 3000
 

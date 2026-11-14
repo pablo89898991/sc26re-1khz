@@ -167,7 +167,12 @@ static void import_ofw_esb_bonds_locked(void)
 		struct esb_bond *bond = &esb_bonds[slot].staged;
 		uint8_t data[VALVE_ESB_BOND_SIZE];
 
-		if(bond->valid && esb_bond_material_valid(bond->data))
+		/*
+		 * Any stored entry wins, including an all-zero one: that is the
+		 * tombstone written when Steam forgets the Puck or on a hard reset,
+		 * and it must stop the stock bond from coming back.
+		 */
+		if(bond->valid)
 		{
 			continue;
 		}
@@ -881,8 +886,13 @@ static int delete_setting_path(const char *path)
 		struct esb_bond_slot *bond_slot = &esb_bonds[slot];
 		int selected;
 
+		static const uint8_t tombstone[VALVE_ESB_BOND_SIZE];
+
 		k_mutex_lock(&esb_settings_mutex, K_FOREVER);
-		err = IS_ENABLED(CONFIG_SETTINGS) ? settings_delete(esb_bond_paths[slot]) : 0;
+		/* Store an all-zero bond instead of deleting the key, so the stock bond in
+		 * Valve's storage is not imported again on the next boot. */
+		err = IS_ENABLED(CONFIG_SETTINGS) ?
+		          settings_save_one(esb_bond_paths[slot], tombstone, sizeof(tombstone)) : 0;
 		if(err)
 		{
 			k_mutex_unlock(&esb_settings_mutex);
@@ -890,6 +900,7 @@ static int delete_setting_path(const char *path)
 			return err;
 		}
 		memset(&bond_slot->staged, 0, sizeof(bond_slot->staged));
+		bond_slot->staged.valid = true; /* tombstone: stored, but no key material */
 		bond_slot->dirty = false;
 
 		selected = wireless_transport_valid ? esb_bond_slot_for_transport(wireless_transport) : -1;
@@ -999,8 +1010,11 @@ int valve_settings_factory_reset(void)
 	static const char *const subtrees[] = {
 		"cal",                  /* trigger/stick/pressure/IMU calibration, battery trim */
 		"settings/haptics",     /* persisted Steam (ibex registry) settings */
-		VALVE_HAPTIC_BOOT_LEVEL_PATH,
+		"user",                 /* wireless transport, boot chime level */
+		"radio",                /* BLE/ESB personality */
+		"bt",                   /* Bluetooth bonds and identity */
 	};
+	static const uint8_t tombstone[VALVE_ESB_BOND_SIZE];
 	static char names[FACTORY_RESET_MAX_KEYS][FACTORY_RESET_KEY_MAX];
 	int deleted = 0;
 
@@ -1028,6 +1042,17 @@ int valve_settings_factory_reset(void)
 			{
 				deleted++;
 			}
+		}
+	}
+	/* Puck pairings: tombstones, so the stock bonds in Valve's storage stay forgotten. */
+	for(size_t slot = 0; slot < ARRAY_SIZE(esb_bond_paths); ++slot)
+	{
+		int err = settings_save_one(esb_bond_paths[slot], tombstone, sizeof(tombstone));
+
+		LOG_INF("factory reset: forget %s: %d", esb_bond_paths[slot], err);
+		if(err == 0)
+		{
+			deleted++;
 		}
 	}
 	k_mutex_unlock(&valve_settings_commit_mutex);

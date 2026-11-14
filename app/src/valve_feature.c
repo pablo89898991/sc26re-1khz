@@ -55,7 +55,7 @@ static size_t digital_mappings_len;
 /*
  * "Factory settings" for sc26re: DELETE_SETTING of this pseudo path (sent by
  * the report meter) forgets sc26re's calibration/settings, then reboots so the
- * stock values from Valve's storage are loaded. Pairings are kept.
+ * stock values from Valve's storage are loaded. Pairings are forgotten too.
  */
 #define SC26RE_FACTORY_RESET_PATH "sc26re/factory_reset"
 static void factory_reset_reboot_work_handler(struct k_work *work)

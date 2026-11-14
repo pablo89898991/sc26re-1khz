@@ -972,7 +972,7 @@ SHELL_STATIC_SUBCMD_SET_CREATE(
     SHELL_CMD_ARG(set, NULL, "Set Ibex runtime setting <id> <value>", cmd_settings_set, 3, 0),
     SHELL_CMD(defaults, NULL, "Reset Ibex runtime settings to defaults", cmd_settings_defaults),
     SHELL_CMD(factory_reset, NULL,
-              "Forget sc26re calibration/settings (keep pairings), reboot to stock values",
+              "Hard reset: forget calibration, settings and all pairings, reboot",
               cmd_settings_factory_reset),
     SHELL_SUBCMD_SET_END);
 
