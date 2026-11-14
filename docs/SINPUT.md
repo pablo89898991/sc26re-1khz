@@ -21,10 +21,11 @@ Puck (ESB) i Bluetooth działają **bez zmian** (protokół Valve).
 ## Mapowanie
 
 - A/B/X/Y → South/East/West/North, D-pad, L3/R3, LB/RB
-- LT/RT: analog (pełny zakres int16) + klik (dual-stage)
+- LT/RT: tylko analog (pełny zakres int16); osobny klik nie jest wysyłany, bo SDL ma tylko 6 przycisków misc
+- Capsense: dotyk lewej/prawej gałki → misc2/misc3, gripsense: lewy/prawy grip → misc4/misc5
 - L4/R4 → paddle 1, L5/R5 → paddle 2
 - ☰ Menu → Start, ⧉ View → Back, Steam → Guide, QAM (…) → Share
-- Klik lewego/prawego trackpada → Touchpad 1/2; oba trackpady jako 2 powierzchnie dotykowe z naciskiem
+- Klik lewego trackpada → Touchpad, prawego → misc6; oba trackpady jako 2 powierzchnie dotykowe z naciskiem
 - Akcelerometr ±2 g, żyroskop ±2000 °/s, znacznik czasu IMU w µs
 - Zgłaszany typ: Xbox One, układ przycisków ABXY, polling 1000 µs
 

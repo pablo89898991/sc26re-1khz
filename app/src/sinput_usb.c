@@ -147,6 +147,7 @@ size_t sinput_build_input_report(uint8_t out[SINPUT_REPORT_SIZE], const struct c
 	uint8_t b1 = 0;
 	uint8_t b2 = 0;
 	uint8_t b3 = 0;
+	uint8_t b4 = 0;
 	uint16_t p;
 	bool touch;
 
@@ -168,8 +169,11 @@ size_t sinput_build_input_report(uint8_t out[SINPUT_REPORT_SIZE], const struct c
 	b2 |= btn(r, CONTROLLER_BUTTON_RIGHT_STICK) ? BIT(1) : 0;
 	b2 |= btn(r, CONTROLLER_BUTTON_LEFT_SHOULDER) ? BIT(2) : 0;
 	b2 |= btn(r, CONTROLLER_BUTTON_RIGHT_SHOULDER) ? BIT(3) : 0;
-	b2 |= btn(r, CONTROLLER_BUTTON_LEFT_TRIGGER_CLICK) ? BIT(4) : 0;
-	b2 |= btn(r, CONTROLLER_BUTTON_RIGHT_TRIGGER_CLICK) ? BIT(5) : 0;
+	/*
+	 * Trigger clicks (bits 4/5) are not sent: SDL maps dual-stage clicks to
+	 * misc buttons and only has misc1..misc6, which are needed for the
+	 * capacitive sensors below. The analog value still reaches full scale.
+	 */
 	b2 |= btn(r, CONTROLLER_BUTTON_LEFT_PADDLE1) ? BIT(6) : 0;   /* L4 */
 	b2 |= btn(r, CONTROLLER_BUTTON_RIGHT_PADDLE1) ? BIT(7) : 0;  /* R4 */
 
@@ -185,7 +189,12 @@ size_t sinput_build_input_report(uint8_t out[SINPUT_REPORT_SIZE], const struct c
 	out[SI_BUTTONS + 0] = b1;
 	out[SI_BUTTONS + 1] = b2;
 	out[SI_BUTTONS + 2] = b3;
-	out[SI_BUTTONS + 3] = 0;
+	/* Capacitive sensors -> SDL misc2..misc5 (misc1 = Share, misc6 = right pad click). */
+	b4 |= btn(r, CONTROLLER_BUTTON_LEFT_STICK_TOUCH) ? BIT(0) : 0;
+	b4 |= btn(r, CONTROLLER_BUTTON_RIGHT_STICK_TOUCH) ? BIT(1) : 0;
+	b4 |= btn(r, CONTROLLER_BUTTON_LEFT_GRIP_TOUCH) ? BIT(2) : 0;
+	b4 |= btn(r, CONTROLLER_BUTTON_RIGHT_GRIP_TOUCH) ? BIT(3) : 0;
+	out[SI_BUTTONS + 3] = b4;
 
 	/* SDL: Triton Y axes are up-positive and get negated; SInput is sent as-is. */
 	sys_put_le16((uint16_t)r->stick_left_x, &out[SI_LX]);
@@ -252,9 +261,9 @@ static void build_features(uint8_t out[SINPUT_REPORT_SIZE])
 	sys_put_le16(SINPUT_ACCEL_RANGE_G, &out[10]);
 	sys_put_le16(SINPUT_GYRO_RANGE_DPS, &out[12]);
 	out[14] = 0xFF; /* ABXY + d-pad */
-	out[15] = 0xFF; /* L3 R3 LB RB LT RT L4 R4 */
+	out[15] = 0xCF; /* L3 R3 LB RB (no digital LT/RT) L4 R4 */
 	out[16] = 0xFF; /* Start Back Guide Share L5 R5 LPad RPad */
-	out[17] = 0x00;
+	out[17] = 0x0F; /* L stick touch, R stick touch, L grip touch, R grip touch */
 	out[18] = 2;    /* touchpads */
 	out[19] = 1;    /* fingers per pad */
 
