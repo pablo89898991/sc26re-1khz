@@ -248,7 +248,9 @@ static void prepare_device_attributes(enum valve_feature_link link, uint8_t **cu
 			append_numeric_attr(cursor, 0, VALVE_USB_UNIQUE_ID);
 			append_numeric_attr(cursor, 1, VALVE_USB_PRODUCT_ID);
 			append_numeric_attr(cursor, 2, VALVE_USB_CAPABILITIES);
-			append_numeric_attr(cursor, 4, CONFIG_IBEX_BUILD_TIMESTAMP);
+			/* not CONFIG_IBEX_BUILD_TIMESTAMP (0xf055....): Steam compares it as a signed Unix
+			 * time with TRITON_FW_TS from hardwareupdater.cfg and offers an update */
+			append_numeric_attr(cursor, 4, VALVE_PROTOCOL_BUILD_TIMESTAMP);
 			append_numeric_attr(cursor, 9, VALVE_USB_HARDWARE_ID);
 			append_numeric_attr(cursor, 11, 100);
 			break;

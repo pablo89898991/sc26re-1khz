@@ -128,7 +128,8 @@ static void puck_fill_identity(uint8_t *payload)
 {
 	memset(payload, 0, PUCK_IDENTITY_PAYLOAD_SIZE);
 	sys_put_le32(PUCK_OFW_MAGIC, &payload[4]);
-	sys_put_le32(CONFIG_IBEX_BUILD_TIMESTAMP, &payload[12]);
+	/* stock version Steam expects (see valve_feature.c), not the package timestamp */
+	sys_put_le32(CONFIG_IBEX_STOCK_VERSION_TIMESTAMP, &payload[12]);
 	valve_identity_copy_serial(VALVE_IDENTITY_UNIT_SERIAL, &payload[16], 14);
 	valve_identity_copy_serial(VALVE_IDENTITY_BOARD_SERIAL, &payload[30], 14);
 	memcpy(&payload[44], CONFIG_IBEX_FIRMWARE_IDENTITY,
