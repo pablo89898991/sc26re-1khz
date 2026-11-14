@@ -28,10 +28,15 @@ LOG_MODULE_REGISTER(valve_feature);
 #define VALVE_PROTOCOL_BUILD_TIMESTAMP CONFIG_IBEX_STOCK_VERSION_TIMESTAMP
 #define VALVE_PROTOCOL_BUILD_SHA CONFIG_IBEX_STOCK_VERSION_SHA
 #define VALVE_BLE_CAPABILITIES 0x68d2f92e
-#define VALVE_BLE_HARDWARE_ID 0x49
 #define VALVE_USB_PRODUCT_ID 0x1302
 #define VALVE_USB_CAPABILITIES 0x4168BFFF
-#define VALVE_USB_HARDWARE_ID 0x45
+/* OFW 6AE90BC5 0x3f4dc: the board's hardware ID is in UICR CUSTOMER[1] (0x10001084) when
+ * CUSTOMER[0] holds 0xac32a429 (stock knows 69 and 72..75). Steam reads it as HWID; sc26re
+ * used to send fixed 69 (USB) / 73 (wireless), which made Steam offer a firmware update. */
+#define VALVE_UICR_HWID_MAGIC_ADDR 0x10001080u
+#define VALVE_UICR_HWID_ADDR 0x10001084u
+#define VALVE_UICR_HWID_MAGIC 0xac32a429u
+#define VALVE_DEFAULT_HARDWARE_ID 0x48u
 #define VALVE_USB_UNIQUE_ID 0x12345678
 #define VALVE_FICR_DEVICEID_BASE 0x10000060u
 #define VALVE_STRING_ATTRIBUTE_SIZE 20
@@ -240,6 +245,15 @@ static void log_feature_request(enum valve_feature_link link, const uint8_t *req
 	}
 }
 
+static uint32_t valve_hardware_id(void)
+{
+	if(*(const volatile uint32_t *)VALVE_UICR_HWID_MAGIC_ADDR == VALVE_UICR_HWID_MAGIC)
+	{
+		return *(const volatile uint32_t *)VALVE_UICR_HWID_ADDR;
+	}
+	return VALVE_DEFAULT_HARDWARE_ID;
+}
+
 static void prepare_device_attributes(enum valve_feature_link link, uint8_t **cursor)
 {
 	switch(link)
@@ -251,7 +265,7 @@ static void prepare_device_attributes(enum valve_feature_link link, uint8_t **cu
 			/* not CONFIG_IBEX_BUILD_TIMESTAMP (0xf055....): Steam compares it as a signed Unix
 			 * time with TRITON_FW_TS from hardwareupdater.cfg and offers an update */
 			append_numeric_attr(cursor, 4, VALVE_PROTOCOL_BUILD_TIMESTAMP);
-			append_numeric_attr(cursor, 9, VALVE_USB_HARDWARE_ID);
+			append_numeric_attr(cursor, 9, valve_hardware_id());
 			append_numeric_attr(cursor, 11, 100);
 			break;
 		case VALVE_FEATURE_LINK_BLE:
@@ -262,7 +276,7 @@ static void prepare_device_attributes(enum valve_feature_link link, uint8_t **cu
 			append_numeric_attr(cursor, 2, 0);
 			append_numeric_attr(cursor, 10, VALVE_BLE_CAPABILITIES);
 			append_numeric_attr(cursor, 4, VALVE_PROTOCOL_BUILD_TIMESTAMP);
-			append_numeric_attr(cursor, 9, VALVE_BLE_HARDWARE_ID);
+			append_numeric_attr(cursor, 9, valve_hardware_id());
 			break;
 	}
 }
@@ -303,7 +317,7 @@ static void prepare_version_attribute(const uint8_t *request, size_t len, uint8_
 		*(*cursor)++ = 0;
 		sys_put_le32(VALVE_PROTOCOL_BUILD_TIMESTAMP, *cursor);
 		*cursor += sizeof(uint32_t);
-		sys_put_le32(VALVE_BLE_HARDWARE_ID, *cursor);
+		sys_put_le32(valve_hardware_id(), *cursor);
 		*cursor += sizeof(uint32_t);
 		memset(*cursor, 0, 16);
 		memcpy(*cursor, VALVE_PROTOCOL_BUILD_SHA, MIN(strlen(VALVE_PROTOCOL_BUILD_SHA), 16));
