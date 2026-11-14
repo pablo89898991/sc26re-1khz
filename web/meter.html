@@ -66,6 +66,15 @@
   </div>
 
   <div class="panel">
+    <h2>Factory settings (SC26RE v40+)</h2>
+    <p class="note">Forgets everything sc26re stored on top of the stock data &mdash; trigger, stick, trackpad-pressure and gyro calibration, settings sent by Steam, boot chime level &mdash; and reboots the controller. It then loads Valve's own values again, the same ones the stock firmware uses. <b>Puck and Bluetooth pairings are kept.</b> Works over USB or the Puck; close Steam first. Same as holding Menu + View + LB + RB for 3 s while switching on.</p>
+    <div class="bar">
+      <button id="facReset">Reset to Valve factory settings…</button>
+      <span id="facStatus" class="note"></span>
+    </div>
+  </div>
+
+  <div class="panel">
     <h2>Report stream</h2>
     <div class="grid">
       <div class="stat"><div class="k">Report rate</div><div class="v" id="sRate">—</div><div class="u">reports / s (host)</div></div>
@@ -205,6 +214,16 @@ async function trigCal(stage){
   $("#tcStatus").innerHTML=ok?`<span class="ok">stage ${stage} sent</span>`:`<span class="err">failed: ${last||"not connected"}</span>`;
 }
 [0,1,2,3].forEach(n=>$("#tc"+n).onclick=()=>trigCal(n));
+async function factoryReset(){
+  if(!devs.length){ $("#facStatus").innerHTML='<span class="err">connect the controller first</span>'; return; }
+  if(!confirm("Reset the controller's calibration and settings to Valve's factory values?\nPairings are kept. The controller will reboot.")) return;
+  const path=new TextEncoder().encode("sc26re/factory_reset");
+  const buf=new Uint8Array(63); buf[0]=0xF0; buf[1]=path.length+1; buf.set(path,2);
+  let ok=0,last="";
+  for(const d of devs){ try{ await d.sendFeatureReport(1,buf); ok++; }catch(e){ last=e.message; } }
+  $("#facStatus").innerHTML=ok?'<span class="ok">sent &mdash; the controller chimes and reboots</span>':`<span class="err">failed: ${last||"not connected"}</span>`;
+}
+$("#facReset").onclick=factoryReset;
 if("hid" in navigator) navigator.hid.addEventListener("disconnect",e=>{devs=devs.filter(d=>d!==e.device);$("#status").textContent="disconnected";});
 
 function wantedId(){

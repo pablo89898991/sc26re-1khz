@@ -455,6 +455,25 @@ static int cmd_settings_defaults(const struct shell *shell, size_t argc, char **
 	return 0;
 }
 
+static int cmd_settings_factory_reset(const struct shell *shell, size_t argc, char **argv)
+{
+	int n;
+
+	ARG_UNUSED(argc);
+	ARG_UNUSED(argv);
+
+	n = valve_settings_factory_reset();
+	if(n < 0)
+	{
+		shell_error(shell, "factory reset failed: %d", n);
+		return n;
+	}
+	shell_print(shell, "Removed %d sc26re entries; rebooting to stock calibration/settings", n);
+	k_sleep(K_MSEC(200));
+	(void)power_reboot_normal();
+	return 0;
+}
+
 static int parse_haptics_channels(const struct shell *shell, size_t argc, char **argv,
                                   uint8_t *channels)
 {
@@ -952,6 +971,9 @@ SHELL_STATIC_SUBCMD_SET_CREATE(
     sub_settings, SHELL_CMD_ARG(get, NULL, "Get Ibex runtime setting <id>", cmd_settings_get, 2, 0),
     SHELL_CMD_ARG(set, NULL, "Set Ibex runtime setting <id> <value>", cmd_settings_set, 3, 0),
     SHELL_CMD(defaults, NULL, "Reset Ibex runtime settings to defaults", cmd_settings_defaults),
+    SHELL_CMD(factory_reset, NULL,
+              "Forget sc26re calibration/settings (keep pairings), reboot to stock values",
+              cmd_settings_factory_reset),
     SHELL_SUBCMD_SET_END);
 
 SHELL_STATIC_SUBCMD_SET_CREATE(

@@ -79,6 +79,80 @@ static enum radio_personality boot_chord_personality(void)
 	return radio_personality_get();
 }
 
+/*
+ * Settings reset chord: hold Menu + View + LB + RB while switching on, keep
+ * holding for 3 s (orange blinking LED, then red + chime). Forgets sc26re's calibration and
+ * settings so the stock values are used again; Puck/BT pairings stay.
+ */
+#define FACTORY_RESET_HOLD_MS 3000
+
+static bool factory_reset_chord(uint32_t buttons)
+{
+	uint32_t mask = BIT(CONTROLLER_BUTTON_MENU) | BIT(CONTROLLER_BUTTON_VIEW) |
+	                BIT(CONTROLLER_BUTTON_LEFT_SHOULDER) | BIT(CONTROLLER_BUTTON_RIGHT_SHOULDER);
+
+	return (buttons & mask) == mask;
+}
+
+static void factory_reset_feedback(uint8_t r, uint8_t g, uint8_t b)
+{
+#if CONFIG_IBEX_RGBW_LED
+	rgbw_led_set((struct rgbw_color){ r, g, b, 0 });
+#else
+	ARG_UNUSED(r);
+	ARG_UNUSED(g);
+	ARG_UNUSED(b);
+#endif
+}
+
+static void boot_factory_reset_check(void)
+{
+	int64_t start;
+	int n;
+
+	k_sleep(K_MSEC(BOOT_CHORD_SETTLE_MS));
+	if(!factory_reset_chord(hardware_read_buttons()))
+	{
+		return;
+	}
+	LOG_INF("settings reset chord held; keep holding to confirm");
+	/* detected: orange LED + pairing chime */
+	factory_reset_feedback(255, 80, 0);
+	(void)haptics_play_system_sound(HAPTICS_SOUND_PAIRING);
+	start = k_uptime_get();
+	while(k_uptime_get() - start < FACTORY_RESET_HOLD_MS)
+	{
+		watchdog_feed();
+		k_sleep(K_MSEC(50));
+		/* blink orange while counting down */
+		if(((k_uptime_get() - start) / 250) % 2)
+		{
+			factory_reset_feedback(0, 0, 0);
+		}
+		else
+		{
+			factory_reset_feedback(255, 80, 0);
+		}
+		if(!factory_reset_chord(hardware_read_buttons()))
+		{
+			LOG_INF("settings reset chord released early: cancelled");
+			factory_reset_feedback(0, 0, 0);
+			return;
+		}
+	}
+	n = valve_settings_factory_reset();
+	LOG_INF("settings reset done (%d)", n);
+	/* done: red LED + paired chime, then reboot */
+	factory_reset_feedback(255, 0, 0);
+	(void)haptics_play_system_sound(HAPTICS_SOUND_PAIRED);
+	for(int i = 0; i < 10; ++i)
+	{
+		watchdog_feed();
+		k_sleep(K_MSEC(100));
+	}
+	(void)power_reboot_normal();
+}
+
 static void set_boot_led(bool usb_radio_off)
 {
 #if CONFIG_IBEX_RGBW_LED
@@ -209,6 +283,7 @@ int main(void)
 	                        transport_usb_attached() &&
 	                        !transport_usb_configured();
 
+	boot_factory_reset_check();
 	if(transport_usb_attached() && !usb_vbus_charge_radio)
 	{
 		LOG_INF("USB attached; using radio-off USB mode without persisting personality");

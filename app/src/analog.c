@@ -171,6 +171,137 @@ void analog_trigger_debug_quat(struct controller_report *report)
 
 /* Trigger step calibration (port of OFW 6AE90BC5 get_id_set_trigger_step_cal). */
 #define TRIGGER_CAL_MIN_SPAN_MV 100
+
+/*
+ * Rest auto-zero. Each unit's released trigger sits at a slightly different
+ * voltage, and on some units it is far enough from the factory "idle" point
+ * that a released trigger reads as partly pressed (in our own scaling and in
+ * Steam's, which uses the same records in trigger_mode 1/2). At power-on the
+ * resting voltage is learned; afterwards the travel from that rest to the
+ * pressed endpoint is stretched onto idle..pressed, so a released trigger
+ * always lands exactly on the calibration's idle point (= 0 %).
+ */
+#define TRIGGER_REST_STABLE_MV 60
+static int32_t trigger_rest_sum[2];
+static int32_t trigger_rest_min[2] = { INT32_MAX, INT32_MAX };
+static int32_t trigger_rest_max[2] = { INT32_MIN, INT32_MIN };
+static uint32_t trigger_rest_samples[2];
+static int32_t trigger_rest_mv[2];
+static bool trigger_rest_valid[2];
+
+static void trigger_learn_rest(int i, int32_t raw)
+{
+	if(trigger_rest_samples[i] >= TRIGGER_DIR_BOOT_SAMPLES)
+	{
+		return;
+	}
+	trigger_rest_samples[i]++;
+	if(trigger_rest_samples[i] <= TRIGGER_DIR_WARMUP_SAMPLES)
+	{
+		return;
+	}
+	trigger_rest_sum[i] += raw;
+	trigger_rest_min[i] = MIN(trigger_rest_min[i], raw);
+	trigger_rest_max[i] = MAX(trigger_rest_max[i], raw);
+	if(trigger_rest_samples[i] == TRIGGER_DIR_BOOT_SAMPLES)
+	{
+		int32_t n = TRIGGER_DIR_BOOT_SAMPLES - TRIGGER_DIR_WARMUP_SAMPLES;
+
+		trigger_rest_mv[i] = trigger_rest_sum[i] / n;
+		/* A trigger that moved during the window was being touched: do not learn. */
+		trigger_rest_valid[i] = trigger_rest_max[i] - trigger_rest_min[i] <= TRIGGER_REST_STABLE_MV;
+		LOG_INF("%s trigger rest %d mV (%d..%d) %s", i ? "right" : "left", trigger_rest_mv[i],
+		        trigger_rest_min[i], trigger_rest_max[i],
+		        trigger_rest_valid[i] ? "learned" : "unstable, not used");
+	}
+}
+
+/*
+ * Released-trigger dead zone, in permille of the idle..pressed travel. ADC
+ * noise at 1 kHz made a released trigger wander up to ~6 % (~2000) on some units,
+ * which Steam's desktop layout (RT = left click) can see as a press. The
+ * travel beyond the dead zone is stretched so full press still reaches 100 %.
+ */
+#define TRIGGER_REST_DEADZONE_PERMILLE 80
+/* Light low-pass on the trigger voltage: y += (x - y) / 4 per 1 ms sample (~4 ms). */
+#define TRIGGER_FILTER_SHIFT 2
+static int32_t trigger_filt_q8[2];
+static bool trigger_filt_init[2];
+
+static int32_t trigger_filter(int i, int32_t raw)
+{
+	if(!trigger_filt_init[i])
+	{
+		trigger_filt_q8[i] = raw << 8;
+		trigger_filt_init[i] = true;
+	}
+	trigger_filt_q8[i] += ((raw << 8) - trigger_filt_q8[i]) >> TRIGGER_FILTER_SHIFT;
+	return trigger_filt_q8[i] >> 8;
+}
+
+/*
+ * Map a measured trigger voltage so the learned rest equals the calibration
+ * idle point, then apply the released-trigger dead zone.
+ */
+static int32_t trigger_rest_remap(int i, int32_t raw, const struct trigger_calibration *cal)
+{
+	int32_t rest = trigger_rest_mv[i];
+	int32_t e_idle;
+	int32_t e_press;
+	int32_t out = raw;
+	int32_t span;
+	int32_t permille;
+
+	if(!calibration_trigger_valid(cal))
+	{
+		return raw;
+	}
+	if(trigger_rest_valid[i])
+	{
+		/* The physical released end is the endpoint nearer to where the trigger rests. */
+		if(abs(rest - (int32_t)cal->idle) <= abs(rest - (int32_t)cal->pressed))
+		{
+			e_idle = cal->idle;
+			e_press = cal->pressed;
+		}
+		else
+		{
+			e_idle = cal->pressed;
+			e_press = cal->idle;
+		}
+	}
+	else
+	{
+		/* Direction as decided by trigger_apply_direction (inverted = rests high). */
+		int32_t lo = MIN(cal->idle, cal->pressed);
+		int32_t hi = MAX(cal->idle, cal->pressed);
+
+		e_idle = cal->inverted ? hi : lo;
+		e_press = cal->inverted ? lo : hi;
+	}
+	span = e_press - e_idle;
+
+	if(trigger_rest_valid[i])
+	{
+		int32_t travel = e_press - rest;
+
+		/* Rest must lie on the released side of the pressed end with real travel left. */
+		if(abs(travel) >= TRIGGER_CAL_MIN_SPAN_MV / 2 && (travel > 0) == (span > 0))
+		{
+			out = e_idle + (int32_t)(((int64_t)(raw - rest) * span) / travel);
+		}
+	}
+
+	permille = (int32_t)(((int64_t)(out - e_idle) * 1000) / span);
+	if(permille <= TRIGGER_REST_DEADZONE_PERMILLE)
+	{
+		return e_idle;
+	}
+	permille = MIN(permille, 1000);
+	permille = ((permille - TRIGGER_REST_DEADZONE_PERMILLE) * 1000) /
+	           (1000 - TRIGGER_REST_DEADZONE_PERMILLE);
+	return e_idle + (int32_t)(((int64_t)permille * span) / 1000);
+}
 static struct k_spinlock trigger_cal_lock;
 static uint8_t trigger_cal_stage;
 static bool trigger_cal_seen[2][2]; /* [trigger][stage 1/2] */
@@ -753,8 +884,30 @@ int analog_read_report(struct controller_report *report)
 		                                      averaged[ANALOG_TRIGGER_RIGHT]});
 	}
 	calibration_analog_snapshot(&calibration);
+	trigger_learn_rest(0, averaged[ANALOG_TRIGGER_LEFT]);
+	trigger_learn_rest(1, averaged[ANALOG_TRIGGER_RIGHT]);
 	trigger_apply_direction(0, averaged[ANALOG_TRIGGER_LEFT], &calibration.trigger_left);
 	trigger_apply_direction(1, averaged[ANALOG_TRIGGER_RIGHT], &calibration.trigger_right);
+	{
+		/* Rest auto-zero, applied to millivolts and proportionally to raw counts. */
+		int32_t mv_l = trigger_rest_remap(0, trigger_filter(0, averaged[ANALOG_TRIGGER_LEFT]),
+		                                  &calibration.trigger_left);
+		int32_t mv_r = trigger_rest_remap(1, trigger_filter(1, averaged[ANALOG_TRIGGER_RIGHT]),
+		                                  &calibration.trigger_right);
+
+		if(averaged[ANALOG_TRIGGER_LEFT] > 0)
+		{
+			trigger_raw[0] = (int32_t)(((int64_t)trigger_raw[0] * mv_l) /
+			                           averaged[ANALOG_TRIGGER_LEFT]);
+		}
+		if(averaged[ANALOG_TRIGGER_RIGHT] > 0)
+		{
+			trigger_raw[1] = (int32_t)(((int64_t)trigger_raw[1] * mv_r) /
+			                           averaged[ANALOG_TRIGGER_RIGHT]);
+		}
+		averaged[ANALOG_TRIGGER_LEFT] = mv_l;
+		averaged[ANALOG_TRIGGER_RIGHT] = mv_r;
+	}
 #if CONFIG_IBEX_TRIGGER_DEBUG_IN_QUAT
 	trg_dbg_raw[0] = averaged[ANALOG_TRIGGER_LEFT];
 	trg_dbg_raw[1] = averaged[ANALOG_TRIGGER_RIGHT];

@@ -52,6 +52,19 @@ static uint32_t feature_log_count;
 static uint32_t feature_response_log_count;
 static uint8_t digital_mappings[VALVE_DIGITAL_MAPPING_CAPACITY];
 static size_t digital_mappings_len;
+/*
+ * "Factory settings" for sc26re: DELETE_SETTING of this pseudo path (sent by
+ * the report meter) forgets sc26re's calibration/settings, then reboots so the
+ * stock values from Valve's storage are loaded. Pairings are kept.
+ */
+#define SC26RE_FACTORY_RESET_PATH "sc26re/factory_reset"
+static void factory_reset_reboot_work_handler(struct k_work *work)
+{
+	ARG_UNUSED(work);
+	(void)power_reboot_normal();
+}
+static K_WORK_DELAYABLE_DEFINE(factory_reset_reboot_work, factory_reset_reboot_work_handler);
+
 static void turn_off_work_handler(struct k_work *work);
 static K_WORK_DELAYABLE_DEFINE(turn_off_work, turn_off_work_handler);
 
@@ -581,6 +594,16 @@ static int handle_feature_request(enum valve_feature_link link, const uint8_t *r
 				return valve_settings_commit(path);
 			case VALVE_FEATURE_DELETE_SETTING:
 				LOG_INF("%s delete setting %s", feature_link_name(link), path);
+				if(strcmp(path, SC26RE_FACTORY_RESET_PATH) == 0)
+				{
+					int n = valve_settings_factory_reset();
+
+					LOG_INF("factory settings reset requested over %s: %d",
+					        feature_link_name(link), n);
+					(void)haptics_play_system_sound(HAPTICS_SOUND_PAIRED);
+					(void)k_work_schedule(&factory_reset_reboot_work, K_MSEC(800));
+					return n < 0 ? n : 0;
+				}
 				return valve_settings_delete(path);
 			default:
 				break;

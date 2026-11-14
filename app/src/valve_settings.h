@@ -19,6 +19,15 @@ bool valve_settings_read(const char *path, uint8_t *buf, size_t capacity, size_t
 int valve_settings_stage(const char *path, const uint8_t *value, size_t len);
 int valve_settings_commit(const char *path);
 int valve_settings_delete(const char *path);
+/*
+ * Forget everything sc26re stored on top of the stock data: calibrations
+ * (triggers, sticks, trackpad pressure, gyro/IMU, battery trim), persisted
+ * Steam/haptics settings and the boot chime level. On the next boot the
+ * calibration is imported again from Valve's own storage, i.e. the values the
+ * stock firmware uses. Puck and Bluetooth pairings are kept.
+ * Returns the number of deleted entries or a negative error.
+ */
+int valve_settings_factory_reset(void);
 bool valve_settings_copy_active_esb_bond(uint8_t *bond, size_t capacity, uint8_t *slot);
 int valve_settings_register_esb_bond_changed_callback(
     valve_settings_esb_bond_changed_cb_t callback);

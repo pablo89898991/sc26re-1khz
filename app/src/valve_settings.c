@@ -960,6 +960,82 @@ int valve_settings_delete(const char *path)
 	return err;
 }
 
+#define FACTORY_RESET_MAX_KEYS 48
+#define FACTORY_RESET_KEY_MAX 64
+
+struct factory_reset_collect
+{
+	const char *subtree;
+	char (*names)[FACTORY_RESET_KEY_MAX];
+	size_t count;
+};
+
+static int factory_reset_collect_cb(const char *key, size_t len, settings_read_cb read_cb,
+                                    void *cb_arg, void *param)
+{
+	struct factory_reset_collect *c = param;
+
+	ARG_UNUSED(len);
+	ARG_UNUSED(read_cb);
+	ARG_UNUSED(cb_arg);
+	if(c->count >= FACTORY_RESET_MAX_KEYS)
+	{
+		return 1;
+	}
+	if(key != NULL && key[0] != '\0')
+	{
+		snprintf(c->names[c->count], FACTORY_RESET_KEY_MAX, "%s/%s", c->subtree, key);
+	}
+	else
+	{
+		snprintf(c->names[c->count], FACTORY_RESET_KEY_MAX, "%s", c->subtree);
+	}
+	c->count++;
+	return 0;
+}
+
+int valve_settings_factory_reset(void)
+{
+	static const char *const subtrees[] = {
+		"cal",                  /* trigger/stick/pressure/IMU calibration, battery trim */
+		"settings/haptics",     /* persisted Steam (ibex registry) settings */
+		VALVE_HAPTIC_BOOT_LEVEL_PATH,
+	};
+	static char names[FACTORY_RESET_MAX_KEYS][FACTORY_RESET_KEY_MAX];
+	int deleted = 0;
+
+	if(!IS_ENABLED(CONFIG_SETTINGS))
+	{
+		return -ENOTSUP;
+	}
+
+	k_mutex_lock(&valve_settings_commit_mutex, K_FOREVER);
+	for(size_t t = 0; t < ARRAY_SIZE(subtrees); ++t)
+	{
+		struct factory_reset_collect c = {
+			.subtree = subtrees[t],
+			.names = names,
+			.count = 0,
+		};
+
+		(void)settings_load_subtree_direct(subtrees[t], factory_reset_collect_cb, &c);
+		for(size_t i = 0; i < c.count; ++i)
+		{
+			int err = settings_delete(names[i]);
+
+			LOG_INF("factory reset: delete %s: %d", names[i], err);
+			if(err == 0)
+			{
+				deleted++;
+			}
+		}
+	}
+	k_mutex_unlock(&valve_settings_commit_mutex);
+	ibex_settings_registry_reset_defaults();
+	LOG_INF("factory reset: %d entries removed", deleted);
+	return deleted;
+}
+
 int valve_settings_save_esb_bond(uint8_t slot, const uint8_t *bond, size_t len, bool select)
 {
 	k_spinlock_key_t key;
