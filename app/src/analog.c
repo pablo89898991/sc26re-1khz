@@ -311,10 +311,81 @@ static struct trigger_calibration trigger_cal_candidate[2][2];
 static int64_t trigger_cal_rest_sum[2];
 static uint32_t trigger_cal_rest_n[2];
 
+/*
+ * Stage 4 = "zero triggers": with both triggers released, average their
+ * voltage for TRIGGER_ZERO_SAMPLES samples and store it as the released end of
+ * the existing calibration (the record field nearer to it), keeping the
+ * pressed end. Saved like any calibration, so Steam reads it too.
+ */
+#define TRIGGER_ZERO_SAMPLES 300
+static int64_t trigger_zero_sum[2];
+static uint32_t trigger_zero_n;
+static void trigger_zero_work_handler(struct k_work *work);
+static K_WORK_DEFINE(trigger_zero_work, trigger_zero_work_handler);
+
+static void trigger_zero_work_handler(struct k_work *work)
+{
+	struct analog_calibration_snapshot snap;
+
+	ARG_UNUSED(work);
+	calibration_analog_snapshot(&snap);
+	for(int i = 0; i < 2; ++i)
+	{
+		enum calibration_side side = i ? CALIBRATION_RIGHT : CALIBRATION_LEFT;
+		struct trigger_calibration cal = i ? snap.trigger_right : snap.trigger_left;
+		int32_t rest = (int32_t)(trigger_zero_sum[i] / TRIGGER_ZERO_SAMPLES);
+		int err;
+
+		if(!calibration_trigger_valid(&cal))
+		{
+			LOG_WRN("zero triggers: %s trigger has no valid calibration, skipped",
+			        i ? "right" : "left");
+			continue;
+		}
+		if(abs(rest - (int32_t)cal.idle) <= abs(rest - (int32_t)cal.pressed))
+		{
+			cal.idle = (uint16_t)CLAMP(rest, 0, INT16_MAX);
+		}
+		else
+		{
+			cal.pressed = (uint16_t)CLAMP(rest, 0, INT16_MAX);
+		}
+		if(!calibration_trigger_valid(&cal))
+		{
+			LOG_WRN("zero triggers: %s trigger rest %d mV leaves no travel, skipped",
+			        i ? "right" : "left", rest);
+			continue;
+		}
+		err = calibration_stage_trigger(side, (const uint8_t *)&cal, sizeof(cal));
+		if(!err)
+		{
+			err = calibration_commit_trigger(side);
+		}
+		/* the boot-learned rest now equals the stored released end */
+		trigger_rest_mv[i] = rest;
+		trigger_rest_valid[i] = true;
+		LOG_INF("zero triggers %s: rest=%d mV -> pressed=%u idle=%u inverted=%u err=%d",
+		        i ? "right" : "left", rest, cal.pressed, cal.idle, cal.inverted, err);
+	}
+}
+
 static void trigger_cal_sample(const int32_t value[2])
 {
 	k_spinlock_key_t key = k_spin_lock(&trigger_cal_lock);
 	uint8_t stage = trigger_cal_stage;
+
+	if(stage == 4)
+	{
+		trigger_zero_sum[0] += value[0];
+		trigger_zero_sum[1] += value[1];
+		if(++trigger_zero_n >= TRIGGER_ZERO_SAMPLES)
+		{
+			trigger_cal_stage = 0;
+			k_work_submit(&trigger_zero_work);
+		}
+		k_spin_unlock(&trigger_cal_lock, key);
+		return;
+	}
 
 	for(int i = 0; i < 2 && (stage == 1 || stage == 2); ++i)
 	{
@@ -345,12 +416,22 @@ int analog_trigger_step_cal(uint8_t stage)
 	bool ok[2];
 	k_spinlock_key_t key;
 
-	if(stage > 3)
+	if(stage > 4)
 	{
 		return 0;
 	}
 
 	key = k_spin_lock(&trigger_cal_lock);
+	if(stage == 4)
+	{
+		trigger_zero_sum[0] = 0;
+		trigger_zero_sum[1] = 0;
+		trigger_zero_n = 0;
+		trigger_cal_stage = 4;
+		k_spin_unlock(&trigger_cal_lock, key);
+		LOG_INF("zero triggers: sampling released position");
+		return 0;
+	}
 	if(stage == 1)
 	{
 		for(int i = 0; i < 2; ++i)
@@ -878,7 +959,7 @@ int analog_read_report(struct controller_report *report)
 
 	struct analog_calibration_snapshot calibration;
 
-	if(trigger_cal_stage == 1 || trigger_cal_stage == 2)
+	if(trigger_cal_stage == 1 || trigger_cal_stage == 2 || trigger_cal_stage == 4)
 	{
 		trigger_cal_sample((const int32_t[2]){averaged[ANALOG_TRIGGER_LEFT],
 		                                      averaged[ANALOG_TRIGGER_RIGHT]});

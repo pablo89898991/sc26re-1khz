@@ -63,6 +63,11 @@
       <button id="tc0">Cancel</button>
       <span id="tcStatus" class="note"></span>
     </div>
+    <p class="note" style="margin-top:12px"><b>Zero triggers (SC26RE v40+).</b> Fixes triggers that read a little pressed when released (e.g. Steam's desktop mode clicking by itself). Take your fingers off both triggers and press the button: the controller measures the released position for 0.3 s and saves it as 0 % in its calibration (Steam reads it too). Full press is unchanged.</p>
+    <div class="bar">
+      <button class="primary" id="tz">Zero triggers (save)</button>
+      <span id="tzStatus" class="note"></span>
+    </div>
   </div>
 
   <div class="panel">
@@ -214,6 +219,11 @@ async function trigCal(stage){
   $("#tcStatus").innerHTML=ok?`<span class="ok">stage ${stage} sent</span>`:`<span class="err">failed: ${last||"not connected"}</span>`;
 }
 [0,1,2,3].forEach(n=>$("#tc"+n).onclick=()=>trigCal(n));
+$("#tz").onclick=async()=>{
+  const buf=new Uint8Array(63); buf[0]=0xC0; buf[1]=1; buf[2]=4; let ok=0,last="";
+  for(const d of devs){ try{ await d.sendFeatureReport(1,buf); ok++; }catch(e){ last=e.message; } }
+  $("#tzStatus").innerHTML=ok?'<span class="ok">measuring&hellip; keep the triggers released for a second &mdash; saved</span>':`<span class="err">failed: ${last||"not connected"}</span>`;
+};
 async function factoryReset(){
   if(!devs.length){ $("#facStatus").innerHTML='<span class="err">connect the controller first</span>'; return; }
   if(!confirm("Hard reset the controller?\nCalibration and settings go back to Valve's factory values and ALL Puck/Bluetooth pairings are forgotten. The controller will reboot.")) return;
