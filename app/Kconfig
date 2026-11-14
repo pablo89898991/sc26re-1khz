@@ -57,12 +57,23 @@ config IBEX_USB_HID
 
 if IBEX_USB_HID
 
+config IBEX_SINPUT
+	bool "Experimental: SInput HID protocol on USB"
+	help
+	  Replace the Valve (Triton) HID interface on USB with Hand Held
+	  Legend's SInput protocol (VID 0x2E8A / PID 0x10C6), read natively by
+	  the SDL3 SInput driver. Puck (ESB) and Bluetooth keep the Valve
+	  protocol. Steam's own Steam Controller features (settings, firmware
+	  identity, lizard mode) are not available over USB in this build.
+
 config IBEX_USB_VID
 	hex "USB vendor ID"
+	default 0x2e8a if IBEX_SINPUT
 	default 0x28de
 
 config IBEX_USB_PID
 	hex "USB product ID"
+	default 0x10c6 if IBEX_SINPUT
 	default 0x1302
 
 config IBEX_USB_MANUFACTURER
@@ -71,6 +82,7 @@ config IBEX_USB_MANUFACTURER
 
 config IBEX_USB_PRODUCT
 	string "USB product string"
+	default "SC26RE-1kHz SInput" if IBEX_SINPUT
 	default "SC26RE-1kHz"
 
 endif

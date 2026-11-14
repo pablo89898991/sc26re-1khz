@@ -948,6 +948,13 @@ void haptics_touchpad_update(bool right, bool pressure_active, bool touch_active
 #endif
 	(void)ibex_setting_get(SETTING_HAPTICS_ENABLED, &enabled);
 	(void)ibex_setting_get(SETTING_LIZARD_MODE, &lizard_mode);
+#if CONFIG_IBEX_SINPUT
+	/* SInput over USB has no lizard mouse, so no lizard trackpad ticks either. */
+	if(transport_usb_configured())
+	{
+		lizard_mode = 0;
+	}
+#endif
 	if(enabled != 1 || lizard_mode == 0)
 	{
 		state->touched = false;

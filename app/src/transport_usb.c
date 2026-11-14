@@ -21,6 +21,12 @@
 #include "valve_feature.h"
 #include "valve_hid_report_map.h"
 #include "valve_identity.h"
+#if CONFIG_IBEX_SINPUT
+#include "sinput_usb.h"
+#define USB_STATE_REPORT_ID SINPUT_REPORT_ID_INPUT
+#else
+#define USB_STATE_REPORT_ID ID_TRITON_CONTROLLER_STATE
+#endif
 
 #if CONFIG_IBEX_RGBW_LED
 #include "rgbw_led.h"
@@ -78,7 +84,9 @@ static bool input_transfer_dequeue_on_completion;
  */
 static struct usb_input_queue_entry pending_state;
 static bool pending_state_valid;
+#if !CONFIG_IBEX_SINPUT
 static uint8_t state_sequence;
+#endif
 static atomic_t usb_initialized;
 static atomic_t usb_attached;
 static atomic_t usb_configured;
@@ -156,7 +164,9 @@ static int usb_submit_next_input(void)
 	else if(pending_state_valid)
 	{
 		memcpy(&input_transfer, &pending_state, sizeof(input_transfer));
+#if !CONFIG_IBEX_SINPUT
 		input_transfer.data[1] = state_sequence++;
+#endif
 		pending_state_valid = false;
 		input_transfer_dequeue_on_completion = false;
 	}
@@ -225,7 +235,7 @@ static int usb_queue_input_report(uint8_t report_id, const uint8_t *data, size_t
 	memcpy(&entry.data[1], data, len);
 
 	key = k_spin_lock(&input_queue_lock);
-	if(report_id == ID_TRITON_CONTROLLER_STATE)
+	if(report_id == USB_STATE_REPORT_ID)
 	{
 		memcpy(&pending_state, &entry, sizeof(pending_state));
 		pending_state_valid = true;
@@ -378,6 +388,16 @@ static void prepare_feature_response(const uint8_t *request, size_t len)
 
 static void handle_output_report(uint8_t report_id, const uint8_t *data, size_t len)
 {
+#if CONFIG_IBEX_SINPUT
+	uint8_t reply[SINPUT_REPORT_SIZE];
+	size_t reply_len = sinput_handle_output(report_id, data, len, reply);
+
+	if(reply_len > 1U)
+	{
+		(void)usb_queue_input_report(reply[0], &reply[1], reply_len - 1U);
+	}
+	return;
+#endif
 	int err = haptics_handle_output_report(report_id, data, len);
 
 	if(err && err != -ENOTSUP && err != -ENODEV && err != -EBUSY)
@@ -441,6 +461,10 @@ static int usb_set_report(const struct device *dev, uint8_t type, uint8_t id, ui
 
 	if(type == HID_REPORT_TYPE_OUTPUT)
 	{
+#if CONFIG_IBEX_SINPUT
+		handle_output_report(id != 0 ? id : SINPUT_REPORT_ID_OUTPUT_CMDDAT, data, len);
+		return 0;
+#endif
 		size_t report_len = len;
 		size_t full_report_len = usb_output_report_bytes(id);
 
@@ -573,7 +597,11 @@ int transport_usb_init(void)
 		return -ENODEV;
 	}
 
+#if CONFIG_IBEX_SINPUT
+	err = hid_device_register(hid_dev, sinput_hid_report_map, sinput_hid_report_map_size, &hid_ops);
+#else
 	err = hid_device_register(hid_dev, valve_hid_report_map, valve_hid_report_map_size, &hid_ops);
+#endif
 	if(err)
 	{
 		return err;
@@ -597,7 +625,8 @@ int transport_usb_init(void)
 	}
 
 	atomic_set(&usb_initialized, 1);
-	LOG_INF("USB HID enabled alongside CDC-ACM");
+	LOG_INF("USB HID (%s) enabled alongside CDC-ACM",
+	        IS_ENABLED(CONFIG_IBEX_SINPUT) ? "SInput" : "Valve");
 	return 0;
 }
 
@@ -610,6 +639,15 @@ int transport_usb_send(const struct controller_report *report)
 		return -ENOTCONN;
 	}
 
+#if CONFIG_IBEX_SINPUT
+	{
+		uint8_t si[SINPUT_REPORT_SIZE];
+		size_t si_len = sinput_build_input_report(si, report);
+
+		ARG_UNUSED(body);
+		return usb_queue_input_report(si[0], &si[1], si_len - 1U);
+	}
+#endif
 	triton_state_report_pack_body(body, sizeof(body), input_sequence++, report,
 	                              triton_state_report_timestamp_us());
 	return usb_queue_input_report(ID_TRITON_CONTROLLER_STATE, body, sizeof(body));
@@ -623,6 +661,11 @@ int transport_usb_send_battery_status(const struct controller_battery_report *re
 	{
 		return -EINVAL;
 	}
+#if CONFIG_IBEX_SINPUT
+	sinput_note_battery(report);
+	ARG_UNUSED(body);
+	return 0;
+#endif
 	if(!usb_ready())
 	{
 		return -ENOTCONN;
@@ -641,5 +684,12 @@ int transport_usb_send_battery_status(const struct controller_battery_report *re
 
 int transport_usb_send_input_report(uint8_t report_id, const uint8_t *data, size_t len)
 {
+#if CONFIG_IBEX_SINPUT
+	/* Valve/lizard reports have no place in the SInput descriptor. */
+	ARG_UNUSED(report_id);
+	ARG_UNUSED(data);
+	ARG_UNUSED(len);
+	return 0;
+#endif
 	return usb_queue_input_report(report_id, data, len);
 }

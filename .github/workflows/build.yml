@@ -56,6 +56,13 @@ jobs:
           cp "$(ls -t zephyr/build-app-ibex/zephyr/IBEX_CUSTOM_*.fw | head -1)" out/SC26RE_1k_puck_dbg.fw
           git checkout app/prj.conf
 
+      - name: Build experimental SInput variant (USB speaks SInput instead of Valve HID)
+        run: |
+          printf 'CONFIG_IBEX_SINPUT=y\n' >> app/prj.conf
+          make app-ibex
+          cp "$(ls -t zephyr/build-app-ibex/zephyr/IBEX_CUSTOM_*.fw | head -1)" out/SC26RE_1k_SInput_experimental.fw
+          git checkout app/prj.conf
+
       - uses: actions/upload-artifact@v4
         with:
           name: sc26re-1khz-firmware
