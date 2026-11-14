@@ -18,6 +18,7 @@ bool valve_settings_active_wireless_transport(uint8_t *transport);
 bool valve_settings_read(const char *path, uint8_t *buf, size_t capacity, size_t *len);
 int valve_settings_stage(const char *path, const uint8_t *value, size_t len);
 int valve_settings_commit(const char *path);
+int valve_settings_delete(const char *path);
 bool valve_settings_copy_active_esb_bond(uint8_t *bond, size_t capacity, uint8_t *slot);
 int valve_settings_register_esb_bond_changed_callback(
     valve_settings_esb_bond_changed_cb_t callback);

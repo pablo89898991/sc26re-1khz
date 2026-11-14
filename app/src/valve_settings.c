@@ -864,6 +864,102 @@ int valve_settings_commit(const char *path)
 	return err;
 }
 
+/*
+ * DELETE_SETTING (0xF0). Steam uses it to forget a Puck pairing: the bond
+ * slot is wiped from flash and from RAM, and if it was the selected
+ * wireless transport the controller falls back to the other slot (or none),
+ * which makes the ESB link drop and stop reconnecting to that Puck.
+ */
+static int delete_setting_path(const char *path)
+{
+	k_spinlock_key_t key;
+	int slot = esb_bond_slot(path);
+	int err;
+
+	if(slot >= 0)
+	{
+		struct esb_bond_slot *bond_slot = &esb_bonds[slot];
+		int selected;
+
+		k_mutex_lock(&esb_settings_mutex, K_FOREVER);
+		err = IS_ENABLED(CONFIG_SETTINGS) ? settings_delete(esb_bond_paths[slot]) : 0;
+		if(err)
+		{
+			k_mutex_unlock(&esb_settings_mutex);
+			LOG_ERR("failed to delete ESB bond slot %d: %d", slot, err);
+			return err;
+		}
+		memset(&bond_slot->staged, 0, sizeof(bond_slot->staged));
+		bond_slot->dirty = false;
+
+		selected = wireless_transport_valid ? esb_bond_slot_for_transport(wireless_transport) : -1;
+		if(selected == slot)
+		{
+			select_available_wireless_transport();
+			if(IS_ENABLED(CONFIG_SETTINGS))
+			{
+				if(wireless_transport_valid)
+				{
+					(void)settings_save_one(VALVE_WIRELESS_TRANSPORT_PATH, &wireless_transport,
+					                        sizeof(wireless_transport));
+				}
+				else
+				{
+					(void)settings_delete(VALVE_WIRELESS_TRANSPORT_PATH);
+				}
+			}
+			wireless_transport_dirty = false;
+		}
+
+		key = k_spin_lock(&active_esb_bond_lock);
+		bond_slot->active = bond_slot->staged;
+		active_wireless_transport = wireless_transport;
+		active_wireless_transport_valid = wireless_transport_valid;
+		k_spin_unlock(&active_esb_bond_lock, key);
+		k_mutex_unlock(&esb_settings_mutex);
+		LOG_INF("deleted ESB bond slot %d (forget Puck)", slot);
+		notify_esb_bond_changed();
+		return 0;
+	}
+
+	if(strcmp(path, VALVE_WIRELESS_TRANSPORT_PATH) == 0)
+	{
+		k_mutex_lock(&esb_settings_mutex, K_FOREVER);
+		if(IS_ENABLED(CONFIG_SETTINGS))
+		{
+			(void)settings_delete(VALVE_WIRELESS_TRANSPORT_PATH);
+		}
+		wireless_transport_valid = false;
+		wireless_transport_dirty = false;
+		select_available_wireless_transport();
+		key = k_spin_lock(&active_esb_bond_lock);
+		active_wireless_transport = wireless_transport;
+		active_wireless_transport_valid = wireless_transport_valid;
+		k_spin_unlock(&active_esb_bond_lock, key);
+		k_mutex_unlock(&esb_settings_mutex);
+		notify_esb_bond_changed();
+		return 0;
+	}
+
+	if(!IS_ENABLED(CONFIG_SETTINGS))
+	{
+		return -ENOENT;
+	}
+	err = settings_delete(path);
+	LOG_INF("deleted setting %s: %d", path, err);
+	return err;
+}
+
+int valve_settings_delete(const char *path)
+{
+	int err;
+
+	k_mutex_lock(&valve_settings_commit_mutex, K_FOREVER);
+	err = delete_setting_path(path);
+	k_mutex_unlock(&valve_settings_commit_mutex);
+	return err;
+}
+
 int valve_settings_save_esb_bond(uint8_t slot, const uint8_t *bond, size_t len, bool select)
 {
 	k_spinlock_key_t key;

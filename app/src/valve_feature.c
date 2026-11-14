@@ -534,6 +534,7 @@ static ssize_t build_feature_response(enum valve_feature_link link, const uint8_
 		case VALVE_FEATURE_TURN_OFF_CONTROLLER:
 		case VALVE_FEATURE_STAGE_SETTING:
 		case VALVE_FEATURE_COMMIT_SETTING:
+		case VALVE_FEATURE_DELETE_SETTING:
 		case VALVE_FEATURE_CALIBRATE_GYRO:
 		case VALVE_FEATURE_RESET_IMU:
 		case VALVE_FEATURE_CALIBRATE_ANALOG_TRIGGERS:
@@ -578,6 +579,9 @@ static int handle_feature_request(enum valve_feature_link link, const uint8_t *r
 				return valve_settings_stage(path, &request[value_offset], value_len);
 			case VALVE_FEATURE_COMMIT_SETTING:
 				return valve_settings_commit(path);
+			case VALVE_FEATURE_DELETE_SETTING:
+				LOG_INF("%s delete setting %s", feature_link_name(link), path);
+				return valve_settings_delete(path);
 			default:
 				break;
 		}
@@ -666,6 +670,7 @@ static int handle_feature_request(enum valve_feature_link link, const uint8_t *r
 		case VALVE_FEATURE_SET_SETTINGS_VALUES:
 		case VALVE_FEATURE_STAGE_SETTING:
 		case VALVE_FEATURE_COMMIT_SETTING:
+		case VALVE_FEATURE_DELETE_SETTING:
 			return -EINVAL;
 		default:
 			return -ENOTSUP;
