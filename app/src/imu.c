@@ -397,6 +397,30 @@ static void set_motion_trigger_enabled(bool enabled)
 #endif
 }
 
+/*
+ * Keep the IMU streaming while a calibration runs even if no host switched it
+ * on (button-chord calibration without Steam). Restores the host's mode after.
+ */
+static void apply_mode(uint16_t mode);
+static bool imu_forced_on;
+
+void imu_force_on(bool on)
+{
+	int16_t host_mode = SETTING_GYRO_MODE_OFF;
+
+	(void)ibex_setting_get(IBEX_SETTING_IMU_MODE, &host_mode);
+	if(on && !imu_forced_on && host_mode == SETTING_GYRO_MODE_OFF)
+	{
+		imu_forced_on = true;
+		apply_mode(SETTING_GYRO_MODE_SEND_RAW_ACCEL | SETTING_GYRO_MODE_SEND_RAW_GYRO);
+	}
+	else if(!on && imu_forced_on)
+	{
+		imu_forced_on = false;
+		apply_mode((uint16_t)host_mode);
+	}
+}
+
 void imu_reset(void)
 {
 	k_mutex_lock(&imu_io_lock, K_FOREVER);

@@ -13,6 +13,7 @@
 #include "haptics.h"
 #include "controller.h"
 #include "ibex_settings_registry.h"
+#include "imu.h"
 #include "lizard.h"
 #include "power.h"
 #include "puck_interface.h"
@@ -152,6 +153,120 @@ static void boot_factory_reset_check(void)
 		k_sleep(K_MSEC(100));
 	}
 	(void)power_reboot_normal();
+}
+
+/*
+ * Gyro calibration chord: hold LB + RB + X + Y for 3 s. The LED turns purple
+ * and a chime plays; put the controller down and let go. Once nothing touches
+ * it (grips, sticks, pads, buttons) the gyro is measured while still; a second
+ * chime confirms and the LED goes back. If it keeps moving for 20 s, or the
+ * save fails, the power-off sound plays and the old calibration stays.
+ */
+#define GYRO_CHORD_HOLD_MS 3000
+#define GYRO_CHORD_HANDS_OFF_MS 700
+#define GYRO_CHORD_TIMEOUT_MS 20000
+
+enum gyro_chord_state
+{
+	GYRO_CHORD_IDLE,
+	GYRO_CHORD_HOLDING,
+	GYRO_CHORD_WAIT_HANDS_OFF,
+	GYRO_CHORD_MEASURING,
+};
+
+static void gyro_chord_finish(bool ok, struct rgbw_color saved_led)
+{
+	(void)haptics_play_system_sound(ok ? HAPTICS_SOUND_PAIRED : HAPTICS_SOUND_POWER_OFF);
+#if CONFIG_IBEX_RGBW_LED
+	rgbw_led_set(saved_led);
+#else
+	ARG_UNUSED(saved_led);
+#endif
+	imu_force_on(false);
+	LOG_INF("gyro calibration chord: %s", ok ? "done" : "failed / timed out");
+}
+
+static void gyro_chord_poll(const struct controller_report *r)
+{
+	static enum gyro_chord_state state;
+	static int64_t since;
+	static int64_t armed_at;
+	static struct rgbw_color saved_led;
+	const uint32_t chord = BIT(CONTROLLER_BUTTON_LEFT_SHOULDER) |
+	                       BIT(CONTROLLER_BUTTON_RIGHT_SHOULDER) | BIT(CONTROLLER_BUTTON_X) |
+	                       BIT(CONTROLLER_BUTTON_Y);
+	int64_t now = k_uptime_get();
+	bool chord_held = (r->buttons & chord) == chord;
+	/* buttons also carry the grip / stick / trackpad touch bits */
+	bool hands_off = r->buttons == 0 && r->trigger_left < 3000 && r->trigger_right < 3000;
+
+	switch(state)
+	{
+		case GYRO_CHORD_IDLE:
+			if(chord_held)
+			{
+				state = GYRO_CHORD_HOLDING;
+				since = now;
+			}
+			break;
+		case GYRO_CHORD_HOLDING:
+			if(!chord_held)
+			{
+				state = GYRO_CHORD_IDLE;
+			}
+			else if(now - since >= GYRO_CHORD_HOLD_MS)
+			{
+#if CONFIG_IBEX_RGBW_LED
+				saved_led = rgbw_led_get();
+				rgbw_led_set((struct rgbw_color){ 150, 0, 255, 0 });
+#endif
+				(void)haptics_play_system_sound(HAPTICS_SOUND_PAIRING);
+				imu_force_on(true);
+				armed_at = now;
+				since = now;
+				state = GYRO_CHORD_WAIT_HANDS_OFF;
+				LOG_INF("gyro calibration chord: put the controller down");
+			}
+			break;
+		case GYRO_CHORD_WAIT_HANDS_OFF:
+			if(!hands_off)
+			{
+				since = now;
+			}
+			else if(now - since >= GYRO_CHORD_HANDS_OFF_MS)
+			{
+				(void)imu_calibrate_gyro();
+				state = GYRO_CHORD_MEASURING;
+			}
+			if(now - armed_at > GYRO_CHORD_TIMEOUT_MS)
+			{
+				gyro_chord_finish(false, saved_led);
+				state = GYRO_CHORD_IDLE;
+			}
+			break;
+		case GYRO_CHORD_MEASURING:
+		{
+			uint8_t st = imu_gyro_cal_state();
+
+			if(st == 2U)
+			{
+				gyro_chord_finish(true, saved_led);
+				state = GYRO_CHORD_IDLE;
+			}
+			else if(st == 3U || !hands_off)
+			{
+				/* moved or touched: wait for hands off again and retry */
+				since = now;
+				state = GYRO_CHORD_WAIT_HANDS_OFF;
+			}
+			else if(st == 4U || now - armed_at > GYRO_CHORD_TIMEOUT_MS)
+			{
+				gyro_chord_finish(false, saved_led);
+				state = GYRO_CHORD_IDLE;
+			}
+			break;
+		}
+	}
 }
 
 static void set_boot_led(bool usb_radio_off)
@@ -344,6 +459,7 @@ int main(void)
 		int64_t now_ms;
 
 		hardware_read_report(&current);
+		gyro_chord_poll(&current);
 		now_ms = k_uptime_get();
 #if CONFIG_IBEX_RGBW_LED
 		rgbw_led_poll_settings();

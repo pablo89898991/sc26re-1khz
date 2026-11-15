@@ -14,6 +14,8 @@ bool imu_ready(void);
 int imu_calibrate_gyro(void);
 /* 0 idle, 1 measuring, 2 saved, 3 moved (kept old), 4 save failed */
 uint8_t imu_gyro_cal_state(void);
+/* stream the IMU during a calibration even when the host has it off */
+void imu_force_on(bool on);
 void imu_gyro_cal_result(int16_t std_mdps[3], int16_t spread_mdps[3]);
 void imu_reset(void);
 
