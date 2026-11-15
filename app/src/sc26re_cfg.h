@@ -30,6 +30,13 @@ enum sc26re_cfg_id
 	SC26RE_CFG_DROP_MEOW,      /* % chance of the meow on a drop */
 	SC26RE_CFG_LED_BRIGHTNESS, /* LED brightness % (auto = Steam setting 45) */
 	SC26RE_CFG_AUTO_OFF,       /* minutes without input before power-off, 0 = never (auto = Steam setting 50) */
+	/* per-axis gyro dead band, report axes, in 0.01 deg/s: values between lo and hi read 0 */
+	SC26RE_CFG_GYRO_BAND_X_LO,
+	SC26RE_CFG_GYRO_BAND_X_HI,
+	SC26RE_CFG_GYRO_BAND_Y_LO,
+	SC26RE_CFG_GYRO_BAND_Y_HI,
+	SC26RE_CFG_GYRO_BAND_Z_LO,
+	SC26RE_CFG_GYRO_BAND_Z_HI,
 	SC26RE_CFG_COUNT,
 };
 

@@ -930,6 +930,22 @@ static int build_imu_report_from_stream(const uint8_t *buf)
 				{
 					oriented[i] = 0;
 				}
+				{
+					/* per-axis dead band from the report meter, 0.01 deg/s -> report
+					 * units (+-2000 deg/s full scale: 16.384 counts per deg/s) */
+					int32_t lo = sc26re_cfg_get(SC26RE_CFG_GYRO_BAND_X_LO + 2 * i);
+					int32_t hi = sc26re_cfg_get(SC26RE_CFG_GYRO_BAND_X_HI + 2 * i);
+
+					if(lo != 0 || hi != 0)
+					{
+						lo = (lo * 16384) / 100000;
+						hi = (hi * 16384) / 100000;
+						if(oriented[i] >= lo && oriented[i] <= hi)
+						{
+							oriented[i] = 0;
+						}
+					}
+				}
 			}
 			gyro_lp_primed = cfg_lp > 0;
 		}

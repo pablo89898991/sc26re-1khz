@@ -50,6 +50,12 @@ static const struct cfg_desc descs[SC26RE_CFG_COUNT] = {
 	[SC26RE_CFG_DROP_MEOW] = { "drop_meow", CONFIG_IBEX_DROP_MEOW_PERCENT, 0, 100, NO_REGISTRY, 1 },
 	[SC26RE_CFG_LED_BRIGHTNESS] = { "led_brightness", SC26RE_CFG_AUTO, 0, 100, 45, 1 },
 	[SC26RE_CFG_AUTO_OFF] = { "auto_off", SC26RE_CFG_AUTO, 0, 240, 50, 60 },
+	[SC26RE_CFG_GYRO_BAND_X_LO] = { "gyro_band_x_lo", 0, -2000, 0, NO_REGISTRY, 1 },
+	[SC26RE_CFG_GYRO_BAND_X_HI] = { "gyro_band_x_hi", 0, 0, 2000, NO_REGISTRY, 1 },
+	[SC26RE_CFG_GYRO_BAND_Y_LO] = { "gyro_band_y_lo", 0, -2000, 0, NO_REGISTRY, 1 },
+	[SC26RE_CFG_GYRO_BAND_Y_HI] = { "gyro_band_y_hi", 0, 0, 2000, NO_REGISTRY, 1 },
+	[SC26RE_CFG_GYRO_BAND_Z_LO] = { "gyro_band_z_lo", 0, -2000, 0, NO_REGISTRY, 1 },
+	[SC26RE_CFG_GYRO_BAND_Z_HI] = { "gyro_band_z_hi", 0, 0, 2000, NO_REGISTRY, 1 },
 };
 
 static int16_t values[SC26RE_CFG_COUNT];
