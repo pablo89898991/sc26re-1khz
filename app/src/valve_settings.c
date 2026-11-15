@@ -148,6 +148,23 @@ static int ofw_storage_read(const void *context, uint32_t offset, void *data, si
  * made under the original firmware would be lost. Fall back (read-only) to the bonds
  * and wireless transport stored by the original firmware in valve_storage.
  */
+/*
+ * Slots the user forgot (Steam "forget" or hard reset), bit per slot. The stock
+ * bond in Valve's storage is not imported again for these. Kept separately so
+ * the forgotten slot itself is a plain missing setting (v40 stored an all-zero
+ * "tombstone" there, which Steam read as a bond to an unknown Puck).
+ */
+#define VALVE_ESB_FORGOT_PATH "user/esb_forgot"
+static uint8_t esb_forgot_mask;
+
+static void esb_forgot_save_locked(void)
+{
+	if(IS_ENABLED(CONFIG_SETTINGS))
+	{
+		(void)settings_save_one(VALVE_ESB_FORGOT_PATH, &esb_forgot_mask, sizeof(esb_forgot_mask));
+	}
+}
+
 static void import_ofw_esb_bonds_locked(void)
 {
 	const struct flash_area *fa;
@@ -172,12 +189,8 @@ static void import_ofw_esb_bonds_locked(void)
 		struct esb_bond *bond = &esb_bonds[slot].staged;
 		uint8_t data[VALVE_ESB_BOND_SIZE];
 
-		/*
-		 * Any stored entry wins, including an all-zero one: that is the
-		 * tombstone written when Steam forgets the Puck or on a hard reset,
-		 * and it must stop the stock bond from coming back.
-		 */
-		if(bond->valid)
+		/* a stored bond wins; a forgotten slot must not get the stock bond back */
+		if(bond->valid || (esb_forgot_mask & BIT(slot)))
 		{
 			continue;
 		}
@@ -277,6 +290,22 @@ void valve_settings_load_feature_state(void)
 	}
 
 	k_mutex_lock(&esb_settings_mutex, K_FOREVER);
+	{
+		bool forgot_valid = false;
+		struct feature_state_load_target forgot_target = {
+			.value = &esb_forgot_mask,
+			.value_size = sizeof(esb_forgot_mask),
+			.valid = &forgot_valid,
+		};
+
+		esb_forgot_mask = 0;
+		(void)settings_load_subtree_direct(VALVE_ESB_FORGOT_PATH, load_feature_state_cb,
+		                                   &forgot_target);
+		if(!forgot_valid)
+		{
+			esb_forgot_mask = 0;
+		}
+	}
 	for(size_t slot = 0; slot < ARRAY_SIZE(esb_bonds); ++slot)
 	{
 		struct esb_bond_slot *bond_slot = &esb_bonds[slot];
@@ -291,7 +320,16 @@ void valve_settings_load_feature_state(void)
 		bond_slot->dirty = false;
 		if(bond_slot->staged.valid && !esb_bond_material_valid(bond_slot->staged.data))
 		{
-			LOG_WRN("ESB bond slot %u has no usable key material", (unsigned int)slot);
+			/* v40/v41 tombstone: turn it into a missing setting plus a forgot bit */
+			LOG_INF("ESB bond slot %u was forgotten; clearing the old empty entry",
+			        (unsigned int)slot);
+			memset(&bond_slot->staged, 0, sizeof(bond_slot->staged));
+			esb_forgot_mask |= BIT(slot);
+			if(IS_ENABLED(CONFIG_SETTINGS))
+			{
+				(void)settings_delete(esb_bond_paths[slot]);
+			}
+			esb_forgot_save_locked();
 		}
 	}
 
@@ -939,21 +977,18 @@ static int delete_setting_path(const char *path)
 		struct esb_bond_slot *bond_slot = &esb_bonds[slot];
 		int selected;
 
-		static const uint8_t tombstone[VALVE_ESB_BOND_SIZE];
-
 		k_mutex_lock(&esb_settings_mutex, K_FOREVER);
-		/* Store an all-zero bond instead of deleting the key, so the stock bond in
-		 * Valve's storage is not imported again on the next boot. */
-		err = IS_ENABLED(CONFIG_SETTINGS) ?
-		          settings_save_one(esb_bond_paths[slot], tombstone, sizeof(tombstone)) : 0;
+		err = IS_ENABLED(CONFIG_SETTINGS) ? settings_delete(esb_bond_paths[slot]) : 0;
 		if(err)
 		{
 			k_mutex_unlock(&esb_settings_mutex);
 			LOG_ERR("failed to delete ESB bond slot %d: %d", slot, err);
 			return err;
 		}
+		/* remember it, so the stock bond is not imported again on the next boot */
+		esb_forgot_mask |= BIT(slot);
+		esb_forgot_save_locked();
 		memset(&bond_slot->staged, 0, sizeof(bond_slot->staged));
-		bond_slot->staged.valid = true; /* tombstone: stored, but no key material */
 		bond_slot->dirty = false;
 
 		selected = wireless_transport_valid ? esb_bond_slot_for_transport(wireless_transport) : -1;
@@ -1067,7 +1102,6 @@ int valve_settings_factory_reset(void)
 		"radio",                /* BLE/ESB personality */
 		"bt",                   /* Bluetooth bonds and identity */
 	};
-	static const uint8_t tombstone[VALVE_ESB_BOND_SIZE];
 	static char names[FACTORY_RESET_MAX_KEYS][FACTORY_RESET_KEY_MAX];
 	int deleted = 0;
 
@@ -1097,10 +1131,11 @@ int valve_settings_factory_reset(void)
 			}
 		}
 	}
-	/* Puck pairings: tombstones, so the stock bonds in Valve's storage stay forgotten. */
+	/* Puck pairings: delete, and mark both slots forgotten so the stock bonds in
+	 * Valve's storage are not imported again. */
 	for(size_t slot = 0; slot < ARRAY_SIZE(esb_bond_paths); ++slot)
 	{
-		int err = settings_save_one(esb_bond_paths[slot], tombstone, sizeof(tombstone));
+		int err = settings_delete(esb_bond_paths[slot]);
 
 		LOG_INF("factory reset: forget %s: %d", esb_bond_paths[slot], err);
 		if(err == 0)
@@ -1108,6 +1143,10 @@ int valve_settings_factory_reset(void)
 			deleted++;
 		}
 	}
+	k_mutex_lock(&esb_settings_mutex, K_FOREVER);
+	esb_forgot_mask = BIT_MASK(ARRAY_SIZE(esb_bond_paths));
+	esb_forgot_save_locked();
+	k_mutex_unlock(&esb_settings_mutex);
 	k_mutex_unlock(&valve_settings_commit_mutex);
 	ibex_settings_registry_reset_defaults();
 	LOG_INF("factory reset: %d entries removed", deleted);
