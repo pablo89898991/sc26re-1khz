@@ -66,6 +66,8 @@ bool calibration_read_trigger(enum calibration_side side, uint8_t *buf, size_t c
                               size_t *len);
 int calibration_stage_trigger(enum calibration_side side, const uint8_t *value, size_t len);
 int calibration_commit_trigger(enum calibration_side side);
+/* replace a stick calibration in RAM and save it (cal/joy_l / cal/joy_r) */
+int calibration_set_stick(enum calibration_side side, const struct stick_calibration *cal);
 bool calibration_read_pressure(enum calibration_side side, uint8_t *buf, size_t capacity,
                                size_t *len);
 int calibration_stage_pressure(enum calibration_side side, const uint8_t *value, size_t len);

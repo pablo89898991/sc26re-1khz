@@ -71,6 +71,21 @@
   </div>
 
   <div class="panel">
+    <h2>Live settings (SC26RE v42+)</h2>
+    <p class="note">Changed here, applied immediately. <b>Apply</b> = until power-off, <b>Save</b> = kept. “Steam” = follow the value Steam sends (the normal behaviour); setting a number overrides Steam. A hard reset returns everything to defaults. Close Steam while tuning.</p>
+    <div class="bar"><button id="lsRead">Read all</button><button class="primary" id="lsApply">Apply changes</button><button id="lsSave">Save</button><button id="lsDef">All defaults</button><span id="lsStatus" class="note"></span></div>
+    <table id="lsTable" style="width:100%;border-collapse:collapse;margin-top:8px"></table>
+    <div class="lbl" style="margin-top:14px">Tools</div>
+    <div class="bar" style="flex-wrap:wrap;gap:10px">
+      <button id="gyCal">Calibrate gyro</button>
+      <button id="stZero">Zero sticks (save)</button>
+      <label>Power-on chime <select id="bootChime"><option value="0">off</option><option value="1">quiet</option><option value="2">normal</option></select></label>
+      <span id="toolStatus" class="note"></span>
+    </div>
+    <p class="note"><b>Calibrate gyro:</b> put the controller on a table, wait 3 s without touching it, then press (the drift measured while still is saved). <b>Zero sticks:</b> hands off both sticks, press; their resting point becomes the centre.</p>
+  </div>
+
+  <div class="panel">
     <h2>Hard reset to factory settings (SC26RE v40+)</h2>
     <p class="note">Forgets everything sc26re stored &mdash; trigger, stick, trackpad-pressure and gyro calibration, settings sent by Steam, boot chime level, Bluetooth/Puck mode, <b>all Bluetooth and Puck pairings</b> &mdash; and reboots the controller. Calibration then comes back from Valve's own storage, the same values the stock firmware uses. Afterwards pair the controller with the Puck or Bluetooth again. Works over USB or the Puck; close Steam first. Same as holding Menu + View + LB + RB for 3 s while switching on.</p>
     <div class="bar">
@@ -243,6 +258,82 @@ async function factoryReset(){
   $("#facStatus").innerHTML=ok?'<span class="ok">sent &mdash; the controller chimes and reboots</span>':`<span class="err">failed: ${last||"not connected"}</span>`;
 }
 $("#facReset").onclick=factoryReset;
+
+/* ---- live settings: pseudo settings sc26re/<name> (READ 0xED / STAGE 0xEE / COMMIT 0xEF) ---- */
+const LS=[
+ ["trig_click","Trigger click point","% of travel for the digital click (LT/RT click)"],
+ ["trig_deadzone","Trigger released dead zone","% of travel that still reads 0"],
+ ["trig_filter","Trigger smoothing","0 = off, 1 light … 4 strong (default 2)"],
+ ["report_rate","Report rate","Hz: 1000, 500 or 250 (buttons always instant)"],
+ ["gyro_deadzone","Gyro dead zone","raw units; small = more precise, large = steadier"],
+ ["gyro_filter","Gyro smoothing","0 = off, 1 light … 4 strong (adds a few ms)"],
+ ["tp_smoothing","Trackpad smoothing","0 = off, 5 = stock, 10 = smoothest"],
+ ["tp_click","Trackpad click pressure","pressure needed for a pad click"],
+ ["tp_noise","Trackpad noise threshold","higher = ignores lighter touches"],
+ ["haptic_gain","Haptics volume","dB, −24 … +6"],
+ ["drop_scream","Drop: scream chance","% per drop"],
+ ["drop_meow","Drop: meow chance","% per drop (scream + meow ≤ 100; both 0 = silent)"],
+ ["led_brightness","LED brightness","%"],
+ ["auto_off","Auto power-off","minutes without input, 0 = never"],
+];
+const AUTO=-32768;
+function lsRows(){
+  $("#lsTable").innerHTML=LS.map(([n,l,h])=>`<tr style="border-top:1px solid #1b2742"><td style="padding:6px 4px">${l}<div class="note">${h}</div></td>
+   <td style="white-space:nowrap"><input type="number" id="ls_${n}" style="width:80px"> <label class="note" id="lsa_${n}" style="display:none"><input type="checkbox" id="lsauto_${n}"> Steam</label></td>
+   <td class="note" id="lsr_${n}"></td></tr>`).join("");
+  LS.forEach(([n])=>{ $("#lsauto_"+n).onchange=e=>{ $("#ls_"+n).disabled=e.target.checked; }; });
+}
+lsRows();
+async function featRead(d,path){
+  await d.sendFeatureReport(1,pathCmd(0xED,path));
+  const r=new Uint8Array((await d.receiveFeatureReport(1)).buffer);
+  const o=r[0]===0xED?0:(r[1]===0xED?1:-1);
+  if(o<0) throw new Error("bad reply");
+  return r.slice(o+2,o+2+r[o+1]);
+}
+const s16=(b,i)=>{ const v=b[i]|(b[i+1]<<8); return v>32767?v-65536:v; };
+async function lsReadAll(){
+  const d=devs[0]; if(!d){ $("#lsStatus").innerHTML='<span class="err">connect first</span>'; return; }
+  try{
+    for(const [n] of LS){
+      const b=await featRead(d,"sc26re/"+n);
+      if(b.length<7) throw new Error("this firmware has no live settings (needs v42+)");
+      const v=s16(b,0), mn=s16(b,2), mx=s16(b,4), canAuto=b[6];
+      const inp=$("#ls_"+n), cb=$("#lsauto_"+n);
+      inp.min=mn; inp.max=mx; $("#lsr_"+n).textContent=`${mn} … ${mx}`;
+      $("#lsa_"+n).style.display=canAuto?"":"none";
+      cb.checked=v===AUTO; inp.disabled=v===AUTO; inp.value=v===AUTO?"":v; inp.dataset.orig=v;
+    }
+    try{ const b=await featRead(d,"user/haptic_boot_level"); if(b.length) $("#bootChime").value=b[0]; }catch(e){}
+    $("#lsStatus").innerHTML='<span class="ok">read</span>';
+  }catch(e){ $("#lsStatus").innerHTML=`<span class="err">${e.message}</span>`; }
+}
+function lsValue(n){ return $("#lsauto_"+n).checked?AUTO:Math.round(+$("#ls_"+n).value); }
+async function lsSend(save,all,forceDefault){
+  if(!devs.length){ $("#lsStatus").innerHTML='<span class="err">connect first</span>'; return; }
+  let sent=0,last="";
+  for(const d of devs){ for(const [n] of LS){
+    const v=forceDefault?AUTO:lsValue(n);
+    if(!forceDefault && $("#ls_"+n).value==="" && !$("#lsauto_"+n).checked) continue;
+    if(!all && String(v)===$("#ls_"+n).dataset.orig) continue;
+    try{ await d.sendFeatureReport(1,pathCmd(0xEE,"sc26re/"+n,[v&255,(v>>8)&255]));
+         if(save) await d.sendFeatureReport(1,pathCmd(0xEF,"sc26re/"+n)); sent++; }catch(e){ last=e.message; } } }
+  await lsReadAll();
+  $("#lsStatus").innerHTML=last?`<span class="err">failed: ${last}</span>`:`<span class="ok">${forceDefault?"defaults restored and saved":save?"saved":"applied until power-off ("+sent+" changed)"}</span>`;
+}
+$("#lsRead").onclick=lsReadAll;
+$("#lsApply").onclick=()=>lsSend(false,false,false);
+$("#lsSave").onclick=()=>lsSend(true,true,false);
+$("#lsDef").onclick=()=>{ if(confirm("Return all live settings to defaults?")) lsSend(true,true,true); };
+async function toolSend(buf,msg){
+  let ok=0,last=""; for(const d of devs){ try{ await d.sendFeatureReport(1,buf); ok++; }catch(e){ last=e.message; } }
+  $("#toolStatus").innerHTML=ok?`<span class="ok">${msg}</span>`:`<span class="err">failed: ${last||"not connected"}</span>`;
+}
+$("#gyCal").onclick=()=>{ const b=new Uint8Array(63); b[0]=0xB5; b[1]=0; toolSend(b,"gyro calibration saved"); };
+$("#stZero").onclick=()=>toolSend(pathCmd(0xF0,"sc26re/zero_sticks"),"measuring — keep hands off the sticks for a second; saved");
+$("#bootChime").onchange=async e=>{ const v=+e.target.value;
+  for(const d of devs){ try{ await d.sendFeatureReport(1,pathCmd(0xEE,"user/haptic_boot_level",[v])); await d.sendFeatureReport(1,pathCmd(0xEF,"user/haptic_boot_level")); }catch(err){} }
+  $("#toolStatus").innerHTML='<span class="ok">power-on chime saved</span>'; };
 
 /* ---- capsense thresholds: READ/STAGE/COMMIT of the pseudo setting sc26re/capsense ---- */
 const capTh={on:720,off:576,grip:0};

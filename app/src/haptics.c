@@ -12,6 +12,7 @@
 #include <zephyr/toolchain.h>
 
 #include "controller.h"
+#include "sc26re_cfg.h"
 #include "haptics.h"
 #include "valve_settings.h"
 #include "ibex_settings_registry.h"
@@ -2268,11 +2269,14 @@ int haptics_play_drop_sound(void)
 {
 	uint32_t roll = sys_rand32_get() % 100U;
 
-	if(roll < CONFIG_IBEX_DROP_SCREAM_PERCENT)
+	int scream = MAX(sc26re_cfg_get(SC26RE_CFG_DROP_SCREAM), 0);
+	int meow = MAX(sc26re_cfg_get(SC26RE_CFG_DROP_MEOW), 0);
+
+	if((int)roll < scream)
 	{
 		return haptics_start_script(HAPTICS_CHANNEL_LEFT_1 | HAPTICS_CHANNEL_RIGHT_1, 16U, 0);
 	}
-	if(roll < CONFIG_IBEX_DROP_SCREAM_PERCENT + CONFIG_IBEX_DROP_MEOW_PERCENT)
+	if((int)roll < scream + meow)
 	{
 		return haptics_start_script(HAPTICS_CHANNEL_LEFT_1 | HAPTICS_CHANNEL_RIGHT_1, 17U, 0);
 	}

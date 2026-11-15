@@ -9,6 +9,7 @@
 #include <zephyr/sys/byteorder.h>
 #include <zephyr/sys/util.h>
 
+#include "sc26re_cfg.h"
 #include "ibex_settings_registry.h"
 #include "valve_nvs.h"
 
@@ -167,6 +168,8 @@ static int16_t setting_meta_value(uint8_t id, enum ibex_setting_kind kind)
 
 static void notify_changed(uint8_t id, int16_t value)
 {
+	/* listeners always get the effective value (report meter overrides win over Steam) */
+	(void)sc26re_cfg_registry_override(id, &value);
 	for(uint8_t i = 0; i < callback_count; ++i)
 	{
 		callbacks[i](id, value);
@@ -342,7 +345,36 @@ bool ibex_setting_get(uint8_t id, int16_t *value)
 	k_mutex_lock(&registry_mutex, K_FOREVER);
 	*value = setting_values[id];
 	k_mutex_unlock(&registry_mutex);
+	(void)sc26re_cfg_registry_override(id, value);
 	return true;
+}
+
+bool ibex_setting_get_raw(uint8_t id, int16_t *value)
+{
+	if(!validate_id(id))
+	{
+		return false;
+	}
+	k_mutex_lock(&registry_mutex, K_FOREVER);
+	*value = setting_values[id];
+	k_mutex_unlock(&registry_mutex);
+	return true;
+}
+
+void ibex_settings_notify(uint8_t id)
+{
+	int16_t value;
+
+	if(!ibex_setting_get(id, &value))
+	{
+		return;
+	}
+	k_mutex_lock(&registry_mutex, K_FOREVER);
+	for(uint8_t i = 0; i < callback_count; ++i)
+	{
+		callbacks[i](id, value);
+	}
+	k_mutex_unlock(&registry_mutex);
 }
 
 bool ibex_setting_get_meta(uint8_t id, enum ibex_setting_kind kind, int16_t *value)
@@ -430,7 +462,10 @@ int ibex_settings_register_callback(ibex_setting_changed_cb_t callback)
 	callbacks[callback_count++] = callback;
 	for(uint8_t i = 0; i < IBEX_SETTING_COUNT; ++i)
 	{
-		callback(i, setting_values[i]);
+		int16_t value = setting_values[i];
+
+		(void)sc26re_cfg_registry_override(i, &value);
+		callback(i, value);
 	}
 	k_mutex_unlock(&registry_mutex);
 	return 0;

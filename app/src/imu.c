@@ -25,6 +25,7 @@
 #endif
 #include "ibex_settings_registry.h"
 #include "imu.h"
+#include "sc26re_cfg.h"
 #include "imu_bias.h"
 #include "sdl/controller_constants.h"
 
@@ -902,12 +903,33 @@ static int build_imu_report_from_stream(const uint8_t *buf)
 		oriented[1] = gyro_axis_to_report(gyro[1] - bias[1]);
 		oriented[2] = gyro_axis_to_report(gyro[2] - bias[2]);
 		apply_orientation_i16(oriented);
-		for(size_t i = 0; i < 3; ++i)
 		{
-			if(-gyro_dz_threshold < oriented[i] && gyro_dz_threshold > oriented[i])
+			/* report meter overrides: dead zone (auto = Steam's) and low-pass strength */
+			int16_t cfg_dz = sc26re_cfg_get(SC26RE_CFG_GYRO_DEADZONE);
+			int16_t cfg_lp = sc26re_cfg_get(SC26RE_CFG_GYRO_FILTER);
+			int32_t dz = cfg_dz == SC26RE_CFG_AUTO ? gyro_dz_threshold : cfg_dz;
+			static int32_t gyro_lp_q8[3];
+			static bool gyro_lp_primed;
+
+			for(size_t i = 0; i < 3; ++i)
 			{
-				oriented[i] = 0;
+				if(cfg_lp > 0)
+				{
+					int32_t x = (int32_t)oriented[i] << 8;
+
+					if(!gyro_lp_primed)
+					{
+						gyro_lp_q8[i] = x;
+					}
+					gyro_lp_q8[i] += (x - gyro_lp_q8[i]) >> MIN(cfg_lp, 4);
+					oriented[i] = (int16_t)CLAMP(gyro_lp_q8[i] >> 8, INT16_MIN, INT16_MAX);
+				}
+				if(-dz < oriented[i] && dz > oriented[i])
+				{
+					oriented[i] = 0;
+				}
 			}
+			gyro_lp_primed = cfg_lp > 0;
 		}
 		report.gyro_x = oriented[0];
 		report.gyro_y = oriented[1];

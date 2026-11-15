@@ -25,6 +25,7 @@
 #endif
 #include "olympus_config.h"
 #include "puck_interface.h"
+#include "sc26re_cfg.h"
 
 LOG_MODULE_REGISTER(olympus);
 
@@ -106,6 +107,22 @@ static float one_euro_alpha(float cutoff_hz, float rate_hz)
 	return 1.0f / (1.0f + tau * rate_hz);
 }
 
+/*
+ * Report meter "trackpad smoothing" 1..10 (5 = OFW values). Each step away from
+ * 5 halves/doubles the minimum cutoff and scales beta by sqrt(2): higher =
+ * smoother but laggier at slow speeds.
+ */
+static float euro_min_cutoff = OLYMPUS_EURO_MIN_CUTOFF_HZ;
+static float euro_beta = OLYMPUS_EURO_BETA;
+
+static void euro_apply_strength(int16_t strength)
+{
+	int steps = 5 - CLAMP(strength, 1, 10);
+
+	euro_min_cutoff = OLYMPUS_EURO_MIN_CUTOFF_HZ * powf(2.0f, (float)steps);
+	euro_beta = OLYMPUS_EURO_BETA * powf(1.41421356f, (float)steps);
+}
+
 static float one_euro_step(struct one_euro_filter *f, float value, float rate_hz)
 {
 	float d = 0.0f;
@@ -125,7 +142,7 @@ static float one_euro_step(struct one_euro_filter *f, float value, float rate_hz
 	d = (value - f->raw) * rate_hz;
 	f->raw = value;
 	f->dx = f->dx + a_d * (d - f->dx);
-	cutoff = OLYMPUS_EURO_MIN_CUTOFF_HZ + OLYMPUS_EURO_BETA * fabsf(f->dx);
+	cutoff = euro_min_cutoff + euro_beta * fabsf(f->dx);
 	if(f->cutoff > cutoff && f->cutoff * 0.99f >= cutoff)
 	{
 		cutoff = f->cutoff * 0.99f;
@@ -804,7 +821,13 @@ static void decode_pad(struct olympus_pad_state *state, const int16_t *x_samples
 	*x = normalized_to_axis(normalized_x);
 	*y = invert_axis(normalized_to_axis(normalized_y));
 
-	if(state->touched && registry_setting_or_default(SETTING_TRACKPAD_FILT_CTRL, 1) != 0)
+	int16_t smoothing = sc26re_cfg_get(SC26RE_CFG_TP_SMOOTHING);
+	bool euro_on = smoothing == SC26RE_CFG_AUTO ?
+	                   registry_setting_or_default(SETTING_TRACKPAD_FILT_CTRL, 1) != 0 :
+	                   smoothing > 0;
+
+	euro_apply_strength(smoothing == SC26RE_CFG_AUTO ? 5 : smoothing);
+	if(state->touched && euro_on)
 	{
 		uint32_t now = k_cycle_get_32();
 		float rate_hz = OLYMPUS_EURO_DEFAULT_RATE_HZ;

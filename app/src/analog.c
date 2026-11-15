@@ -14,6 +14,7 @@
 
 #include "controller.h"
 
+#include "sc26re_cfg.h"
 #include "analog.h"
 #include "calibration.h"
 #include "haptics.h"
@@ -235,7 +236,16 @@ static int32_t trigger_filter(int i, int32_t raw)
 		trigger_filt_q8[i] = raw << 8;
 		trigger_filt_init[i] = true;
 	}
-	trigger_filt_q8[i] += ((raw << 8) - trigger_filt_q8[i]) >> TRIGGER_FILTER_SHIFT;
+	{
+		int16_t shift = sc26re_cfg_get(SC26RE_CFG_TRIG_FILTER);
+
+		if(shift <= 0)
+		{
+			trigger_filt_q8[i] = raw << 8;
+			return raw;
+		}
+		trigger_filt_q8[i] += ((raw << 8) - trigger_filt_q8[i]) >> MIN(shift, 4);
+	}
 	return trigger_filt_q8[i] >> 8;
 }
 
@@ -319,14 +329,18 @@ static int32_t trigger_rest_remap(int i, int32_t raw, const struct trigger_calib
 		}
 	}
 
-	permille = (int32_t)(((int64_t)(out - e_idle) * 1000) / span);
-	if(permille <= TRIGGER_REST_DEADZONE_PERMILLE)
 	{
-		return e_idle;
+		int32_t dz = (int32_t)sc26re_cfg_get(SC26RE_CFG_TRIG_DEADZONE) * 10;
+
+		dz = dz < 0 ? TRIGGER_REST_DEADZONE_PERMILLE : MIN(dz, 900);
+		permille = (int32_t)(((int64_t)(out - e_idle) * 1000) / span);
+		if(permille <= dz)
+		{
+			return e_idle;
+		}
+		permille = MIN(permille, 1000);
+		permille = ((permille - dz) * 1000) / (1000 - dz);
 	}
-	permille = MIN(permille, 1000);
-	permille = ((permille - TRIGGER_REST_DEADZONE_PERMILLE) * 1000) /
-	           (1000 - TRIGGER_REST_DEADZONE_PERMILLE);
 	return e_idle + (int32_t)(((int64_t)permille * span) / 1000);
 }
 static struct k_spinlock trigger_cal_lock;
@@ -393,6 +407,100 @@ static void trigger_zero_work_handler(struct k_work *work)
 		trigger_rest_valid[i] = true;
 		LOG_INF("zero triggers %s: rest=%d mV -> pressed=%u idle=%u inverted=%u err=%d",
 		        i ? "right" : "left", rest, cal.pressed, cal.idle, cal.inverted, err);
+	}
+}
+
+/*
+ * "Zero sticks" (report meter): with both sticks untouched, average their
+ * position and move each stick's centre band there, keeping its width and the
+ * outer endpoints. Saved as the stick calibration.
+ */
+#define STICK_ZERO_SAMPLES 300
+static atomic_t stick_zero_active;
+static int64_t stick_zero_sum[4];
+static uint32_t stick_zero_n;
+static void stick_zero_work_handler(struct k_work *work);
+static K_WORK_DEFINE(stick_zero_work, stick_zero_work_handler);
+
+static void stick_zero_axis(int32_t c, uint16_t mn, uint16_t mx, uint16_t *cmin, uint16_t *cmax)
+{
+	int32_t half = MAX(((int32_t)*cmax - (int32_t)*cmin) / 2, 1);
+	int32_t lo = c - half;
+	int32_t hi = c + half;
+
+	/* keep real travel on both sides */
+	if(lo <= (int32_t)mn + 50 || hi >= (int32_t)mx - 50)
+	{
+		return;
+	}
+	*cmin = (uint16_t)lo;
+	*cmax = (uint16_t)hi;
+}
+
+static void stick_zero_work_handler(struct k_work *work)
+{
+	struct analog_calibration_snapshot snap;
+	struct stick_calibration *cals[2];
+	int32_t c[4];
+
+	ARG_UNUSED(work);
+	for(int i = 0; i < 4; ++i)
+	{
+		c[i] = (int32_t)(stick_zero_sum[i] / STICK_ZERO_SAMPLES);
+	}
+	calibration_analog_snapshot(&snap);
+	cals[0] = &snap.stick_left;
+	cals[1] = &snap.stick_right;
+	for(int s = 0; s < 2; ++s)
+	{
+		struct stick_calibration *cal = cals[s];
+		int err;
+
+		if(!calibration_stick_valid(cal) || (cal->x_min == 0 && cal->x_max == 0))
+		{
+			LOG_WRN("zero sticks: %s stick has no calibration, skipped", s ? "right" : "left");
+			continue;
+		}
+		{
+			uint16_t xc0 = cal->x_center_min, xc1 = cal->x_center_max;
+			uint16_t yc0 = cal->y_center_min, yc1 = cal->y_center_max;
+
+			stick_zero_axis(c[s * 2], cal->x_min, cal->x_max, &xc0, &xc1);
+			stick_zero_axis(c[s * 2 + 1], cal->y_min, cal->y_max, &yc0, &yc1);
+			cal->x_center_min = xc0;
+			cal->x_center_max = xc1;
+			cal->y_center_min = yc0;
+			cal->y_center_max = yc1;
+		}
+		err = calibration_set_stick(s ? CALIBRATION_RIGHT : CALIBRATION_LEFT, cal);
+		LOG_INF("zero sticks %s: centre x %u..%u y %u..%u err=%d", s ? "right" : "left",
+		        cal->x_center_min, cal->x_center_max, cal->y_center_min, cal->y_center_max, err);
+	}
+}
+
+int analog_zero_sticks(void)
+{
+	memset(stick_zero_sum, 0, sizeof(stick_zero_sum));
+	stick_zero_n = 0;
+	atomic_set(&stick_zero_active, 1);
+	LOG_INF("zero sticks: sampling centre");
+	return 0;
+}
+
+static void stick_zero_sample(const int32_t *averaged)
+{
+	if(!atomic_get(&stick_zero_active))
+	{
+		return;
+	}
+	stick_zero_sum[0] += averaged[ANALOG_STICK_LEFT_X];
+	stick_zero_sum[1] += averaged[ANALOG_STICK_LEFT_Y];
+	stick_zero_sum[2] += averaged[ANALOG_STICK_RIGHT_X];
+	stick_zero_sum[3] += averaged[ANALOG_STICK_RIGHT_Y];
+	if(++stick_zero_n >= STICK_ZERO_SAMPLES)
+	{
+		atomic_set(&stick_zero_active, 0);
+		k_work_submit(&stick_zero_work);
 	}
 }
 
@@ -1025,6 +1133,7 @@ int analog_read_report(struct controller_report *report)
 	trg_dbg_cal[1] = calibration.trigger_right;
 #endif
 
+	stick_zero_sample(averaged);
 	report->stick_left_x = scale_stick_axis(
 	    averaged[ANALOG_STICK_LEFT_X], calibration.stick_left.x_min, calibration.stick_left.x_max,
 	    calibration.stick_left.x_center_min, calibration.stick_left.x_center_max);

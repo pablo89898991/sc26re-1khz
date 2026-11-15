@@ -15,6 +15,7 @@
 #include "imu.h"
 #include "valve_nvs.h"
 #include "olympus.h"
+#include "sc26re_cfg.h"
 #include "valve_settings.h"
 
 /* Report meter: stick/grip capacitive thresholds (live via STAGE, saved via COMMIT). */
@@ -496,6 +497,10 @@ static bool nvs_read_path(const char *path, uint8_t *buf, size_t capacity, size_
 
 bool valve_settings_read(const char *path, uint8_t *buf, size_t capacity, size_t *len)
 {
+	if(sc26re_cfg_path(path))
+	{
+		return sc26re_cfg_read(path, buf, capacity, len);
+	}
 	if(strcmp(path, SC26RE_CAPSENSE_PATH) == 0)
 	{
 		if(capacity < OLYMPUS_CAPSENSE_SIZE)
@@ -641,6 +646,10 @@ int valve_settings_stage(const char *path, const uint8_t *value, size_t len)
 	int slot = esb_bond_slot(path);
 	int err;
 
+	if(sc26re_cfg_path(path))
+	{
+		return sc26re_cfg_stage(path, value, len);
+	}
 	if(strcmp(path, SC26RE_CAPSENSE_PATH) == 0)
 	{
 		/* applied live; COMMIT stores it */
@@ -784,6 +793,10 @@ static int commit_setting_path(const char *path)
 	int slot = esb_bond_slot(path);
 	int err;
 
+	if(sc26re_cfg_path(path))
+	{
+		return sc26re_cfg_commit(path);
+	}
 	if(strcmp(path, SC26RE_CAPSENSE_PATH) == 0)
 	{
 		return olympus_capsense_save();

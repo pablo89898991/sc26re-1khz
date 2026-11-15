@@ -688,6 +688,21 @@ int calibration_stage_trigger(enum calibration_side side, const uint8_t *value, 
 	return 0;
 }
 
+int calibration_set_stick(enum calibration_side side, const struct stick_calibration *cal)
+{
+	const char *path = side == CALIBRATION_RIGHT ? "cal/joy_r" : "cal/joy_l";
+
+	if(cal == NULL || !calibration_stick_valid(cal))
+	{
+		return -EINVAL;
+	}
+	k_mutex_lock(&calibration_mutex, K_FOREVER);
+	sides[side].stick = *cal;
+	sides[side].stick_loaded = true;
+	k_mutex_unlock(&calibration_mutex);
+	return save_setting(path, cal, sizeof(*cal));
+}
+
 int calibration_commit_trigger(enum calibration_side side)
 {
 	const char *path = side == CALIBRATION_RIGHT ? "cal/trg_r" : "cal/trg_l";

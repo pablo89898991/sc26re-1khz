@@ -594,6 +594,10 @@ static int handle_feature_request(enum valve_feature_link link, const uint8_t *r
 				return valve_settings_commit(path);
 			case VALVE_FEATURE_DELETE_SETTING:
 				LOG_INF("%s delete setting %s", feature_link_name(link), path);
+				if(strcmp(path, "sc26re/zero_sticks") == 0)
+				{
+					return analog_zero_sticks();
+				}
 				if(strcmp(path, SC26RE_FACTORY_RESET_PATH) == 0)
 				{
 					int n = valve_settings_factory_reset();

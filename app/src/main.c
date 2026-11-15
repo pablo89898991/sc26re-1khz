@@ -16,6 +16,7 @@
 #include "lizard.h"
 #include "power.h"
 #include "puck_interface.h"
+#include "sc26re_cfg.h"
 #include "valve_settings.h"
 #include "watchdog.h"
 
@@ -242,6 +243,7 @@ int main(void)
 		}
 	}
 	radio_personality_init();
+	sc26re_cfg_load();
 	valve_settings_load_feature_state();
 	ibex_settings_registry_init();
 	err = lizard_init();
@@ -389,6 +391,26 @@ int main(void)
 		 * reports produced by the preceding input sample. */
 		bool esb_state_boundary = transport_esb_connected();
 
+		/*
+		 * Report meter "report rate" (500/250 Hz): analog-only updates wait for
+		 * the interval, button changes still go out immediately.
+		 */
+		{
+			static uint32_t last_state_cyc;
+			int16_t rate = sc26re_cfg_get(SC26RE_CFG_REPORT_RATE);
+
+			if(rate > 0 && rate < 1000 && !first && current.buttons == previous.buttons &&
+			   k_cyc_to_us_floor32(k_cycle_get_32() - last_state_cyc) < 1000000U / (uint32_t)rate)
+			{
+				changed = false;
+				refresh_due = false;
+				esb_state_boundary = false;
+			}
+			if(changed || refresh_due || esb_state_boundary)
+			{
+				last_state_cyc = k_cycle_get_32();
+			}
+		}
 		if(changed || refresh_due || esb_state_boundary)
 		{
 			if(changed && (current.buttons & ~previous.buttons) != 0U)
