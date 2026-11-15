@@ -517,8 +517,28 @@ static ssize_t build_feature_response(enum valve_feature_link link, const uint8_
 				/* OFW 6AE90BC5 (0x455ce): a missing setting answers with length 0, not one
 				 * zero byte. Steam read the extra byte as a broken record ("Failed to read
 				 * triton info ... slot 0", "Got bond for slot 0 (11)") for an empty bond slot. */
-				if(valve_settings_read(path, cursor, end - cursor, &setting_len))
+				/*
+				 * sc26re's own pseudo settings start with a tag derived from the
+				 * path, so the report meter can tell its reply from one meant for
+				 * Steam when both use the controller at the same time.
+				 */
+				bool tagged = strncmp(path, "sc26re/", 7) == 0 && end - cursor > 1;
+				uint8_t tag = 0xA5;
+
+				if(tagged)
 				{
+					for(const char *c = path; *c != '\0'; ++c)
+					{
+						tag = (uint8_t)((tag << 1) ^ (tag >> 7) ^ (uint8_t)*c);
+					}
+				}
+				if(valve_settings_read(path, cursor + (tagged ? 1 : 0),
+				                       end - cursor - (tagged ? 1 : 0), &setting_len))
+				{
+					if(tagged)
+					{
+						*cursor++ = tag;
+					}
 					cursor += setting_len;
 				}
 			}

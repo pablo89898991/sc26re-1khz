@@ -50,6 +50,7 @@
       <label class="note">Report ID <select id="rid"><option value="auto">auto</option></select></label>
       <label class="note">Window <select id="win"><option value="1">1 s</option><option value="2" selected>2 s</option><option value="5">5 s</option></select></label>
       <label class="note" title="Switches the controller's gyro/accelerometer on from this page, the way Steam does, so nothing else has to be open. Switched off again when you close the page."><input type="checkbox" id="imuOn" checked> Gyro on (standalone)</label>
+      <label class="note" id="ctlPick" style="display:none">Controller <select id="ctlSel"></select></label>
       <span id="status" class="note">not connected</span>
     </div>
   </div>
@@ -73,7 +74,7 @@
 
   <div class="panel">
     <h2>Live settings (SC26RE v42+)</h2>
-    <p class="note">Changed here, applied immediately. <b>Apply</b> = until power-off, <b>Save</b> = kept. “Steam” = follow the value Steam sends (the normal behaviour); setting a number overrides Steam. A hard reset returns everything to defaults. Close Steam while tuning.</p>
+    <p class="note">Changed here, applied immediately. <b>Apply</b> = until power-off, <b>Save</b> = kept. “Steam” = follow the value Steam sends (the normal behaviour); setting a number overrides Steam. A hard reset returns everything to defaults. With firmware v44+ this also works while Steam is running (replies meant for Steam are recognised and the request repeated); if something still fails, close Steam.</p>
     <div class="bar"><button id="lsRead">Read all</button><button class="primary" id="lsApply">Apply changes</button><button id="lsSave">Save</button><button id="lsDef">All defaults</button><span id="lsStatus" class="note"></span></div>
     <table id="lsTable" style="width:100%;border-collapse:collapse;margin-top:8px"></table>
     <div class="lbl" style="margin-top:14px">Tools</div>
@@ -216,8 +217,19 @@ const OFF={seq:0,ts:29,ax:33,ay:35,az:37,gx:39,gy:41,gz:43,q:45};
    report" or returned the wrong reply (the 2 s gyro keep-alive collided). */
 /* A Puck shows up as several HID interfaces (one per controller slot);
    commands must go to the one the controller's reports come from. */
-let ctlDev=null;
+let ctlDev=null, ctlManual=false;
+const devRate=new Map(); /* state reports per interface, for the picker */
 function ctl(){ return (ctlDev&&devs.includes(ctlDev))?ctlDev:devs[0]; }
+function pathTag(path){ let t=0xA5; for(const c of path) t=((t<<1)^(t>>7)^c.charCodeAt(0))&255; return t; }
+function ctlPickerRefresh(){
+  const sel=$("#ctlSel"); if(!sel) return;
+  $("#ctlPick").style.display=devs.length>1?"":"none";
+  if(devs.length<2) return;
+  const cur=devs.indexOf(ctl());
+  sel.innerHTML=devs.map((d,i)=>{ const r=devRate.get(d)||0; return `<option value="${i}">#${i+1} ${r?"— controller ("+r+" reports/s)":"— no controller"}</option>`; }).join("");
+  if(cur>=0) sel.value=String(cur);
+}
+setInterval(()=>{ ctlPickerRefresh(); for(const d of devs) devRate.set(d,0); },1000);
 function targets(){ return (ctlDev&&devs.includes(ctlDev))?[ctlDev]:devs; }
 let featChain=Promise.resolve();
 function serial(fn){ const p=featChain.then(fn,fn); featChain=p.catch(()=>{}); return p; }
@@ -225,7 +237,7 @@ async function fsend(d,id,buf){
   return serial(async()=>{
     for(let attempt=0;;attempt++){
       try{ return await d.__send(id,buf); }
-      catch(e){ if(attempt>=2) throw e; await new Promise(r=>setTimeout(r,30)); }
+      catch(e){ if(attempt>=5) throw e; await new Promise(r=>setTimeout(r,40+attempt*30)); }
     }
   });
 }
@@ -238,6 +250,7 @@ async function connect(){
   if(!("hid" in navigator)){ $("#status").innerHTML='<span class="err">WebHID not available — use desktop Chrome or Edge.</span>'; return; }
   try{
     const sel=await navigator.hid.requestDevice({filters:[{vendorId:0x28de}]});
+    ctlManual=false; ctlDev=null;
     for(const d of sel){ if(!d.opened) await d.open(); d.__send=d.sendFeatureReport.bind(d); d.addEventListener("inputreport",onReport); devs.push(d); }
     $("#status").innerHTML=devs.length?`<span class="ok">connected: ${devs.map(d=>d.productName||"device").join(", ")}</span>`:"no device selected";
     if(devs.length && $("#imuOn").checked) await imuMode(IMU_MODE_ON);
@@ -245,6 +258,7 @@ async function connect(){
   }catch(e){ $("#status").innerHTML=`<span class="err">${e.message}</span>`; }
 }
 $("#connect").onclick=connect;
+$("#ctlSel").onchange=e=>{ ctlDev=devs[+e.target.value]; ctlManual=true; };
 
 /* ---- IMU on without Steam: SET_SETTINGS_VALUES (0x87) setting 48 imu_mode = raw accel | raw gyro | orientation ---- */
 const IMU_MODE_ON=0x04|0x08|0x10;
@@ -369,16 +383,29 @@ function lsRows(){
 }
 lsRows();
 async function featRead(d,path){
+  /* sc26re/* replies (v44+) start with a tag from the path: a reply meant for
+     Steam (running at the same time) is recognised and the read repeated */
+  const tagged=path.startsWith("sc26re/") && d.__tagged!==false, tag=pathTag(path);
   return serial(async()=>{
-    for(let attempt=0;;attempt++){
+    let lastErr=null, lastData=null;
+    for(let attempt=0;attempt<8;attempt++){
       try{
         await d.__send(1,pathCmd(0xED,path));
         const r=new Uint8Array((await d.receiveFeatureReport(1)).buffer);
         const o=r[0]===0xED?0:(r[1]===0xED?1:-1);
-        if(o<0) throw new Error("bad reply");
-        return r.slice(o+2,o+2+r[o+1]);
-      }catch(e){ if(attempt>=2) throw e; await new Promise(r=>setTimeout(r,30)); }
+        if(o<0) throw new Error("reply for another request (Steam?)");
+        const data=r.slice(o+2,o+2+r[o+1]);
+        if(tagged){
+          if(!data.length || data[0]!==tag){ lastData=data; throw new Error("reply for another request (Steam?)"); }
+          d.__tagged=true;
+          return data.slice(1);
+        }
+        return data;
+      }catch(e){ lastErr=e; await new Promise(r=>setTimeout(r,40+attempt*30)); }
     }
+    /* never a matching tag but valid replies: firmware older than v44 (no tags) */
+    if(tagged && lastData && d.__tagged===undefined){ d.__tagged=false; return lastData; }
+    throw lastErr;
   });
 }
 const s16=(b,i)=>{ const v=b[i]|(b[i+1]<<8); return v>32767?v-65536:v; };
@@ -526,7 +553,7 @@ function wantedId(){
 
 function onReport(e){
   const id=e.reportId, dv=e.data, t=e.timeStamp||performance.now();
-  if(id===0x42) ctlDev=e.device; /* the interface the controller's state arrives on */
+  if(id===0x42){ devRate.set(e.device,(devRate.get(e.device)||0)+1); if(!ctlManual && (!ctlDev||!devRate.get(ctlDev))) ctlDev=e.device; } /* the interface the controller's state arrives on */
   const st=idStats[id]||(idStats[id]={n:0,len:dv.byteLength,times:[]}); st.n++; st.len=dv.byteLength; st.times.push(t);
   if(st.times.length>4000) st.times.splice(0,st.times.length-4000);
   if(id!==wantedId()) return;
