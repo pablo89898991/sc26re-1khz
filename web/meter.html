@@ -438,9 +438,10 @@ $("#gyCal").onclick=async()=>{
   const msg={2:'<span class="ok">gyro calibrated and saved</span>',3:'<span class="err">the controller moved — old calibration kept, try again</span>',4:'<span class="err">could not save</span>'};
   for(let t=0;t<20;t++){
     await new Promise(r=>setTimeout(r,300));
-    let st=null; try{ const r=await featRead(devs[0],"sc26re/gyro_cal"); st=r.length?r[0]:null; }catch(e){}
+    let st=null, info=""; try{ const r=await featRead(devs[0],"sc26re/gyro_cal"); st=r.length?r[0]:null;
+      if(r.length>=13){ const v=i=>((r[i]|(r[i+1]<<8))/1000).toFixed(2); info=` <span class="note">(noise σ pitch ${v(1)} · yaw ${v(5)} · roll ${v(3)} °/s)</span>`; } }catch(e){}
     if(st===null){ $("#toolStatus").innerHTML='<span class="ok">sent (this firmware does not report the result)</span>'; return; }
-    if(msg[st]){ $("#toolStatus").innerHTML=msg[st]; return; }
+    if(msg[st]){ $("#toolStatus").innerHTML=msg[st]+(st>=2?info:""); return; }
   }
   $("#toolStatus").innerHTML='<span class="err">no result — is the IMU on? (open Steam\'s gyro page)</span>';
 };

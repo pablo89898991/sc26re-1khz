@@ -1173,7 +1173,12 @@ int imu_read_report(struct controller_report *report)
  * for GYRO_CAL_SAMPLES samples; if the controller moved, nothing is changed.
  */
 #define GYRO_CAL_SAMPLES 1500
-#define GYRO_CAL_MAX_SPREAD 0.035f /* rad/s (~2 deg/s) between min and max on any axis */
+/*
+ * "Moved" test on the standard deviation, not min..max: single outlier samples
+ * (FIFO/stream glitches) made a controller lying on a table fail the old
+ * min..max check. Hand tremor is several deg/s; a still controller ~0.1.
+ */
+#define GYRO_CAL_MAX_STDDEV 0.015f /* rad/s (~0.86 deg/s) */
 static atomic_t gyro_cal_active;
 /* 0 = idle, 1 = measuring, 2 = saved, 3 = moved (old bias kept), 4 = save failed */
 static atomic_t gyro_cal_state;
@@ -1184,6 +1189,16 @@ uint8_t imu_gyro_cal_state(void)
 }
 static uint32_t gyro_cal_n;
 static double gyro_cal_sum[3];
+static double gyro_cal_sumsq[3];
+/* last result for the report meter: per-axis std dev and spread in mdeg/s */
+static int16_t gyro_cal_std_mdps[3];
+static int16_t gyro_cal_spread_mdps[3];
+
+void imu_gyro_cal_result(int16_t std_mdps[3], int16_t spread_mdps[3])
+{
+	memcpy(std_mdps, gyro_cal_std_mdps, sizeof(gyro_cal_std_mdps));
+	memcpy(spread_mdps, gyro_cal_spread_mdps, sizeof(gyro_cal_spread_mdps));
+}
 static float gyro_cal_min[3];
 static float gyro_cal_max[3];
 static void gyro_cal_work_handler(struct k_work *work);
@@ -1198,6 +1213,7 @@ static void gyro_cal_sample(const float gyro[3])
 	for(size_t i = 0; i < 3; ++i)
 	{
 		gyro_cal_sum[i] += (double)gyro[i];
+		gyro_cal_sumsq[i] += (double)gyro[i] * (double)gyro[i];
 		if(gyro_cal_n == 0)
 		{
 			gyro_cal_min[i] = gyro[i];
@@ -1218,18 +1234,33 @@ static int imu_save_gyro_bias(const float bias_in[3]);
 static void gyro_cal_work_handler(struct k_work *work)
 {
 	float bias[3];
+	bool moved = false;
 
 	ARG_UNUSED(work);
 	for(size_t i = 0; i < 3; ++i)
 	{
-		if(gyro_cal_max[i] - gyro_cal_min[i] > GYRO_CAL_MAX_SPREAD)
+		double mean = gyro_cal_sum[i] / (double)gyro_cal_n;
+		double var = gyro_cal_sumsq[i] / (double)gyro_cal_n - mean * mean;
+		float sd = var > 0.0 ? sqrtf((float)var) : 0.0f;
+		const float mdps_per_rad = 57295.78f;
+
+		bias[i] = (float)mean;
+		gyro_cal_std_mdps[i] = (int16_t)CLAMP((int32_t)(sd * mdps_per_rad), 0, INT16_MAX);
+		gyro_cal_spread_mdps[i] = (int16_t)CLAMP(
+		    (int32_t)((gyro_cal_max[i] - gyro_cal_min[i]) * mdps_per_rad), 0, INT16_MAX);
+		if(sd > GYRO_CAL_MAX_STDDEV)
 		{
-			atomic_set(&gyro_cal_state, 3);
-			LOG_WRN("gyro calibration: controller moved (axis %u spread %d urad/s), kept old bias",
-			        (unsigned int)i, (int)((gyro_cal_max[i] - gyro_cal_min[i]) * 1e6f));
-			return;
+			moved = true;
 		}
-		bias[i] = (float)(gyro_cal_sum[i] / (double)gyro_cal_n);
+	}
+	LOG_INF("gyro calibration: std %d %d %d mdps, spread %d %d %d mdps", gyro_cal_std_mdps[0],
+	        gyro_cal_std_mdps[1], gyro_cal_std_mdps[2], gyro_cal_spread_mdps[0],
+	        gyro_cal_spread_mdps[1], gyro_cal_spread_mdps[2]);
+	if(moved)
+	{
+		atomic_set(&gyro_cal_state, 3);
+		LOG_WRN("gyro calibration: controller moved, kept old bias");
+		return;
 	}
 	LOG_INF("gyro calibration measured bias %d %d %d urad/s", (int)(bias[0] * 1e6f),
 	        (int)(bias[1] * 1e6f), (int)(bias[2] * 1e6f));
@@ -1239,6 +1270,7 @@ static void gyro_cal_work_handler(struct k_work *work)
 int imu_calibrate_gyro(void)
 {
 	memset(gyro_cal_sum, 0, sizeof(gyro_cal_sum));
+	memset(gyro_cal_sumsq, 0, sizeof(gyro_cal_sumsq));
 	gyro_cal_n = 0;
 	atomic_set(&gyro_cal_state, 1);
 	atomic_set(&gyro_cal_active, 1);

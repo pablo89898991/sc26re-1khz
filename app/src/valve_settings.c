@@ -539,10 +539,19 @@ bool valve_settings_read(const char *path, uint8_t *buf, size_t capacity, size_t
 	{
 		return sc26re_cfg_read(path, buf, capacity, len);
 	}
-	if(strcmp(path, "sc26re/gyro_cal") == 0 && capacity >= 1)
+	if(strcmp(path, "sc26re/gyro_cal") == 0 && capacity >= 13)
 	{
+		int16_t sd[3];
+		int16_t spread[3];
+
 		buf[0] = imu_gyro_cal_state();
-		*len = 1;
+		imu_gyro_cal_result(sd, spread);
+		for(size_t i = 0; i < 3; ++i)
+		{
+			sys_put_le16((uint16_t)sd[i], &buf[1 + 2 * i]);
+			sys_put_le16((uint16_t)spread[i], &buf[7 + 2 * i]);
+		}
+		*len = 13;
 		return true;
 	}
 	if(strcmp(path, SC26RE_CAPSENSE_PATH) == 0)
