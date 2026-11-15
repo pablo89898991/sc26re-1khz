@@ -160,15 +160,7 @@
       <div class="stat"><div class="k">L grip value</div><div class="v" id="cLg">—</div><div class="u">peak <span id="pLg">—</span> · <span class="capG"></span></div><div class="cbar"><b id="bLg"></b><u class="capGm" style="display:none"></u></div></div>
       <div class="stat"><div class="k">R grip value</div><div class="v" id="cRg">—</div><div class="u">peak <span id="pRg">—</span> · <span class="capG"></span></div><div class="cbar"><b id="bRg"></b><u class="capGm" style="display:none"></u></div></div>
     </div>
-    <div class="lbl" style="margin-top:14px">Capsense thresholds (SC26RE v41+) — raw sensor values, applied live; “Save” keeps them after power-off</div>
-    <div class="bar" style="flex-wrap:wrap;gap:10px">
-      <label>Stick touch on <input type="number" id="csOn" min="0" max="16000" step="10" style="width:80px"></label>
-      <label>Stick touch off <input type="number" id="csOff" min="0" max="16000" step="10" style="width:80px"></label>
-      <label>Grip touch on <input type="number" id="csGrip" min="0" max="16000" step="25" style="width:80px"></label>
-      <button id="csRead">Read</button><button class="primary" id="csApply">Apply (live)</button><button id="csSave">Save</button><button id="csDef">Defaults</button>
-      <span id="csStatus" class="note"></span>
-    </div>
-    <p class="note">Higher = less sensitive (a hovering finger no longer counts as a touch). “Off” must be below “on”; 0 = 80 % of “on”. Grip release stays a percentage of “grip on”. To see the raw values while tuning, flash the <code>*_capsense_dbg</code> build and pick “Raw capsense” above; the touch indicators work on any build. Defaults: stick 720 / 576, grip 900. A hard reset also returns to defaults.</p>
+    <p class="note" style="margin-top:8px">Stick/grip touch thresholds are in <b>Live settings</b> below; the yellow marks show the current values.</p>
     <div id="hapBox" style="display:none;margin-top:10px">
       <div class="bar"><button id="hapClear">Clear log</button><button id="hapCopy">Copy log</button><span class="note">flags: TL/TR = trigger in use, PL/PR = pad touched, G = controller turning</span></div>
       <pre id="hapLog" style="max-height:340px;overflow:auto;font-size:12px;background:#0b0f14;padding:8px;border-radius:8px"></pre>
@@ -273,15 +265,19 @@ const LS=[
  ["haptic_gain","Haptics volume","dB, −24 … +6"],
  ["drop_scream","Drop: scream chance","% per drop"],
  ["drop_meow","Drop: meow chance","% per drop (scream + meow ≤ 100; both 0 = silent)"],
+ ["cap:0","Stick touch on (capsense)","raw value at which a thumb counts as a touch; higher = less sensitive (default 720)"],
+ ["cap:1","Stick touch off (capsense)","touch ends below this; must be below “on” (default 80 % of on)"],
+ ["cap:2","Grip touch on (gripsense)","raw grip value for a touch; release stays a % of it (default 900)"],
  ["led_brightness","LED brightness","%"],
  ["auto_off","Auto power-off","minutes without input, 0 = never"],
 ];
 const AUTO=-32768;
+const lsEl=id=>document.getElementById(id);
 function lsRows(){
   $("#lsTable").innerHTML=LS.map(([n,l,h])=>`<tr style="border-top:1px solid #1b2742"><td style="padding:6px 4px">${l}<div class="note">${h}</div></td>
-   <td style="white-space:nowrap"><input type="number" id="ls_${n}" style="width:80px"> <label class="note" id="lsa_${n}" style="display:none"><input type="checkbox" id="lsauto_${n}"> Steam</label></td>
+   <td style="white-space:nowrap"><input type="number" id="ls_${n}" style="width:80px"> <label class="note" id="lsa_${n}" style="display:none"><input type="checkbox" id="lsauto_${n}"> ${n.startsWith("cap:")?"default":"Steam"}</label></td>
    <td class="note" id="lsr_${n}"></td></tr>`).join("");
-  LS.forEach(([n])=>{ $("#lsauto_"+n).onchange=e=>{ $("#ls_"+n).disabled=e.target.checked; }; });
+  LS.forEach(([n])=>{ lsEl("lsauto_"+n).onchange=e=>{ lsEl("ls_"+n).disabled=e.target.checked; }; });
 }
 lsRows();
 async function featRead(d,path){
@@ -295,27 +291,50 @@ const s16=(b,i)=>{ const v=b[i]|(b[i+1]<<8); return v>32767?v-65536:v; };
 async function lsReadAll(){
   const d=devs[0]; if(!d){ $("#lsStatus").innerHTML='<span class="err">connect first</span>'; return; }
   try{
+    let cap=null;
+    try{ cap=await featRead(d,"sc26re/capsense"); }catch(e){}
     for(const [n] of LS){
+      if(n.startsWith("cap:")){
+        const k=+n.slice(4), inp=lsEl("ls_"+n), cb=lsEl("lsauto_"+n);
+        lsEl("lsa_"+n).style.display="";
+        lsEl("lsr_"+n).textContent="0 … 16000";
+        if(!cap||cap.length<6){ inp.value=""; inp.dataset.orig=""; continue; }
+        const v=cap[k*2]|(cap[k*2+1]<<8); inp.value=v; inp.dataset.orig=v; cb.checked=false; inp.disabled=false;
+        if(k===0) capTh.on=v; else if(k===1) capTh.off=v; else capTh.grip=v;
+        continue;
+      }
       const b=await featRead(d,"sc26re/"+n);
       if(b.length<7) throw new Error("this firmware has no live settings (needs v42+)");
       const v=s16(b,0), mn=s16(b,2), mx=s16(b,4), canAuto=b[6];
-      const inp=$("#ls_"+n), cb=$("#lsauto_"+n);
-      inp.min=mn; inp.max=mx; $("#lsr_"+n).textContent=`${mn} … ${mx}`;
-      $("#lsa_"+n).style.display=canAuto?"":"none";
+      const inp=lsEl("ls_"+n), cb=lsEl("lsauto_"+n);
+      inp.min=mn; inp.max=mx; lsEl("lsr_"+n).textContent=`${mn} … ${mx}`;
+      lsEl("lsa_"+n).style.display=canAuto?"":"none";
       cb.checked=v===AUTO; inp.disabled=v===AUTO; inp.value=v===AUTO?"":v; inp.dataset.orig=v;
     }
+    capShow();
     try{ const b=await featRead(d,"user/haptic_boot_level"); if(b.length) $("#bootChime").value=b[0]; }catch(e){}
     $("#lsStatus").innerHTML='<span class="ok">read</span>';
   }catch(e){ $("#lsStatus").innerHTML=`<span class="err">${e.message}</span>`; }
 }
-function lsValue(n){ return $("#lsauto_"+n).checked?AUTO:Math.round(+$("#ls_"+n).value); }
+function lsValue(n){ return lsEl("lsauto_"+n).checked?AUTO:Math.round(+lsEl("ls_"+n).value); }
 async function lsSend(save,all,forceDefault){
   if(!devs.length){ $("#lsStatus").innerHTML='<span class="err">connect first</span>'; return; }
   let sent=0,last="";
+  /* capsense rows travel together as one 6-byte setting; "default" = 0 */
+  const capRows=LS.filter(([n])=>n.startsWith("cap:")).map(([n])=>n);
+  const capChanged=forceDefault||capRows.some(n=>String(lsEl("lsauto_"+n).checked?0:Math.round(+lsEl("ls_"+n).value))!==lsEl("ls_"+n).dataset.orig);
+  if(capChanged){
+    const cv=capRows.map(n=>forceDefault||lsEl("lsauto_"+n).checked?0:Math.max(0,Math.round(+lsEl("ls_"+n).value)||0));
+    if(cv[0]&&cv[1]&&cv[1]>=cv[0]){ $("#lsStatus").innerHTML='<span class="err">stick touch “off” must be below “on”</span>'; return; }
+    const le=x=>[x&255,(x>>8)&255], data=[...le(cv[0]),...le(cv[1]),...le(cv[2])];
+    for(const d of devs){ try{ await d.sendFeatureReport(1,pathCmd(0xEE,"sc26re/capsense",data));
+      if(save) await d.sendFeatureReport(1,pathCmd(0xEF,"sc26re/capsense")); }catch(e){ last=e.message; } }
+  }
   for(const d of devs){ for(const [n] of LS){
+    if(n.startsWith("cap:")) continue;
     const v=forceDefault?AUTO:lsValue(n);
-    if(!forceDefault && $("#ls_"+n).value==="" && !$("#lsauto_"+n).checked) continue;
-    if(!all && String(v)===$("#ls_"+n).dataset.orig) continue;
+    if(!forceDefault && lsEl("ls_"+n).value==="" && !lsEl("lsauto_"+n).checked) continue;
+    if(!all && String(v)===lsEl("ls_"+n).dataset.orig) continue;
     try{ await d.sendFeatureReport(1,pathCmd(0xEE,"sc26re/"+n,[v&255,(v>>8)&255]));
          if(save) await d.sendFeatureReport(1,pathCmd(0xEF,"sc26re/"+n)); sent++; }catch(e){ last=e.message; } } }
   await lsReadAll();
@@ -345,36 +364,7 @@ function pathCmd(op,path,data=[]){
   const p=new TextEncoder().encode(path), buf=new Uint8Array(63);
   buf[0]=op; buf[1]=p.length+1+data.length; buf.set(p,2); buf.set(data,2+p.length+1); return buf;
 }
-async function capRead(){
-  const d=devs[0]; if(!d){ $("#csStatus").innerHTML='<span class="err">connect first</span>'; return; }
-  try{
-    await d.sendFeatureReport(1,pathCmd(0xED,"sc26re/capsense"));
-    const r=new Uint8Array((await d.receiveFeatureReport(1)).buffer);
-    const o=r[0]===0xED?0:(r[1]===0xED?1:-1);
-    if(o<0||r[o+1]<6) throw new Error("not supported by this firmware (needs v41+)");
-    const v=i=>r[o+2+i]|(r[o+3+i]<<8);
-    capTh.on=v(0); capTh.off=v(2); capTh.grip=v(4);
-    $("#csOn").value=capTh.on; $("#csOff").value=capTh.off; $("#csGrip").value=capTh.grip; capShow();
-    $("#csStatus").innerHTML='<span class="ok">current values read</span>';
-  }catch(e){ $("#csStatus").innerHTML=`<span class="err">${e.message}</span>`; }
-}
-async function capSend(save,vals){
-  const on=+vals[0]||0, off=+vals[1]||0, grip=+vals[2]||0;
-  if(on&&off&&off>=on){ $("#csStatus").innerHTML='<span class="err">“off” must be below “on”</span>'; return; }
-  const le=x=>[x&255,(x>>8)&255], data=[...le(on),...le(off),...le(grip)];
-  let ok=0,last="";
-  for(const d of devs){ try{
-    await d.sendFeatureReport(1,pathCmd(0xEE,"sc26re/capsense",data));
-    if(save) await d.sendFeatureReport(1,pathCmd(0xEF,"sc26re/capsense"));
-    ok++; }catch(e){ last=e.message; } }
-  if(!ok){ $("#csStatus").innerHTML=`<span class="err">failed: ${last||"not connected"}</span>`; return; }
-  await capRead();
-  $("#csStatus").innerHTML=`<span class="ok">${save?"applied and saved":"applied (until power-off) — press Save to keep"}</span>`;
-}
-$("#csRead").onclick=capRead;
-$("#csApply").onclick=()=>capSend(false,[$("#csOn").value,$("#csOff").value,$("#csGrip").value]);
-$("#csSave").onclick=()=>capSend(true,[$("#csOn").value,$("#csOff").value,$("#csGrip").value]);
-$("#csDef").onclick=()=>capSend(true,[0,0,0]);
+
 capShow();
 if("hid" in navigator) navigator.hid.addEventListener("disconnect",e=>{devs=devs.filter(d=>d!==e.device);$("#status").textContent="disconnected";});
 
