@@ -229,6 +229,26 @@ static int load_cb(const char *key, size_t len, settings_read_cb read_cb, void *
 	return 0;
 }
 
+int sc26re_cfg_set(enum sc26re_cfg_id id, int16_t value, bool save)
+{
+	char path[48];
+	uint8_t buf[2];
+	int err;
+
+	if(id >= SC26RE_CFG_COUNT)
+	{
+		return -EINVAL;
+	}
+	snprintf(path, sizeof(path), CFG_PREFIX "%s", descs[id].name);
+	sys_put_le16((uint16_t)value, buf);
+	err = sc26re_cfg_stage(path, buf, sizeof(buf));
+	if(!err && save)
+	{
+		err = sc26re_cfg_commit(path);
+	}
+	return err;
+}
+
 void sc26re_cfg_load(void)
 {
 	ensure_init();

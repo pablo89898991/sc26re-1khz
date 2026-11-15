@@ -53,3 +53,5 @@ int sc26re_cfg_stage(const char *path, const uint8_t *value, size_t len);
 int sc26re_cfg_commit(const char *path);
 
 void sc26re_cfg_load(void);
+/* set from firmware (e.g. calibration); save = also store it */
+int sc26re_cfg_set(enum sc26re_cfg_id id, int16_t value, bool save);

@@ -87,6 +87,102 @@ static float gyro_bias[3];
 static float staged_gyro_bias[3];
 static float gyro_bias_candidate[3];
 static void gyro_cal_sample(const float gyro[3]);
+
+/*
+ * Resting band measurement for the full gyro calibration: min/max of the
+ * report's gyro axes (after smoothing, dead zones bypassed) for a while.
+ * 0 idle, 1 running, 2 done, 3 moved.
+ */
+static atomic_t band_meas_active;
+static atomic_t band_meas_state;
+static int32_t band_meas_min[3];
+static int32_t band_meas_max[3];
+static uint32_t band_meas_frames;
+static uint32_t band_meas_target;
+#define BAND_MEAS_MAX_SPREAD 82 /* report units, ~5 deg/s: more means it was moved */
+
+static void band_meas_sample(size_t i, int16_t v)
+{
+	if(band_meas_frames == 0)
+	{
+		band_meas_min[i] = v;
+		band_meas_max[i] = v;
+	}
+	band_meas_min[i] = MIN(band_meas_min[i], v);
+	band_meas_max[i] = MAX(band_meas_max[i], v);
+}
+
+static void band_meas_frame_done(void)
+{
+	if(!atomic_get(&band_meas_active))
+	{
+		return;
+	}
+	if(++band_meas_frames < band_meas_target)
+	{
+		return;
+	}
+	atomic_set(&band_meas_active, 0);
+	for(size_t i = 0; i < 3; ++i)
+	{
+		if(band_meas_max[i] - band_meas_min[i] > BAND_MEAS_MAX_SPREAD)
+		{
+			atomic_set(&band_meas_state, 3);
+			return;
+		}
+	}
+	atomic_set(&band_meas_state, 2);
+}
+
+void imu_band_measure_start(uint32_t samples)
+{
+	band_meas_frames = 0;
+	band_meas_target = MAX(samples, 100U);
+	atomic_set(&band_meas_state, 1);
+	atomic_set(&band_meas_active, 1);
+}
+
+uint8_t imu_band_measure_state(void)
+{
+	return (uint8_t)atomic_get(&band_meas_state);
+}
+
+/* result in 0.01 deg/s, report axes, lo <= 0 <= hi, widened by margin */
+void imu_band_measure_result(int16_t lo[3], int16_t hi[3], int16_t margin)
+{
+	for(size_t i = 0; i < 3; ++i)
+	{
+		/* 1 report unit = 6.103 hundredths of a deg/s */
+		int32_t l = (band_meas_min[i] * 6103 - 999) / 1000 - margin;
+		int32_t h = (band_meas_max[i] * 6103 + 999) / 1000 + margin;
+
+		lo[i] = (int16_t)CLAMP(l, -2000, 0);
+		hi[i] = (int16_t)CLAMP(h, 0, 2000);
+	}
+}
+
+static atomic_t full_cal_request;
+static atomic_t full_cal_step;
+
+void imu_request_full_cal(void)
+{
+	atomic_set(&full_cal_request, 1);
+}
+
+bool imu_take_full_cal_request(void)
+{
+	return atomic_cas(&full_cal_request, 1, 0);
+}
+
+void imu_set_full_cal_step(uint8_t step)
+{
+	atomic_set(&full_cal_step, step);
+}
+
+uint8_t imu_full_cal_step(void)
+{
+	return (uint8_t)atomic_get(&full_cal_step);
+}
 static bool gyro_bias_dirty;
 
 static int64_t last_sflp_bias_update_us;
@@ -950,6 +1046,12 @@ static int build_imu_report_from_stream(const uint8_t *buf)
 					gyro_lp_q8[i] += (x - gyro_lp_q8[i]) >> MIN(cfg_lp, 4);
 					oriented[i] = (int16_t)CLAMP(gyro_lp_q8[i] >> 8, INT16_MIN, INT16_MAX);
 				}
+				if(atomic_get(&band_meas_active))
+				{
+					/* measuring the resting band: dead zones are bypassed */
+					band_meas_sample(i, oriented[i]);
+					continue;
+				}
 				if(-dz < oriented[i] && dz > oriented[i])
 				{
 					oriented[i] = 0;
@@ -972,6 +1074,7 @@ static int build_imu_report_from_stream(const uint8_t *buf)
 				}
 			}
 			gyro_lp_primed = cfg_lp > 0;
+			band_meas_frame_done();
 		}
 		report.gyro_x = oriented[0];
 		report.gyro_y = oriented[1];

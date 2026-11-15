@@ -594,6 +594,11 @@ static int handle_feature_request(enum valve_feature_link link, const uint8_t *r
 				return valve_settings_commit(path);
 			case VALVE_FEATURE_DELETE_SETTING:
 				LOG_INF("%s delete setting %s", feature_link_name(link), path);
+				if(strcmp(path, "sc26re/gyro_full_cal") == 0)
+				{
+					imu_request_full_cal();
+					return 0;
+				}
 				if(strcmp(path, "sc26re/zero_sticks") == 0)
 				{
 					return analog_zero_sticks();

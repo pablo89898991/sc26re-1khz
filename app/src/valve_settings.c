@@ -539,6 +539,12 @@ bool valve_settings_read(const char *path, uint8_t *buf, size_t capacity, size_t
 	{
 		return sc26re_cfg_read(path, buf, capacity, len);
 	}
+	if(strcmp(path, "sc26re/gyro_full_cal") == 0 && capacity >= 1)
+	{
+		buf[0] = imu_full_cal_step();
+		*len = 1;
+		return true;
+	}
 	if(strcmp(path, "sc26re/gyro_cal") == 0 && capacity >= 13)
 	{
 		int16_t sd[3];

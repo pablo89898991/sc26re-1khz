@@ -16,6 +16,18 @@ int imu_calibrate_gyro(void);
 uint8_t imu_gyro_cal_state(void);
 /* stream the IMU during a calibration even when the host has it off */
 void imu_force_on(bool on);
+
+/* resting gyro band measurement (dead zones bypassed): 0 idle 1 running 2 done 3 moved */
+void imu_band_measure_start(uint32_t samples);
+uint8_t imu_band_measure_state(void);
+void imu_band_measure_result(int16_t lo[3], int16_t hi[3], int16_t margin);
+
+/* full gyro calibration (chord or report meter), run by the main loop */
+void imu_request_full_cal(void);
+bool imu_take_full_cal_request(void);
+/* progress for the meter: 0 idle, 1..5 steps, 6 done, 7 failed */
+void imu_set_full_cal_step(uint8_t step);
+uint8_t imu_full_cal_step(void);
 void imu_gyro_cal_result(int16_t std_mdps[3], int16_t spread_mdps[3]);
 void imu_reset(void);
 

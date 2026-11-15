@@ -156,23 +156,46 @@ static void boot_factory_reset_check(void)
 }
 
 /*
- * Gyro calibration chord: hold LB + RB + X + Y for 3 s. The LED turns purple
- * and a chime plays; put the controller down and let go. Once nothing touches
- * it (grips, sticks, pads, buttons) the gyro is measured while still; a second
- * chime confirms and the LED goes back. If it keeps moving for 20 s, or the
- * save fails, the power-off sound plays and the old calibration stays.
+ * Full gyro calibration, from the chord (hold LB + RB + X + Y for 3 s) or the
+ * report meter. The LED turns purple and a chime plays; put the controller
+ * down and let go. With nothing touching it (grips, sticks, pads, buttons):
+ *   1. measure the gyro at rest for 5 s and use it as the pitch/yaw/roll dead bands
+ *   2. calibrate the gyro (bias)
+ *   3. measure at rest again (now with the new bias) -> dead bands
+ *   4. calibrate the gyro again
+ *   5. save the dead bands (the bias is saved by each calibration)
+ * A touch or movement repeats the current step once it is still again. A second
+ * chime confirms; after 60 s without success the power-off sound plays and the
+ * old calibration stays.
  */
 #define GYRO_CHORD_HOLD_MS 3000
 #define GYRO_CHORD_HANDS_OFF_MS 700
-#define GYRO_CHORD_TIMEOUT_MS 20000
+#define GYRO_CHORD_TIMEOUT_MS 60000
+#define GYRO_BAND_SAMPLES 5000 /* ~5 s at 1 kHz */
+#define GYRO_BAND_MARGIN 5     /* 0.05 deg/s */
 
 enum gyro_chord_state
 {
 	GYRO_CHORD_IDLE,
 	GYRO_CHORD_HOLDING,
 	GYRO_CHORD_WAIT_HANDS_OFF,
-	GYRO_CHORD_MEASURING,
+	GYRO_CHORD_RUNNING,
 };
+
+static void gyro_bands_apply(bool save)
+{
+	int16_t lo[3];
+	int16_t hi[3];
+
+	imu_band_measure_result(lo, hi, GYRO_BAND_MARGIN);
+	for(size_t i = 0; i < 3; ++i)
+	{
+		(void)sc26re_cfg_set(SC26RE_CFG_GYRO_BAND_X_LO + 2 * i, lo[i], save);
+		(void)sc26re_cfg_set(SC26RE_CFG_GYRO_BAND_X_HI + 2 * i, hi[i], save);
+	}
+	LOG_INF("gyro dead bands (0.01 deg/s): x %d..%d y %d..%d z %d..%d%s", lo[0], hi[0], lo[1],
+	        hi[1], lo[2], hi[2], save ? " saved" : "");
+}
 
 static void gyro_chord_finish(bool ok, struct rgbw_color saved_led)
 {
@@ -183,7 +206,22 @@ static void gyro_chord_finish(bool ok, struct rgbw_color saved_led)
 	ARG_UNUSED(saved_led);
 #endif
 	imu_force_on(false);
-	LOG_INF("gyro calibration chord: %s", ok ? "done" : "failed / timed out");
+	imu_set_full_cal_step(ok ? 6 : 7);
+	LOG_INF("full gyro calibration: %s", ok ? "done" : "failed / timed out");
+}
+
+/* start step 1..4; step 5 (save) is immediate */
+static void gyro_step_start(uint8_t step)
+{
+	imu_set_full_cal_step(step);
+	if(step == 1 || step == 3)
+	{
+		imu_band_measure_start(GYRO_BAND_SAMPLES);
+	}
+	else
+	{
+		(void)imu_calibrate_gyro();
+	}
 }
 
 static void gyro_chord_poll(const struct controller_report *r)
@@ -191,6 +229,7 @@ static void gyro_chord_poll(const struct controller_report *r)
 	static enum gyro_chord_state state;
 	static int64_t since;
 	static int64_t armed_at;
+	static uint8_t step;
 	static struct rgbw_color saved_led;
 	const uint32_t chord = BIT(CONTROLLER_BUTTON_LEFT_SHOULDER) |
 	                       BIT(CONTROLLER_BUTTON_RIGHT_SHOULDER) | BIT(CONTROLLER_BUTTON_X) |
@@ -198,8 +237,13 @@ static void gyro_chord_poll(const struct controller_report *r)
 	int64_t now = k_uptime_get();
 	bool chord_held = (r->buttons & chord) == chord;
 	/* buttons also carry the grip / stick / trackpad touch bits */
-	bool hands_off = r->buttons == 0 && r->trigger_left < 3000 && r->trigger_right < 3000;
+	bool hands_off = r->buttons == 0;
+	bool start = false;
 
+	if(state == GYRO_CHORD_IDLE && imu_take_full_cal_request())
+	{
+		start = true;
+	}
 	switch(state)
 	{
 		case GYRO_CHORD_IDLE:
@@ -216,16 +260,7 @@ static void gyro_chord_poll(const struct controller_report *r)
 			}
 			else if(now - since >= GYRO_CHORD_HOLD_MS)
 			{
-#if CONFIG_IBEX_RGBW_LED
-				saved_led = rgbw_led_get();
-				rgbw_led_set((struct rgbw_color){ 150, 0, 255, 0 });
-#endif
-				(void)haptics_play_system_sound(HAPTICS_SOUND_PAIRING);
-				imu_force_on(true);
-				armed_at = now;
-				since = now;
-				state = GYRO_CHORD_WAIT_HANDS_OFF;
-				LOG_INF("gyro calibration chord: put the controller down");
+				start = true;
 			}
 			break;
 		case GYRO_CHORD_WAIT_HANDS_OFF:
@@ -235,37 +270,69 @@ static void gyro_chord_poll(const struct controller_report *r)
 			}
 			else if(now - since >= GYRO_CHORD_HANDS_OFF_MS)
 			{
-				(void)imu_calibrate_gyro();
-				state = GYRO_CHORD_MEASURING;
-			}
-			if(now - armed_at > GYRO_CHORD_TIMEOUT_MS)
-			{
-				gyro_chord_finish(false, saved_led);
-				state = GYRO_CHORD_IDLE;
+				gyro_step_start(step);
+				state = GYRO_CHORD_RUNNING;
 			}
 			break;
-		case GYRO_CHORD_MEASURING:
+		case GYRO_CHORD_RUNNING:
 		{
-			uint8_t st = imu_gyro_cal_state();
+			bool measuring = step == 1 || step == 3;
+			uint8_t st = measuring ? imu_band_measure_state() : imu_gyro_cal_state();
 
-			if(st == 2U)
+			if(!hands_off || st == 3U)
 			{
-				gyro_chord_finish(true, saved_led);
-				state = GYRO_CHORD_IDLE;
-			}
-			else if(st == 3U || !hands_off)
-			{
-				/* moved or touched: wait for hands off again and retry */
+				/* touched or moved: repeat this step once it is still again */
 				since = now;
 				state = GYRO_CHORD_WAIT_HANDS_OFF;
 			}
-			else if(st == 4U || now - armed_at > GYRO_CHORD_TIMEOUT_MS)
+			else if(st == 4U)
 			{
 				gyro_chord_finish(false, saved_led);
 				state = GYRO_CHORD_IDLE;
 			}
+			else if(st == 2U)
+			{
+				if(measuring)
+				{
+					gyro_bands_apply(false);
+				}
+				if(step == 4)
+				{
+					imu_set_full_cal_step(5);
+					gyro_bands_apply(true);
+					gyro_chord_finish(true, saved_led);
+					state = GYRO_CHORD_IDLE;
+				}
+				else
+				{
+					step++;
+					gyro_step_start(step);
+				}
+			}
 			break;
 		}
+	}
+
+	if(start)
+	{
+#if CONFIG_IBEX_RGBW_LED
+		saved_led = rgbw_led_get();
+		rgbw_led_set((struct rgbw_color){ 150, 0, 255, 0 });
+#endif
+		(void)haptics_play_system_sound(HAPTICS_SOUND_PAIRING);
+		imu_force_on(true);
+		armed_at = now;
+		since = now;
+		step = 1;
+		imu_set_full_cal_step(1);
+		state = GYRO_CHORD_WAIT_HANDS_OFF;
+		LOG_INF("full gyro calibration: put the controller down");
+	}
+	if((state == GYRO_CHORD_WAIT_HANDS_OFF || state == GYRO_CHORD_RUNNING) &&
+	   now - armed_at > GYRO_CHORD_TIMEOUT_MS)
+	{
+		gyro_chord_finish(false, saved_led);
+		state = GYRO_CHORD_IDLE;
 	}
 }
 
