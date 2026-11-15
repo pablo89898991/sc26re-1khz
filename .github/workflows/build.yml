@@ -56,6 +56,13 @@ jobs:
           cp "$(ls -t zephyr/build-app-ibex/zephyr/IBEX_CUSTOM_*.fw | head -1)" out/SC26RE_1k_puck_dbg.fw
           git checkout app/prj.conf
 
+      - name: Build tuning variant (raw capsense values in quaternion)
+        run: |
+          printf 'CONFIG_IBEX_CAPSENSE_DEBUG_IN_QUAT=y\n' >> app/prj.conf
+          make app-ibex
+          cp "$(ls -t zephyr/build-app-ibex/zephyr/IBEX_CUSTOM_*.fw | head -1)" out/SC26RE_1k_capsense_dbg.fw
+          git checkout app/prj.conf
+
       - uses: actions/upload-artifact@v4
         with:
           name: sc26re-1khz-firmware
@@ -73,6 +80,7 @@ jobs:
             --notes "Automatic build of \`master\` at ${GITHUB_SHA}.
           - **SC26RE_1k.fw** – controller firmware (flash with Ibex Web Utilities or flash.py)
           - **SC26RE_1k_puck_dbg.fw** – same, with Puck link counters in the quaternion fields
+          - **SC26RE_1k_capsense_dbg.fw** – same, with raw stick/grip capsense values in the quaternion fields (for tuning thresholds in the report meter)
           Puck firmware: patch your own PROTEUS_FW in the [web patcher](https://pablo89898991.github.io/sc26re-1khz/patcher.html)."
 
       - name: Publish versioned release from docs/releases (master)
