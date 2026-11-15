@@ -1356,7 +1356,18 @@ static void gyro_cal_sample(const float gyro[3])
 	}
 }
 
-static int imu_save_gyro_bias(const float bias_in[3]);
+static int imu_save_gyro_bias(const float bias_in[3], bool persist);
+
+/*
+ * Automatic calibration (controller put down): the same measurement, but the
+ * result is only applied when it differs from the current bias, and written to
+ * flash at most every 5 minutes (or on a big change) to spare the flash.
+ */
+#define GYRO_AUTO_MIN_CHANGE 0.0005f   /* rad/s (~0.03 deg/s): smaller is ignored */
+#define GYRO_AUTO_BIG_CHANGE 0.005f    /* rad/s (~0.3 deg/s): saved right away */
+#define GYRO_AUTO_SAVE_INTERVAL_MS (5 * 60 * 1000)
+static bool gyro_cal_auto;
+static int64_t gyro_auto_last_save_ms = -GYRO_AUTO_SAVE_INTERVAL_MS;
 
 static void gyro_cal_work_handler(struct k_work *work)
 {
@@ -1391,11 +1402,50 @@ static void gyro_cal_work_handler(struct k_work *work)
 	}
 	LOG_INF("gyro calibration measured bias %d %d %d urad/s", (int)(bias[0] * 1e6f),
 	        (int)(bias[1] * 1e6f), (int)(bias[2] * 1e6f));
-	atomic_set(&gyro_cal_state, imu_save_gyro_bias(bias) == 0 ? 2 : 4);
+	if(gyro_cal_auto)
+	{
+		float change = 0.0f;
+		bool persist;
+
+		for(size_t i = 0; i < 3; ++i)
+		{
+			change = MAX(change, fabsf(bias[i] - gyro_bias[i]));
+		}
+		if(change < GYRO_AUTO_MIN_CHANGE)
+		{
+			atomic_set(&gyro_cal_state, 2);
+			return;
+		}
+		persist = change >= GYRO_AUTO_BIG_CHANGE ||
+		          k_uptime_get() - gyro_auto_last_save_ms >= GYRO_AUTO_SAVE_INTERVAL_MS;
+		if(persist)
+		{
+			gyro_auto_last_save_ms = k_uptime_get();
+		}
+		LOG_INF("auto gyro calibration: change %d urad/s%s", (int)(change * 1e6f),
+		        persist ? ", saved" : " (RAM only)");
+		atomic_set(&gyro_cal_state, imu_save_gyro_bias(bias, persist) == 0 ? 2 : 4);
+		return;
+	}
+	atomic_set(&gyro_cal_state, imu_save_gyro_bias(bias, true) == 0 ? 2 : 4);
+}
+
+int imu_calibrate_gyro_auto(void)
+{
+	int err = imu_calibrate_gyro();
+
+	gyro_cal_auto = true;
+	return err;
+}
+
+bool imu_streaming(void)
+{
+	return atomic_get(&imu_motion_trigger_enabled) != 0;
 }
 
 int imu_calibrate_gyro(void)
 {
+	gyro_cal_auto = false;
 	memset(gyro_cal_sum, 0, sizeof(gyro_cal_sum));
 	memset(gyro_cal_sumsq, 0, sizeof(gyro_cal_sumsq));
 	gyro_cal_n = 0;
@@ -1405,7 +1455,7 @@ int imu_calibrate_gyro(void)
 	return 0;
 }
 
-static int imu_save_gyro_bias(const float bias_in[3])
+static int imu_save_gyro_bias(const float bias_in[3], bool persist)
 {
 	float saved_bias[ARRAY_SIZE(gyro_bias)];
 	int err;
@@ -1430,7 +1480,7 @@ static int imu_save_gyro_bias(const float bias_in[3])
 		return err;
 	}
 
-	if(!IS_ENABLED(CONFIG_SETTINGS))
+	if(!IS_ENABLED(CONFIG_SETTINGS) || !persist)
 	{
 		k_mutex_unlock(&imu_settings_mutex);
 		return 0;

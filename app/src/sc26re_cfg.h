@@ -37,6 +37,7 @@ enum sc26re_cfg_id
 	SC26RE_CFG_GYRO_BAND_Y_HI,
 	SC26RE_CFG_GYRO_BAND_Z_LO,
 	SC26RE_CFG_GYRO_BAND_Z_HI,
+	SC26RE_CFG_GYRO_AUTO_CAL,  /* seconds lying untouched before an automatic gyro calibration, 0 = off */
 	SC26RE_CFG_COUNT,
 };
 

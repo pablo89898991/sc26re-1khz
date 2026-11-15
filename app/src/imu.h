@@ -12,6 +12,10 @@ int imu_read_report(struct controller_report *report);
 bool imu_ready(void);
 
 int imu_calibrate_gyro(void);
+/* automatic (put-down) calibration: applied only on a real change, flash writes rate limited */
+int imu_calibrate_gyro_auto(void);
+/* the IMU is streaming (a host or a calibration switched it on) */
+bool imu_streaming(void);
 /* 0 idle, 1 measuring, 2 saved, 3 moved (kept old), 4 save failed */
 uint8_t imu_gyro_cal_state(void);
 /* stream the IMU during a calibration even when the host has it off */

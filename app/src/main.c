@@ -224,7 +224,7 @@ static void gyro_step_start(uint8_t step)
 	}
 }
 
-static void gyro_chord_poll(const struct controller_report *r)
+static bool gyro_chord_poll(const struct controller_report *r)
 {
 	static enum gyro_chord_state state;
 	static int64_t since;
@@ -333,6 +333,55 @@ static void gyro_chord_poll(const struct controller_report *r)
 	{
 		gyro_chord_finish(false, saved_led);
 		state = GYRO_CHORD_IDLE;
+	}
+	return state == GYRO_CHORD_WAIT_HANDS_OFF || state == GYRO_CHORD_RUNNING;
+}
+
+/*
+ * Automatic gyro calibration: when the controller has lain untouched (no grip,
+ * stick or trackpad touch, no buttons) for the set number of seconds while the
+ * IMU is on, measure the gyro; if it was really still, use the new bias. Runs
+ * once per put-down: picking it up re-arms it. Silent, no LED.
+ */
+static void gyro_auto_poll(const struct controller_report *r, bool full_cal_busy)
+{
+	static int64_t still_since;
+	static bool armed = true;
+	static bool running;
+	int16_t secs = sc26re_cfg_get(SC26RE_CFG_GYRO_AUTO_CAL);
+	int64_t now = k_uptime_get();
+
+	if(r->buttons != 0 || full_cal_busy || !imu_streaming() || secs <= 0)
+	{
+		still_since = now;
+		if(r->buttons != 0)
+		{
+			armed = true;
+		}
+		running = false;
+		return;
+	}
+	if(running)
+	{
+		uint8_t st = imu_gyro_cal_state();
+
+		if(st == 2U || st == 4U)
+		{
+			running = false;
+			armed = false;
+		}
+		else if(st == 3U)
+		{
+			/* it was moving (e.g. on a lap or a soft surface): wait and try again */
+			running = false;
+			still_since = now;
+		}
+		return;
+	}
+	if(armed && now - still_since >= (int64_t)secs * 1000)
+	{
+		(void)imu_calibrate_gyro_auto();
+		running = true;
 	}
 }
 
@@ -526,7 +575,7 @@ int main(void)
 		int64_t now_ms;
 
 		hardware_read_report(&current);
-		gyro_chord_poll(&current);
+		gyro_auto_poll(&current, gyro_chord_poll(&current));
 		now_ms = k_uptime_get();
 #if CONFIG_IBEX_RGBW_LED
 		rgbw_led_poll_settings();
