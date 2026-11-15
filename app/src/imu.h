@@ -12,6 +12,8 @@ int imu_read_report(struct controller_report *report);
 bool imu_ready(void);
 
 int imu_calibrate_gyro(void);
+/* drop the saved drift, back to the factory value (report meter) */
+int imu_reset_gyro_calibration(void);
 /* automatic (put-down) calibration: applied only on a real change, flash writes rate limited */
 int imu_calibrate_gyro_auto(void);
 /* the IMU is streaming (a host or a calibration switched it on) */

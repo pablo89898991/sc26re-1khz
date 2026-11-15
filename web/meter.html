@@ -82,6 +82,7 @@
     <div class="bar" style="flex-wrap:wrap;gap:10px">
       <button class="primary" id="gyFull">Full gyro calibration</button>
       <button id="gyCal">Calibrate gyro</button>
+      <button id="gyReset">Reset gyro calibration</button>
       <button id="stZero">Zero sticks (save)</button>
       <label>Power-on chime <select id="bootChime"><option value="0">off</option><option value="1">quiet</option><option value="2">normal</option></select></label>
       <span id="toolStatus" class="note"></span>
@@ -101,6 +102,7 @@
     </table>
     <p class="note"><b>Gyro at rest:</b> put the controller on a table and press <i>Measure</i>. For 5 s the gyro dead zone and dead bands are switched off (only live, nothing is saved) so the real resting values are seen, then put back. The lowest/highest value per axis, in °/s, is what drift and noise look like on your unit. <i>Use as dead bands</i> copies them, plus the margin, into the X/Y/Z dead band rows above; then press Apply or Save. Keep “Gyro on (standalone)” ticked at the top (otherwise the IMU may be off: all zeros) — calibrate the gyro first for the smallest bands.</p>
     <p class="note"><b>Full gyro calibration</b> (v43+, also: hold LB + RB + X + Y for 3 s on the controller — purple LED + chime): put the controller on a table and let go. It measures the gyro at rest for 5 s and sets the pitch/yaw/roll dead bands, calibrates the gyro, measures at rest again, calibrates again and saves — about 15 s. A second chime confirms; touching or moving it just repeats the current step.</p>
+    <p class="note"><b>Reset gyro calibration:</b> removes your gyro calibration — the drift goes back to the factory value from Valve's storage and the pitch/yaw/roll dead bands are switched off (saved). Other settings are not touched.</p>
     <p class="note"><b>Calibrate gyro:</b> put the controller on a table, press, and don't touch it for 2 s (v43+: the gyro is measured while still; if it moved, nothing changes). <b>Zero sticks:</b> hands off both sticks, press; their resting point becomes the centre.</p>
   </div>
 
@@ -512,6 +514,12 @@ async function toolSend(buf,msg){
   let ok=0,last=""; for(const d of targets()){ try{ await fsend(d,1,buf); ok++; }catch(e){ last=e.message; } }
   $("#toolStatus").innerHTML=ok?`<span class="ok">${msg}</span>`:`<span class="err">failed: ${last||"not connected"}</span>`;
 }
+$("#gyReset").onclick=async()=>{
+  if(!devs.length){ $("#toolStatus").innerHTML='<span class="err">connect first</span>'; return; }
+  if(!confirm("Reset the gyro calibration?\nThe saved drift goes back to the factory value and the pitch/yaw/roll dead bands are switched off.")) return;
+  await toolSend(pathCmd(0xF0,"sc26re/gyro_reset"),"gyro calibration reset to factory, dead bands off (needs v45+)");
+  await lsReadAll();
+};
 $("#gyFull").onclick=async()=>{
   if(!devs.length){ $("#toolStatus").innerHTML='<span class="err">connect first</span>'; return; }
   await toolSend(pathCmd(0xF0,"sc26re/gyro_full_cal"),"starting — put the controller down and let go");

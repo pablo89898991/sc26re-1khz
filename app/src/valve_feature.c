@@ -13,6 +13,7 @@
 #include "haptics.h"
 #include "ibex_settings_registry.h"
 #include "imu.h"
+#include "sc26re_cfg.h"
 #include "lizard.h"
 #include "power.h"
 #include "valve_feature.h"
@@ -614,6 +615,15 @@ static int handle_feature_request(enum valve_feature_link link, const uint8_t *r
 				return valve_settings_commit(path);
 			case VALVE_FEATURE_DELETE_SETTING:
 				LOG_INF("%s delete setting %s", feature_link_name(link), path);
+				if(strcmp(path, "sc26re/gyro_reset") == 0)
+				{
+					/* factory drift + dead bands off (saved) */
+					for(int id = SC26RE_CFG_GYRO_BAND_X_LO; id <= SC26RE_CFG_GYRO_BAND_Z_HI; ++id)
+					{
+						(void)sc26re_cfg_set((enum sc26re_cfg_id)id, 0, true);
+					}
+					return imu_reset_gyro_calibration();
+				}
 				if(strcmp(path, "sc26re/gyro_full_cal") == 0)
 				{
 					imu_request_full_cal();

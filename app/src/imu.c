@@ -26,6 +26,7 @@
 #include "ibex_settings_registry.h"
 #include "imu.h"
 #include "sc26re_cfg.h"
+#include "calibration.h"
 #include "imu_bias.h"
 #include "sdl/controller_constants.h"
 
@@ -1496,6 +1497,33 @@ static int imu_save_gyro_bias(const float bias_in[3], bool persist)
 	k_mutex_unlock(&imu_settings_mutex);
 	LOG_INF("saved gyro biases");
 	return 0;
+}
+
+/*
+ * Report meter "Reset gyro calibration": forget sc26re's saved drift and go
+ * back to the factory value from Valve's storage (0 if there is none). Applied
+ * right away; the factory value is written back as the saved one.
+ */
+int imu_reset_gyro_calibration(void)
+{
+	float bias[3] = { 0 };
+	int err;
+
+	if(!IS_ENABLED(CONFIG_SETTINGS))
+	{
+		return -ENOTSUP;
+	}
+	(void)settings_delete(IMU_GYRO_BIAS_PATH);
+	(void)calibration_import_imu_from_valve_storage();
+	if(settings_load_one(IMU_GYRO_BIAS_PATH, bias, sizeof(bias)) != (ssize_t)sizeof(bias))
+	{
+		memset(bias, 0, sizeof(bias));
+	}
+	err = imu_save_gyro_bias(bias, false);
+	atomic_set(&gyro_cal_state, 0);
+	LOG_INF("gyro calibration reset to factory: %d %d %d urad/s (err %d)", (int)(bias[0] * 1e6f),
+	        (int)(bias[1] * 1e6f), (int)(bias[2] * 1e6f), err);
+	return err;
 }
 
 bool imu_settings_read(const char *path, uint8_t *buf, size_t capacity, size_t *len)
