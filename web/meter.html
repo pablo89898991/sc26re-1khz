@@ -82,7 +82,7 @@
       <label>Power-on chime <select id="bootChime"><option value="0">off</option><option value="1">quiet</option><option value="2">normal</option></select></label>
       <span id="toolStatus" class="note"></span>
     </div>
-    <p class="note"><b>Calibrate gyro:</b> put the controller on a table, wait 3 s without touching it, then press (the drift measured while still is saved). <b>Zero sticks:</b> hands off both sticks, press; their resting point becomes the centre.</p>
+    <p class="note"><b>Calibrate gyro:</b> put the controller on a table, press, and don't touch it for 2 s (v43+: the gyro is measured while still; if it moved, nothing changes). <b>Zero sticks:</b> hands off both sticks, press; their resting point becomes the centre.</p>
   </div>
 
   <div class="panel">
@@ -348,7 +348,7 @@ async function toolSend(buf,msg){
   let ok=0,last=""; for(const d of devs){ try{ await d.sendFeatureReport(1,buf); ok++; }catch(e){ last=e.message; } }
   $("#toolStatus").innerHTML=ok?`<span class="ok">${msg}</span>`:`<span class="err">failed: ${last||"not connected"}</span>`;
 }
-$("#gyCal").onclick=()=>{ const b=new Uint8Array(63); b[0]=0xB5; b[1]=0; toolSend(b,"gyro calibration saved"); };
+$("#gyCal").onclick=()=>{ const b=new Uint8Array(63); b[0]=0xB5; b[1]=0; toolSend(b,"measuring — don't touch the controller for 2 s"); };
 $("#stZero").onclick=()=>toolSend(pathCmd(0xF0,"sc26re/zero_sticks"),"measuring — keep hands off the sticks for a second; saved");
 $("#bootChime").onchange=async e=>{ const v=+e.target.value;
   for(const d of devs){ try{ await d.sendFeatureReport(1,pathCmd(0xEE,"user/haptic_boot_level",[v])); await d.sendFeatureReport(1,pathCmd(0xEF,"user/haptic_boot_level")); }catch(err){} }

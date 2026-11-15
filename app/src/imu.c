@@ -86,6 +86,7 @@ static bool gyro_threshold_dirty;
 static float gyro_bias[3];
 static float staged_gyro_bias[3];
 static float gyro_bias_candidate[3];
+static void gyro_cal_sample(const float gyro[3]);
 static bool gyro_bias_dirty;
 
 static int64_t last_sflp_bias_update_us;
@@ -894,6 +895,7 @@ static int build_imu_report_from_stream(const uint8_t *buf)
 	err = decode_latest_three_axis_ts(decoder, buf, SENSOR_CHAN_GYRO_XYZ, gyro, &gyro_timestamp_ns);
 	if(err == 0)
 	{
+		gyro_cal_sample(gyro);
 		memcpy(bias, latest_sflp_bias_valid ? latest_sflp_bias : gyro_bias, sizeof(bias));
 		if(!use_gyro_bias)
 		{
@@ -1147,14 +1149,89 @@ int imu_read_report(struct controller_report *report)
 	return 0;
 }
 
+/*
+ * Gyro calibration by measurement (Steam's 0xB5 and the report meter). OFW
+ * copies the sensor-fusion bias estimate, which is only right once the
+ * controller has been still long enough for it to converge; pressed too early
+ * it saved a wrong bias and the gyro drifted. Here the raw gyro is averaged
+ * for GYRO_CAL_SAMPLES samples; if the controller moved, nothing is changed.
+ */
+#define GYRO_CAL_SAMPLES 1500
+#define GYRO_CAL_MAX_SPREAD 0.035f /* rad/s (~2 deg/s) between min and max on any axis */
+static atomic_t gyro_cal_active;
+static uint32_t gyro_cal_n;
+static double gyro_cal_sum[3];
+static float gyro_cal_min[3];
+static float gyro_cal_max[3];
+static void gyro_cal_work_handler(struct k_work *work);
+static K_WORK_DEFINE(gyro_cal_work, gyro_cal_work_handler);
+
+static void gyro_cal_sample(const float gyro[3])
+{
+	if(!atomic_get(&gyro_cal_active))
+	{
+		return;
+	}
+	for(size_t i = 0; i < 3; ++i)
+	{
+		gyro_cal_sum[i] += (double)gyro[i];
+		if(gyro_cal_n == 0)
+		{
+			gyro_cal_min[i] = gyro[i];
+			gyro_cal_max[i] = gyro[i];
+		}
+		gyro_cal_min[i] = MIN(gyro_cal_min[i], gyro[i]);
+		gyro_cal_max[i] = MAX(gyro_cal_max[i], gyro[i]);
+	}
+	if(++gyro_cal_n >= GYRO_CAL_SAMPLES)
+	{
+		atomic_set(&gyro_cal_active, 0);
+		k_work_submit(&gyro_cal_work);
+	}
+}
+
+static int imu_save_gyro_bias(const float bias_in[3]);
+
+static void gyro_cal_work_handler(struct k_work *work)
+{
+	float bias[3];
+
+	ARG_UNUSED(work);
+	for(size_t i = 0; i < 3; ++i)
+	{
+		if(gyro_cal_max[i] - gyro_cal_min[i] > GYRO_CAL_MAX_SPREAD)
+		{
+			LOG_WRN("gyro calibration: controller moved (axis %u spread %d urad/s), kept old bias",
+			        (unsigned int)i, (int)((gyro_cal_max[i] - gyro_cal_min[i]) * 1e6f));
+			return;
+		}
+		bias[i] = (float)(gyro_cal_sum[i] / (double)gyro_cal_n);
+	}
+	LOG_INF("gyro calibration measured bias %d %d %d urad/s", (int)(bias[0] * 1e6f),
+	        (int)(bias[1] * 1e6f), (int)(bias[2] * 1e6f));
+	(void)imu_save_gyro_bias(bias);
+}
+
 int imu_calibrate_gyro(void)
+{
+	memset(gyro_cal_sum, 0, sizeof(gyro_cal_sum));
+	gyro_cal_n = 0;
+	atomic_set(&gyro_cal_active, 1);
+	LOG_INF("gyro calibration: measuring, keep the controller still");
+	return 0;
+}
+
+static int imu_save_gyro_bias(const float bias_in[3])
 {
 	float saved_bias[ARRAY_SIZE(gyro_bias)];
 	int err;
 
 	k_mutex_lock(&imu_settings_mutex, K_FOREVER);
 	k_mutex_lock(&imu_io_lock, K_FOREVER);
-	memcpy(gyro_bias, gyro_bias_candidate, sizeof(gyro_bias));
+	memcpy(gyro_bias, bias_in, sizeof(gyro_bias));
+	memcpy(gyro_bias_candidate, bias_in, sizeof(gyro_bias_candidate));
+	/* use it right away, until the fusion engine reports its own estimate again */
+	memcpy(latest_sflp_bias, bias_in, sizeof(latest_sflp_bias));
 	memcpy(staged_gyro_bias, gyro_bias, sizeof(staged_gyro_bias));
 	memcpy(saved_bias, gyro_bias, sizeof(saved_bias));
 	gyro_bias_dirty = false;
