@@ -239,6 +239,33 @@ static int32_t trigger_filter(int i, int32_t raw)
 	return trigger_filt_q8[i] >> 8;
 }
 
+/* Physical released / pressed ends of a calibration record (in mV). */
+static bool trigger_endpoints(int i, const struct trigger_calibration *cal, int32_t *e_idle,
+                              int32_t *e_press)
+{
+	int32_t lo = MIN(cal->idle, cal->pressed);
+	int32_t hi = MAX(cal->idle, cal->pressed);
+
+	if(!calibration_trigger_valid(cal))
+	{
+		return false;
+	}
+	if(trigger_rest_valid[i])
+	{
+		bool idle_near = abs(trigger_rest_mv[i] - (int32_t)cal->idle) <=
+		                 abs(trigger_rest_mv[i] - (int32_t)cal->pressed);
+
+		*e_idle = idle_near ? cal->idle : cal->pressed;
+		*e_press = idle_near ? cal->pressed : cal->idle;
+	}
+	else
+	{
+		*e_idle = cal->inverted ? hi : lo;
+		*e_press = cal->inverted ? lo : hi;
+	}
+	return true;
+}
+
 /*
  * Map a measured trigger voltage so the learned rest equals the calibration
  * idle point, then apply the released-trigger dead zone.
@@ -969,6 +996,8 @@ int analog_read_report(struct controller_report *report)
 	trigger_learn_rest(1, averaged[ANALOG_TRIGGER_RIGHT]);
 	trigger_apply_direction(0, averaged[ANALOG_TRIGGER_LEFT], &calibration.trigger_left);
 	trigger_apply_direction(1, averaged[ANALOG_TRIGGER_RIGHT], &calibration.trigger_right);
+	int32_t host_cnt[2] = { trigger_raw[0], trigger_raw[1] };
+	int32_t host_mv[2] = { averaged[ANALOG_TRIGGER_LEFT], averaged[ANALOG_TRIGGER_RIGHT] };
 	{
 		/* Rest auto-zero, applied to millivolts and proportionally to raw counts. */
 		int32_t mv_l = trigger_rest_remap(0, trigger_filter(0, averaged[ANALOG_TRIGGER_LEFT]),
@@ -1025,10 +1054,47 @@ int analog_read_report(struct controller_report *report)
 	trigger_mode_dbg = (uint8_t)mode;
 	if(mode == 1 || mode == 2)
 	{
+#if CONFIG_IBEX_TRIGGER_LOCK_HOST_MODE
+		/*
+		 * Steam asked for raw values so it can apply its own trigger math. Give it
+		 * the voltage that corresponds to sc26re's own result instead (rest
+		 * auto-zero, filter, dead zone), on the same calibration records Steam
+		 * reads, so Steam's math lands exactly where ours did.
+		 */
+		const struct trigger_calibration *cals[2] = { &calibration.trigger_left,
+		                                              &calibration.trigger_right };
+		int16_t outs[2] = { report->trigger_left, report->trigger_right };
+
+		for(int i = 0; i < 2; ++i)
+		{
+			int32_t e_idle;
+			int32_t e_press;
+			int32_t mv;
+
+			if(!trigger_endpoints(i, cals[i], &e_idle, &e_press))
+			{
+				mv = averaged[i ? ANALOG_TRIGGER_RIGHT : ANALOG_TRIGGER_LEFT];
+			}
+			else
+			{
+				mv = e_idle + (int32_t)(((int64_t)outs[i] * (e_press - e_idle)) / INT16_MAX);
+			}
+			if(mode == 2 && host_mv[i] > 0)
+			{
+				mv = (int32_t)(((int64_t)mv * host_cnt[i]) / host_mv[i]);
+			}
+			outs[i] = (int16_t)CLAMP(mv, 0, INT16_MAX);
+		}
+		report->trigger_left = outs[0];
+		report->trigger_right = outs[1];
+#else
+		ARG_UNUSED(host_cnt);
+		ARG_UNUSED(host_mv);
 		report->trigger_left = (int16_t)CLAMP(
 		    mode == 1 ? averaged[ANALOG_TRIGGER_LEFT] : trigger_raw[0], 0, INT16_MAX);
 		report->trigger_right = (int16_t)CLAMP(
 		    mode == 1 ? averaged[ANALOG_TRIGGER_RIGHT] : trigger_raw[1], 0, INT16_MAX);
+#endif
 		trigger_left_click_latched = false;
 		trigger_right_click_latched = false;
 		return 0;

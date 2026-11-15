@@ -145,6 +145,23 @@ config IBEX_ANALOG_STAY_POWERED_ON_USB
 	help
 	  Skips the 200 us power-up settle per report over USB.
 
+config IBEX_TRIGGER_LOCK_HOST_MODE
+	bool "Steam's raw trigger modes carry sc26re's own trigger result"
+	default y
+	depends on IBEX_ANALOG_INPUTS
+	help
+	  When Steam switches trigger_mode to 1 (mV) or 2 (raw counts) to apply its
+	  own calibration, send the value that maps to sc26re's processed trigger
+	  (rest auto-zero, filter, dead zone) instead of the raw reading.
+
+config IBEX_TRIGGER_LOCK_HOST_CAL
+	bool "Ignore trigger calibration records written by the host"
+	default y
+	help
+	  Steam's STAGE/COMMIT of cal/trg_l and cal/trg_r are accepted but not
+	  applied. Calibration from the report meter (0xC0 step calibration and
+	  zero) and the hard reset still work.
+
 config IBEX_ANALOG_USB_SAMPLES
 	int "Stick/trigger SAADC samples averaged per report over USB"
 	default 1

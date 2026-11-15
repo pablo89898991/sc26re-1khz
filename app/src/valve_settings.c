@@ -691,6 +691,14 @@ int valve_settings_stage(const char *path, const uint8_t *value, size_t len)
 
 	if(calibration_path_side(path, &side))
 	{
+		if(IS_ENABLED(CONFIG_IBEX_TRIGGER_LOCK_HOST_CAL))
+		{
+			/* Steam re-sends trigger records it keeps on the PC (often with a wrong
+			 * direction flag); the controller's own calibration stays in charge.
+			 * Use the report meter's trigger calibration / zero instead. */
+			LOG_INF("ignored host write to %s (trigger calibration locked)", path);
+			return 0;
+		}
 		return calibration_stage_trigger(side, value, len);
 	}
 	if(pressure_path_side(path, &side))
@@ -833,6 +841,10 @@ static int commit_setting_path(const char *path)
 
 	if(calibration_path_side(path, &side))
 	{
+		if(IS_ENABLED(CONFIG_IBEX_TRIGGER_LOCK_HOST_CAL))
+		{
+			return 0;
+		}
 		return calibration_commit_trigger(side);
 	}
 	if(pressure_path_side(path, &side))
