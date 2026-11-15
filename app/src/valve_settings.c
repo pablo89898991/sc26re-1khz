@@ -154,6 +154,13 @@ static int ofw_storage_read(const void *context, uint32_t offset, void *data, si
  * the forgotten slot itself is a plain missing setting (v40 stored an all-zero
  * "tombstone" there, which Steam read as a bond to an unknown Puck).
  */
+static int64_t meter_awake_ms = -100000;
+
+bool valve_settings_meter_keeps_awake(void)
+{
+	return k_uptime_get() - meter_awake_ms < 6000;
+}
+
 #define VALVE_ESB_FORGOT_PATH "user/esb_forgot"
 static uint8_t esb_forgot_mask;
 
@@ -538,6 +545,14 @@ bool valve_settings_read(const char *path, uint8_t *buf, size_t capacity, size_t
 	if(sc26re_cfg_path(path))
 	{
 		return sc26re_cfg_read(path, buf, capacity, len);
+	}
+	if(strcmp(path, "sc26re/awake") == 0 && capacity >= 1)
+	{
+		/* report meter keep-alive: no auto power-off while the page is open */
+		meter_awake_ms = k_uptime_get();
+		buf[0] = 1;
+		*len = 1;
+		return true;
 	}
 	if(strcmp(path, "sc26re/gyro_full_cal") == 0 && capacity >= 1)
 	{

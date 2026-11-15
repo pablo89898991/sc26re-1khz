@@ -624,7 +624,8 @@ int main(void)
 			inactivity_timeout_seconds = timeout_seconds;
 			last_activity_ms = now_ms;
 		}
-		if(report_has_activity(&current) || transport_usb_attached() || puck_interface_active())
+		if(report_has_activity(&current) || transport_usb_attached() || puck_interface_active() ||
+		   valve_settings_meter_keeps_awake())
 		{
 			last_activity_ms = now_ms;
 		}

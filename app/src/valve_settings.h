@@ -29,6 +29,8 @@ int valve_settings_delete(const char *path);
  * Returns the number of deleted entries or a negative error.
  */
 int valve_settings_factory_reset(void);
+/* the report meter pinged "sc26re/awake" in the last few seconds */
+bool valve_settings_meter_keeps_awake(void);
 bool valve_settings_copy_active_esb_bond(uint8_t *bond, size_t capacity, uint8_t *slot);
 int valve_settings_register_esb_bond_changed_callback(
     valve_settings_esb_bond_changed_cb_t callback);

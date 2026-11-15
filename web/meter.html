@@ -49,6 +49,7 @@
       <button id="reset">Reset stats</button>
       <label class="note">Report ID <select id="rid"><option value="auto">auto</option></select></label>
       <label class="note">Window <select id="win"><option value="1">1 s</option><option value="2" selected>2 s</option><option value="5">5 s</option></select></label>
+      <label class="note" title="Stops the controller from switching itself off for inactivity while this page is open (firmware v44+)."><input type="checkbox" id="stayOn" checked> Keep controller on</label>
       <label class="note" title="Switches the controller's gyro/accelerometer on from this page, the way Steam does, so nothing else has to be open. Switched off again when you close the page."><input type="checkbox" id="imuOn" checked> Gyro on (standalone)</label>
       <label class="note" id="ctlPick" style="display:none">Controller <select id="ctlSel"></select></label>
       <span id="status" class="note">not connected</span>
@@ -267,6 +268,8 @@ async function imuMode(v){
   for(const d of targets()){ try{ await fsend(d,1,b); }catch(e){} }
 }
 setInterval(()=>{ if(devs.length && $("#imuOn").checked) imuMode(IMU_MODE_ON); },2000);
+/* keep the controller from switching itself off while the page is open (v44+) */
+setInterval(()=>{ if(devs.length && $("#stayOn").checked){ const d=ctl(); if(d) featRead(d,"sc26re/awake").catch(()=>{}); } },2000);
 $("#imuOn").onchange=e=>imuMode(e.target.checked?IMU_MODE_ON:0);
 window.addEventListener("pagehide",()=>{ if(devs.length && $("#imuOn").checked) imuMode(0); });
 
