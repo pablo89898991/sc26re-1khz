@@ -82,6 +82,20 @@
       <label>Power-on chime <select id="bootChime"><option value="0">off</option><option value="1">quiet</option><option value="2">normal</option></select></label>
       <span id="toolStatus" class="note"></span>
     </div>
+    <div class="lbl" style="margin-top:14px">Gyro at rest (for the dead bands)</div>
+    <div class="bar" style="flex-wrap:wrap;gap:10px">
+      <button id="grMeasure">Measure 5 s at rest</button>
+      <label class="note">margin ± <input type="number" id="grMargin" value="0.05" step="0.01" min="0" style="width:60px"> °/s</label>
+      <button id="grUse" disabled>Use as dead bands</button>
+      <span id="grStatus" class="note"></span>
+    </div>
+    <table style="border-collapse:collapse;margin-top:6px" class="note">
+      <tr><th style="text-align:left;padding:2px 10px 2px 0">axis</th><th style="padding:2px 10px">lowest</th><th style="padding:2px 10px">highest</th><th style="padding:2px 10px">average (bias)</th></tr>
+      <tr><td>X</td><td id="grLoX">—</td><td id="grHiX">—</td><td id="grAvX">—</td></tr>
+      <tr><td>Y</td><td id="grLoY">—</td><td id="grHiY">—</td><td id="grAvY">—</td></tr>
+      <tr><td>Z</td><td id="grLoZ">—</td><td id="grHiZ">—</td><td id="grAvZ">—</td></tr>
+    </table>
+    <p class="note"><b>Gyro at rest:</b> put the controller on a table and press <i>Measure</i>. For 5 s the gyro dead zone and dead bands are switched off (only live, nothing is saved) so the real resting values are seen, then put back. The lowest/highest value per axis, in °/s, is what drift and noise look like on your unit. <i>Use as dead bands</i> copies them, plus the margin, into the X/Y/Z dead band rows above; then press Apply or Save. Keep Steam's gyro on (or the IMU off: all zeros) — calibrate the gyro first for the smallest bands.</p>
     <p class="note"><b>Calibrate gyro:</b> put the controller on a table, press, and don't touch it for 2 s (v43+: the gyro is measured while still; if it moved, nothing changes). <b>Zero sticks:</b> hands off both sticks, press; their resting point becomes the centre.</p>
   </div>
 
@@ -250,6 +264,39 @@ async function factoryReset(){
   $("#facStatus").innerHTML=ok?'<span class="ok">sent &mdash; the controller chimes and reboots</span>':`<span class="err">failed: ${last||"not connected"}</span>`;
 }
 $("#facReset").onclick=factoryReset;
+
+/* ---- gyro at rest: min/max per axis with the dead zones switched off live ---- */
+let grAcc=null, grResult=null;
+const GDPS=0.06103; /* report units -> deg/s */
+async function stageS16(path,v){ for(const d of devs){ try{ await d.sendFeatureReport(1,pathCmd(0xEE,path,[v&255,(v>>8)&255])); }catch(e){} } }
+async function readS16(path){ try{ const b=await featRead(devs[0],path); return b.length>=2?s16(b,0):null; }catch(e){ return null; } }
+$("#grMeasure").onclick=async()=>{
+  if(!devs.length){ $("#grStatus").innerHTML='<span class="err">connect first</span>'; return; }
+  const paths=["sc26re/gyro_deadzone",...["x","y","z"].flatMap(a=>[`sc26re/gyro_band_${a}_lo`,`sc26re/gyro_band_${a}_hi`])];
+  const saved={};
+  for(const p of paths){ saved[p]=await readS16(p); if(saved[p]!==null) await stageS16(p,0); }
+  $("#grStatus").textContent="measuring… don't touch the controller"; $("#grUse").disabled=true;
+  await new Promise(r=>setTimeout(r,300));
+  grAcc={lo:[1e9,1e9,1e9],hi:[-1e9,-1e9,-1e9],sum:[0,0,0],n:0};
+  await new Promise(r=>setTimeout(r,5000));
+  const a=grAcc; grAcc=null;
+  for(const p of paths){ if(saved[p]!==null) await stageS16(p,saved[p]); }
+  if(!a.n){ $("#grStatus").innerHTML='<span class="err">no gyro samples (IMU off? open Steam\'s gyro page)</span>'; return; }
+  grResult={lo:a.lo.map(v=>v*GDPS),hi:a.hi.map(v=>v*GDPS),av:a.sum.map(v=>v/a.n*GDPS)};
+  ["X","Y","Z"].forEach((ax,i)=>{ $("#grLo"+ax).textContent=grResult.lo[i].toFixed(3); $("#grHi"+ax).textContent=grResult.hi[i].toFixed(3); $("#grAv"+ax).textContent=grResult.av[i].toFixed(3); });
+  const spread=Math.max(...grResult.hi.map((h,i)=>h-grResult.lo[i]));
+  $("#grStatus").innerHTML=spread>5?'<span class="err">it moved during the measurement — try again</span>':`<span class="ok">${a.n} samples; dead zones restored</span>`;
+  $("#grUse").disabled=spread>5;
+};
+$("#grUse").onclick=()=>{
+  if(!grResult) return;
+  const m=Math.max(0,+$("#grMargin").value||0);
+  ["x","y","z"].forEach((a,i)=>{
+    lsEl(`lsb_lo_${a}`).value=Math.max(-20,Math.min(0,grResult.lo[i]-m)).toFixed(2);
+    lsEl(`lsb_hi_${a}`).value=Math.min(20,Math.max(0,grResult.hi[i]+m)).toFixed(2);
+  });
+  $("#grStatus").innerHTML='<span class="ok">copied into the dead band rows — press Apply or Save</span>';
+};
 
 /* ---- live settings: pseudo settings sc26re/<name> (READ 0xED / STAGE 0xEE / COMMIT 0xEF) ---- */
 const LS=[
@@ -422,6 +469,7 @@ function onReport(e){
     rec.ts=ts; rec.newImu = lastTs===null || ts!==lastTs; rec.dts = (lastTs!==null && ts!==lastTs) ? ((ts-lastTs)>>>0) : null;
     rec.rep = lastG!==null && !rec.newImu && g[0]===lastG[0]&&g[1]===lastG[1]&&g[2]===lastG[2];
     lastTs=ts; lastG=g; rec.g=g; gyroHist.push({t,g});
+    if(grAcc && rec.newImu!==false){ for(let i=0;i<3;i++){ grAcc.lo[i]=Math.min(grAcc.lo[i],g[i]); grAcc.hi[i]=Math.max(grAcc.hi[i],g[i]); grAcc.sum[i]+=g[i]; } grAcc.n++; }
     rec.a=[dv.getInt16(OFF.ax,true),dv.getInt16(OFF.ay,true),dv.getInt16(OFF.az,true)];
     if(dv.byteLength>=OFF.q+8) rec.q=[0,1,2,3].map(i=>dv.getInt16(OFF.q+2*i,true));
     if(rec.q&&$("#qmode").value==="hap") hapIngest(rec.q,t);
