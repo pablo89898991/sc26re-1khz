@@ -525,7 +525,10 @@ bool valve_settings_read(const char *path, uint8_t *buf, size_t capacity, size_t
 			return false;
 		}
 		k_mutex_lock(&esb_settings_mutex, K_FOREVER);
-		if(!bond->valid)
+		/* A forgotten slot (all-zero tombstone) must read as "no bond", like a missing
+		 * setting: Steam took the zero record for a bond to an unknown Puck and asked
+		 * to pair again after every reconnect. */
+		if(!bond->valid || !esb_bond_material_valid(bond->data))
 		{
 			k_mutex_unlock(&esb_settings_mutex);
 			return false;
