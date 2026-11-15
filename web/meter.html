@@ -49,6 +49,7 @@
       <button id="reset">Reset stats</button>
       <label class="note">Report ID <select id="rid"><option value="auto">auto</option></select></label>
       <label class="note">Window <select id="win"><option value="1">1 s</option><option value="2" selected>2 s</option><option value="5">5 s</option></select></label>
+      <label class="note" title="Switches the controller's gyro/accelerometer on from this page, the way Steam does, so nothing else has to be open. Switched off again when you close the page."><input type="checkbox" id="imuOn" checked> Gyro on (standalone)</label>
       <span id="status" class="note">not connected</span>
     </div>
   </div>
@@ -95,7 +96,7 @@
       <tr><td>Yaw</td><td id="grLoZ">—</td><td id="grHiZ">—</td><td id="grAvZ">—</td></tr>
       <tr><td>Roll</td><td id="grLoY">—</td><td id="grHiY">—</td><td id="grAvY">—</td></tr>
     </table>
-    <p class="note"><b>Gyro at rest:</b> put the controller on a table and press <i>Measure</i>. For 5 s the gyro dead zone and dead bands are switched off (only live, nothing is saved) so the real resting values are seen, then put back. The lowest/highest value per axis, in °/s, is what drift and noise look like on your unit. <i>Use as dead bands</i> copies them, plus the margin, into the X/Y/Z dead band rows above; then press Apply or Save. Keep Steam's gyro on (or the IMU off: all zeros) — calibrate the gyro first for the smallest bands.</p>
+    <p class="note"><b>Gyro at rest:</b> put the controller on a table and press <i>Measure</i>. For 5 s the gyro dead zone and dead bands are switched off (only live, nothing is saved) so the real resting values are seen, then put back. The lowest/highest value per axis, in °/s, is what drift and noise look like on your unit. <i>Use as dead bands</i> copies them, plus the margin, into the X/Y/Z dead band rows above; then press Apply or Save. Keep “Gyro on (standalone)” ticked at the top (otherwise the IMU may be off: all zeros) — calibrate the gyro first for the smallest bands.</p>
     <p class="note"><b>Calibrate gyro:</b> put the controller on a table, press, and don't touch it for 2 s (v43+: the gyro is measured while still; if it moved, nothing changes). <b>Zero sticks:</b> hands off both sticks, press; their resting point becomes the centre.</p>
   </div>
 
@@ -198,7 +199,7 @@
   <div class="panel note">
     <b>How to read it.</b> Stock USB shows ~248 reports/s. The v2 &ldquo;USB timer&rdquo; patch should show ~993/s with near-zero drops. <b>Fresh IMU</b> counts new IMU timestamps per second. The firmware refreshes the IMU fields once per FIFO batch (every <i>watermark</i> FIFO words), so this is the batch rate, not the raw sensor rate. With watermark 4 and everything at 480 Hz it reads 480.<br>
     <b>Layout used</b> (Triton state report, ID <code>0x42</code>, from sc26re): seq @0, IMU timestamp u32 µs @29, accel @33, gyro @39, quaternion @45. If your numbers look nonsensical, pick another report ID from the list. The &ldquo;IDs seen&rdquo; line shows every report ID with its length and rate.<br>
-    <b>Accel and quaternion all 0?</b> The host has the IMU switched off (Steam enables it only when something uses gyro). Keep Steam&rsquo;s <i>Calibration &amp; Advanced Settings → Gyro Calibration</i> page open while measuring. With sc26re the timestamp then falls back to report time, so the IMU numbers are meaningless.<br><b>No reports?</b> Some hosts only receive state reports while Steam (or another app) has enabled them. Start Steam, or try a game with Steam Input, then reconnect here. Over wireless, connect the <b>Puck</b> instead; its rate is set by the Puck firmware. <b>Puck + sc26re v3+:</b> the controller builds ~1000 reports/s and the Puck forwards the newest one at each poll, so sequence gaps are reports replaced by newer ones, not losses &mdash; the tile then reads &ldquo;Skipped&rdquo;.
+    <b>Accel and quaternion all 0?</b> The host has the IMU switched off (Steam enables it only when something uses gyro). Keep <i>Gyro on (standalone)</i> ticked at the top (or Steam&rsquo;s gyro page open) while measuring. With sc26re the timestamp then falls back to report time, so the IMU numbers are meaningless.<br><b>No reports?</b> Some hosts only receive state reports while Steam (or another app) has enabled them. Start Steam, or try a game with Steam Input, then reconnect here. Over wireless, connect the <b>Puck</b> instead; its rate is set by the Puck firmware. <b>Puck + sc26re v3+:</b> the controller builds ~1000 reports/s and the Puck forwards the newest one at each poll, so sequence gaps are reports replaced by newer ones, not losses &mdash; the tile then reads &ldquo;Skipped&rdquo;.
   </div>
 </div>
 
@@ -219,10 +220,21 @@ async function connect(){
     const sel=await navigator.hid.requestDevice({filters:[{vendorId:0x28de}]});
     for(const d of sel){ if(!d.opened) await d.open(); d.addEventListener("inputreport",onReport); devs.push(d); }
     $("#status").innerHTML=devs.length?`<span class="ok">connected: ${devs.map(d=>d.productName||"device").join(", ")}</span>`:"no device selected";
+    if(devs.length && $("#imuOn").checked) await imuMode(IMU_MODE_ON);
     reset();
   }catch(e){ $("#status").innerHTML=`<span class="err">${e.message}</span>`; }
 }
 $("#connect").onclick=connect;
+
+/* ---- IMU on without Steam: SET_SETTINGS_VALUES (0x87) setting 48 imu_mode = raw accel | raw gyro | orientation ---- */
+const IMU_MODE_ON=0x04|0x08|0x10;
+async function imuMode(v){
+  const b=new Uint8Array(63); b[0]=0x87; b[1]=3; b[2]=48; b[3]=v&255; b[4]=(v>>8)&255;
+  for(const d of devs){ try{ await d.sendFeatureReport(1,b); }catch(e){} }
+}
+setInterval(()=>{ if(devs.length && $("#imuOn").checked) imuMode(IMU_MODE_ON); },2000);
+$("#imuOn").onchange=e=>imuMode(e.target.checked?IMU_MODE_ON:0);
+window.addEventListener("pagehide",()=>{ if(devs.length && $("#imuOn").checked) imuMode(0); });
 
 let trgDbg=[null,null];
 let hapSeen=new Set(), hapLines=[], hapT0=null;
@@ -281,7 +293,7 @@ $("#grMeasure").onclick=async()=>{
   await new Promise(r=>setTimeout(r,5000));
   const a=grAcc; grAcc=null;
   for(const p of paths){ if(saved[p]!==null) await stageS16(p,saved[p]); }
-  if(!a.n){ $("#grStatus").innerHTML='<span class="err">no gyro samples (IMU off? open Steam\'s gyro page)</span>'; return; }
+  if(!a.n){ $("#grStatus").innerHTML='<span class="err">no gyro samples (IMU off? tick “Gyro on” at the top)</span>'; return; }
   grResult={lo:a.lo.map(v=>v*GDPS),hi:a.hi.map(v=>v*GDPS),av:a.sum.map(v=>v/a.n*GDPS)};
   /* show roll as Steam does (report −Y) */
   { const lo=grResult.lo[1], hi=grResult.hi[1]; grResult.lo[1]=-hi; grResult.hi[1]=-lo; grResult.av[1]=-grResult.av[1]; }
@@ -443,7 +455,7 @@ $("#gyCal").onclick=async()=>{
     if(st===null){ $("#toolStatus").innerHTML='<span class="ok">sent (this firmware does not report the result)</span>'; return; }
     if(msg[st]){ $("#toolStatus").innerHTML=msg[st]+(st>=2?info:""); return; }
   }
-  $("#toolStatus").innerHTML='<span class="err">no result — is the IMU on? (open Steam\'s gyro page)</span>';
+  $("#toolStatus").innerHTML='<span class="err">no result — is the IMU on? (tick “Gyro on” at the top)</span>';
 };
 $("#stZero").onclick=()=>toolSend(pathCmd(0xF0,"sc26re/zero_sticks"),"measuring — keep hands off the sticks for a second; saved");
 $("#bootChime").onchange=async e=>{ const v=+e.target.value;
