@@ -1175,6 +1175,13 @@ int imu_read_report(struct controller_report *report)
 #define GYRO_CAL_SAMPLES 1500
 #define GYRO_CAL_MAX_SPREAD 0.035f /* rad/s (~2 deg/s) between min and max on any axis */
 static atomic_t gyro_cal_active;
+/* 0 = idle, 1 = measuring, 2 = saved, 3 = moved (old bias kept), 4 = save failed */
+static atomic_t gyro_cal_state;
+
+uint8_t imu_gyro_cal_state(void)
+{
+	return (uint8_t)atomic_get(&gyro_cal_state);
+}
 static uint32_t gyro_cal_n;
 static double gyro_cal_sum[3];
 static float gyro_cal_min[3];
@@ -1217,6 +1224,7 @@ static void gyro_cal_work_handler(struct k_work *work)
 	{
 		if(gyro_cal_max[i] - gyro_cal_min[i] > GYRO_CAL_MAX_SPREAD)
 		{
+			atomic_set(&gyro_cal_state, 3);
 			LOG_WRN("gyro calibration: controller moved (axis %u spread %d urad/s), kept old bias",
 			        (unsigned int)i, (int)((gyro_cal_max[i] - gyro_cal_min[i]) * 1e6f));
 			return;
@@ -1225,13 +1233,14 @@ static void gyro_cal_work_handler(struct k_work *work)
 	}
 	LOG_INF("gyro calibration measured bias %d %d %d urad/s", (int)(bias[0] * 1e6f),
 	        (int)(bias[1] * 1e6f), (int)(bias[2] * 1e6f));
-	(void)imu_save_gyro_bias(bias);
+	atomic_set(&gyro_cal_state, imu_save_gyro_bias(bias) == 0 ? 2 : 4);
 }
 
 int imu_calibrate_gyro(void)
 {
 	memset(gyro_cal_sum, 0, sizeof(gyro_cal_sum));
 	gyro_cal_n = 0;
+	atomic_set(&gyro_cal_state, 1);
 	atomic_set(&gyro_cal_active, 1);
 	LOG_INF("gyro calibration: measuring, keep the controller still");
 	return 0;

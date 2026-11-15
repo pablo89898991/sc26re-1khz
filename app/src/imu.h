@@ -12,6 +12,8 @@ int imu_read_report(struct controller_report *report);
 bool imu_ready(void);
 
 int imu_calibrate_gyro(void);
+/* 0 idle, 1 measuring, 2 saved, 3 moved (kept old), 4 save failed */
+uint8_t imu_gyro_cal_state(void);
 void imu_reset(void);
 
 bool imu_settings_read(const char *path, uint8_t *buf, size_t capacity, size_t *len);

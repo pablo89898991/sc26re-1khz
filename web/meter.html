@@ -423,7 +423,19 @@ async function toolSend(buf,msg){
   let ok=0,last=""; for(const d of devs){ try{ await d.sendFeatureReport(1,buf); ok++; }catch(e){ last=e.message; } }
   $("#toolStatus").innerHTML=ok?`<span class="ok">${msg}</span>`:`<span class="err">failed: ${last||"not connected"}</span>`;
 }
-$("#gyCal").onclick=()=>{ const b=new Uint8Array(63); b[0]=0xB5; b[1]=0; toolSend(b,"measuring — don't touch the controller for 2 s"); };
+$("#gyCal").onclick=async()=>{
+  const b=new Uint8Array(63); b[0]=0xB5; b[1]=0;
+  await toolSend(b,"measuring — don't touch the controller for 2 s");
+  if(!devs.length) return;
+  const msg={2:'<span class="ok">gyro calibrated and saved</span>',3:'<span class="err">the controller moved — old calibration kept, try again</span>',4:'<span class="err">could not save</span>'};
+  for(let t=0;t<20;t++){
+    await new Promise(r=>setTimeout(r,300));
+    let st=null; try{ const r=await featRead(devs[0],"sc26re/gyro_cal"); st=r.length?r[0]:null; }catch(e){}
+    if(st===null){ $("#toolStatus").innerHTML='<span class="ok">sent (this firmware does not report the result)</span>'; return; }
+    if(msg[st]){ $("#toolStatus").innerHTML=msg[st]; return; }
+  }
+  $("#toolStatus").innerHTML='<span class="err">no result — is the IMU on? (open Steam\'s gyro page)</span>';
+};
 $("#stZero").onclick=()=>toolSend(pathCmd(0xF0,"sc26re/zero_sticks"),"measuring — keep hands off the sticks for a second; saved");
 $("#bootChime").onchange=async e=>{ const v=+e.target.value;
   for(const d of devs){ try{ await d.sendFeatureReport(1,pathCmd(0xEE,"user/haptic_boot_level",[v])); await d.sendFeatureReport(1,pathCmd(0xEF,"user/haptic_boot_level")); }catch(err){} }
