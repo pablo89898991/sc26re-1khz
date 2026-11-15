@@ -120,3 +120,5 @@ enum haptics_system_sound
 int haptics_play_system_sound(enum haptics_system_sound sound);
 int haptics_play_power_sound(bool on);
 int haptics_play_drop_sound(void);
+/* short audible beep on both grips (progress feedback) */
+int haptics_play_beep(uint16_t frequency_hz, uint16_t duration_ms);

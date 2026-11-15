@@ -2177,6 +2177,19 @@ void haptics_get_debug(struct haptics_debug *debug)
 	};
 }
 
+int haptics_play_beep(uint16_t frequency_hz, uint16_t duration_ms)
+{
+	struct haptics_effect command = {
+		.type = HAPTICS_EFFECT_TONE,
+		.channels = HAPTICS_CHANNEL_LEFT_1 | HAPTICS_CHANNEL_RIGHT_1,
+		.gain_db = -6,
+		.frequency_hz = safe_frequency(frequency_hz),
+		.duration_ms = safe_duration(duration_ms),
+	};
+
+	return haptics_submit_effect(&command);
+}
+
 int haptics_debug_play_tick(uint8_t channels)
 {
 	struct haptics_effect command = {

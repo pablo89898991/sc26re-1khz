@@ -231,6 +231,7 @@ static bool gyro_chord_poll(const struct controller_report *r)
 	static int64_t armed_at;
 	static uint8_t step;
 	static struct rgbw_color saved_led;
+	static int64_t last_beep;
 	const uint32_t chord = BIT(CONTROLLER_BUTTON_LEFT_SHOULDER) |
 	                       BIT(CONTROLLER_BUTTON_RIGHT_SHOULDER) | BIT(CONTROLLER_BUTTON_X) |
 	                       BIT(CONTROLLER_BUTTON_Y);
@@ -305,8 +306,13 @@ static bool gyro_chord_poll(const struct controller_report *r)
 				}
 				else
 				{
+					/* step done: beep, then let the beep's vibration die out
+					 * (the hands-off wait) before the next measurement */
 					step++;
-					gyro_step_start(step);
+					last_beep = now;
+					(void)haptics_play_beep((uint16_t)(600 + 150 * step), 80);
+					since = now;
+					state = GYRO_CHORD_WAIT_HANDS_OFF;
 				}
 			}
 			break;
@@ -334,7 +340,36 @@ static bool gyro_chord_poll(const struct controller_report *r)
 		gyro_chord_finish(false, saved_led);
 		state = GYRO_CHORD_IDLE;
 	}
-	return state == GYRO_CHORD_WAIT_HANDS_OFF || state == GYRO_CHORD_RUNNING;
+	if(state == GYRO_CHORD_WAIT_HANDS_OFF || state == GYRO_CHORD_RUNNING)
+	{
+		/*
+		 * Progress, so it does not look frozen: purple LED blinking (slow while
+		 * waiting to be put down / still, fast while measuring), a low beep every
+		 * 2 s while waiting, and a higher beep after each finished step. No beeps
+		 * during a measurement: the grip actuators would shake the gyro.
+		 */
+		static int last_phase = -1;
+		bool waiting = state == GYRO_CHORD_WAIT_HANDS_OFF;
+		int period = waiting ? 500 : 200;
+		int phase = (int)((now - armed_at) / period) % 2;
+
+		if(phase != last_phase)
+		{
+			last_phase = phase;
+#if CONFIG_IBEX_RGBW_LED
+			rgbw_led_set(phase == 0 ? (struct rgbw_color){ 150, 0, 255, 0 }
+			                        : (struct rgbw_color){ 20, 0, 40, 0 });
+#endif
+		}
+		if(waiting && now - last_beep >= 2000)
+		{
+			last_beep = now;
+			(void)haptics_play_beep(500, 60);
+			since = now; /* let the beep die out before a measurement starts */
+		}
+		return true;
+	}
+	return false;
 }
 
 /*
