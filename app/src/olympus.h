@@ -39,6 +39,16 @@ struct olympus_debug_snapshot
 };
 
 int olympus_init(void);
+
+/*
+ * User capacitive thresholds (report meter, "sc26re/capsense"): stick touch on,
+ * stick touch off, grip touch on, as raw sensor values. 0 = firmware default.
+ * get returns the effective values; set applies live; save persists them.
+ */
+#define OLYMPUS_CAPSENSE_SIZE 6
+void olympus_capsense_get(uint8_t out[OLYMPUS_CAPSENSE_SIZE]);
+int olympus_capsense_set(const uint8_t *data, size_t len);
+int olympus_capsense_save(void);
 void olympus_read_report(struct controller_report *report);
 void olympus_get_debug_snapshot(struct olympus_debug_snapshot *snapshot);
 int olympus_read_descriptor(uint8_t descriptor[OLYMPUS_DESCRIPTOR_SIZE]);

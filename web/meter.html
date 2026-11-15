@@ -140,11 +140,20 @@
         <option value="pcm">PCM haptic stream counters — *_pcm_dbg firmware</option>
       </select></div>
     <div class="grid" id="capGrid" style="display:none">
-      <div class="stat"><div class="k">L stick touch raw</div><div class="v" id="cLs">—</div><div class="u">touch above 720 · release below 576</div><div class="cbar"><b id="bLs"></b><u style="left:72%"></u></div></div>
-      <div class="stat"><div class="k">R stick touch raw</div><div class="v" id="cRs">—</div><div class="u">touch above 720 · release below 576</div><div class="cbar"><b id="bRs"></b><u style="left:72%"></u></div></div>
-      <div class="stat"><div class="k">L grip value</div><div class="v" id="cLg">—</div><div class="u">peak <span id="pLg">—</span></div><div class="cbar"><b id="bLg"></b></div></div>
-      <div class="stat"><div class="k">R grip value</div><div class="v" id="cRg">—</div><div class="u">peak <span id="pRg">—</span></div><div class="cbar"><b id="bRg"></b></div></div>
+      <div class="stat"><div class="k">L stick touch raw</div><div class="v" id="cLs">—</div><div class="u capS">touch above 720 · release below 576</div><div class="cbar"><b id="bLs"></b><u class="capSm" style="left:72%"></u></div></div>
+      <div class="stat"><div class="k">R stick touch raw</div><div class="v" id="cRs">—</div><div class="u capS">touch above 720 · release below 576</div><div class="cbar"><b id="bRs"></b><u class="capSm" style="left:72%"></u></div></div>
+      <div class="stat"><div class="k">L grip value</div><div class="v" id="cLg">—</div><div class="u">peak <span id="pLg">—</span> · <span class="capG"></span></div><div class="cbar"><b id="bLg"></b><u class="capGm" style="display:none"></u></div></div>
+      <div class="stat"><div class="k">R grip value</div><div class="v" id="cRg">—</div><div class="u">peak <span id="pRg">—</span> · <span class="capG"></span></div><div class="cbar"><b id="bRg"></b><u class="capGm" style="display:none"></u></div></div>
     </div>
+    <div class="lbl" style="margin-top:14px">Capsense thresholds (SC26RE v41+) — raw sensor values, applied live; “Save” keeps them after power-off</div>
+    <div class="bar" style="flex-wrap:wrap;gap:10px">
+      <label>Stick touch on <input type="number" id="csOn" min="0" max="16000" step="10" style="width:80px"></label>
+      <label>Stick touch off <input type="number" id="csOff" min="0" max="16000" step="10" style="width:80px"></label>
+      <label>Grip touch on <input type="number" id="csGrip" min="0" max="16000" step="25" style="width:80px"></label>
+      <button id="csRead">Read</button><button class="primary" id="csApply">Apply (live)</button><button id="csSave">Save</button><button id="csDef">Defaults</button>
+      <span id="csStatus" class="note"></span>
+    </div>
+    <p class="note">Higher = less sensitive (a hovering finger no longer counts as a touch). “Off” must be below “on”; 0 = 80 % of “on”. Grip release stays a percentage of “grip on”. To see the raw values while tuning, flash the <code>*_capsense_dbg</code> build and pick “Raw capsense” above; the touch indicators work on any build. Defaults: stick 720 / 576, grip 900. A hard reset also returns to defaults.</p>
     <div id="hapBox" style="display:none;margin-top:10px">
       <div class="bar"><button id="hapClear">Clear log</button><button id="hapCopy">Copy log</button><span class="note">flags: TL/TR = trigger in use, PL/PR = pad touched, G = controller turning</span></div>
       <pre id="hapLog" style="max-height:340px;overflow:auto;font-size:12px;background:#0b0f14;padding:8px;border-radius:8px"></pre>
@@ -234,6 +243,48 @@ async function factoryReset(){
   $("#facStatus").innerHTML=ok?'<span class="ok">sent &mdash; the controller chimes and reboots</span>':`<span class="err">failed: ${last||"not connected"}</span>`;
 }
 $("#facReset").onclick=factoryReset;
+
+/* ---- capsense thresholds: READ/STAGE/COMMIT of the pseudo setting sc26re/capsense ---- */
+const capTh={on:720,off:576,grip:0};
+function capShow(){
+  document.querySelectorAll(".capS").forEach(e=>e.textContent=`touch above ${capTh.on} · release below ${capTh.off}`);
+  document.querySelectorAll(".capG").forEach(e=>e.textContent=capTh.grip?`touch above ${capTh.grip}`:"");
+}
+function pathCmd(op,path,data=[]){
+  const p=new TextEncoder().encode(path), buf=new Uint8Array(63);
+  buf[0]=op; buf[1]=p.length+1+data.length; buf.set(p,2); buf.set(data,2+p.length+1); return buf;
+}
+async function capRead(){
+  const d=devs[0]; if(!d){ $("#csStatus").innerHTML='<span class="err">connect first</span>'; return; }
+  try{
+    await d.sendFeatureReport(1,pathCmd(0xED,"sc26re/capsense"));
+    const r=new Uint8Array((await d.receiveFeatureReport(1)).buffer);
+    const o=r[0]===0xED?0:(r[1]===0xED?1:-1);
+    if(o<0||r[o+1]<6) throw new Error("not supported by this firmware (needs v41+)");
+    const v=i=>r[o+2+i]|(r[o+3+i]<<8);
+    capTh.on=v(0); capTh.off=v(2); capTh.grip=v(4);
+    $("#csOn").value=capTh.on; $("#csOff").value=capTh.off; $("#csGrip").value=capTh.grip; capShow();
+    $("#csStatus").innerHTML='<span class="ok">current values read</span>';
+  }catch(e){ $("#csStatus").innerHTML=`<span class="err">${e.message}</span>`; }
+}
+async function capSend(save,vals){
+  const on=+vals[0]||0, off=+vals[1]||0, grip=+vals[2]||0;
+  if(on&&off&&off>=on){ $("#csStatus").innerHTML='<span class="err">“off” must be below “on”</span>'; return; }
+  const le=x=>[x&255,(x>>8)&255], data=[...le(on),...le(off),...le(grip)];
+  let ok=0,last="";
+  for(const d of devs){ try{
+    await d.sendFeatureReport(1,pathCmd(0xEE,"sc26re/capsense",data));
+    if(save) await d.sendFeatureReport(1,pathCmd(0xEF,"sc26re/capsense"));
+    ok++; }catch(e){ last=e.message; } }
+  if(!ok){ $("#csStatus").innerHTML=`<span class="err">failed: ${last||"not connected"}</span>`; return; }
+  await capRead();
+  $("#csStatus").innerHTML=`<span class="ok">${save?"applied and saved":"applied (until power-off) — press Save to keep"}</span>`;
+}
+$("#csRead").onclick=capRead;
+$("#csApply").onclick=()=>capSend(false,[$("#csOn").value,$("#csOff").value,$("#csGrip").value]);
+$("#csSave").onclick=()=>capSend(true,[$("#csOn").value,$("#csOff").value,$("#csGrip").value]);
+$("#csDef").onclick=()=>capSend(true,[0,0,0]);
+capShow();
 if("hid" in navigator) navigator.hid.addEventListener("disconnect",e=>{devs=devs.filter(d=>d!==e.device);$("#status").textContent="disconnected";});
 
 function wantedId(){
@@ -314,8 +365,10 @@ function draw(){
           return `${sd?"RIGHT":"LEFT "} trigger: raw ${raw} mV | cal pressed ${pr}  idle ${idl}  inverted ${inv}${dec?" (auto)":""}  type ${ty} | position ≈ ${pct}% | trigger_mode ${(q[3]>>12)&3}${((q[3]>>12)&3)==1?" (Steam: mV)":((q[3]>>12)&3)==2?" (Steam: raw)":""}`;}).join("\n"); }
       if(lq&&m==="cap"){ const [ls,rs,lg,rg]=lq.q; capPk.l=Math.max(capPk.l,lg); capPk.r=Math.max(capPk.r,rg);
         $("#cLs").textContent=ls; $("#cRs").textContent=rs; $("#cLg").textContent=lg; $("#cRg").textContent=rg; $("#pLg").textContent=capPk.l; $("#pRg").textContent=capPk.r;
-        const pct=(v,mx)=>Math.max(0,Math.min(100,v/mx*100))+"%"; $("#bLs").style.width=pct(ls,1000); $("#bRs").style.width=pct(rs,1000);
-        const gm=Math.max(1500,capPk.l,capPk.r); $("#bLg").style.width=pct(lg,gm); $("#bRg").style.width=pct(rg,gm); }
+        const sm=Math.max(1000,capTh.on*1.4), pct=(v,mx)=>Math.max(0,Math.min(100,v/mx*100))+"%"; $("#bLs").style.width=pct(ls,sm); $("#bRs").style.width=pct(rs,sm);
+        document.querySelectorAll(".capSm").forEach(e=>e.style.left=pct(capTh.on,sm));
+        const gm=Math.max(1500,capPk.l,capPk.r,capTh.grip*1.3); $("#bLg").style.width=pct(lg,gm); $("#bRg").style.width=pct(rg,gm);
+        document.querySelectorAll(".capGm").forEach(e=>{ if(capTh.grip){ e.style.display=""; e.style.left=pct(capTh.grip,gm);} }); }
       if(lq&&(m==="tp"||m==="puck"||m==="tpt"||m==="pcm")){ const L=m==="pcm"?["PCM bytes received/s","dropped/s (queue + ring)","master gain ×16 + amp mode (÷16 = dB)","underruns/s (ring ran empty)"]:m==="tp"?["pad frames/s","all frames/s","thread wakes/s","read errors/s"]:m==="tpt"?["frame interval µs (IRQ→IRQ)","I²C read µs","processing µs","IRQ → read start µs"]:["frames from Puck/s","ACKs delivered/s","reports built/s","stale replaced/s"];
         L.forEach((t,i)=>{$("#q"+i+"k").textContent=t; $("#q"+i).textContent=lq.q[i];}); } }
     hist(iv);

@@ -14,7 +14,11 @@
 #include "ibex_settings_registry.h"
 #include "imu.h"
 #include "valve_nvs.h"
+#include "olympus.h"
 #include "valve_settings.h"
+
+/* Report meter: stick/grip capacitive thresholds (live via STAGE, saved via COMMIT). */
+#define SC26RE_CAPSENSE_PATH "sc26re/capsense"
 #include "haptics.h"
 
 LOG_MODULE_REGISTER(valve_settings);
@@ -492,6 +496,16 @@ static bool nvs_read_path(const char *path, uint8_t *buf, size_t capacity, size_
 
 bool valve_settings_read(const char *path, uint8_t *buf, size_t capacity, size_t *len)
 {
+	if(strcmp(path, SC26RE_CAPSENSE_PATH) == 0)
+	{
+		if(capacity < OLYMPUS_CAPSENSE_SIZE)
+		{
+			return false;
+		}
+		olympus_capsense_get(buf);
+		*len = OLYMPUS_CAPSENSE_SIZE;
+		return true;
+	}
 	enum calibration_side side;
 	uint8_t setting_id;
 	int16_t setting_value;
@@ -626,6 +640,12 @@ int valve_settings_stage(const char *path, const uint8_t *value, size_t len)
 	uint8_t setting_id;
 	int slot = esb_bond_slot(path);
 	int err;
+
+	if(strcmp(path, SC26RE_CAPSENSE_PATH) == 0)
+	{
+		/* applied live; COMMIT stores it */
+		return olympus_capsense_set(value, len);
+	}
 
 	if(slot >= 0)
 	{
@@ -763,6 +783,11 @@ static int commit_setting_path(const char *path)
 	int16_t setting_value;
 	int slot = esb_bond_slot(path);
 	int err;
+
+	if(strcmp(path, SC26RE_CAPSENSE_PATH) == 0)
+	{
+		return olympus_capsense_save();
+	}
 
 	if(slot >= 0)
 	{

@@ -9,6 +9,7 @@
 #include <zephyr/drivers/i2c.h>
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
+#include <zephyr/settings/settings.h>
 #include <zephyr/sys/atomic.h>
 #include <zephyr/sys/byteorder.h>
 #include <zephyr/sys/util.h>
@@ -188,12 +189,22 @@ static int16_t registry_setting_or_default(uint8_t id, int16_t fallback)
 	return ibex_setting_get(id, &value) ? value : fallback;
 }
 
+/* User overrides from the report meter; 0 = default. Persisted in user/capsense. */
+#define CAPSENSE_USER_PATH "user/capsense"
+static uint16_t cap_user_stick_on;
+static uint16_t cap_user_stick_off;
+static uint16_t cap_user_grip_on;
+
 /*
- * Stick capacitive touch thresholds. A non-zero Kconfig value forces it and
- * ignores the host setting (olympus_click_press / _release).
+ * Stick capacitive touch thresholds. User override first, then a non-zero
+ * Kconfig value, then the host setting (olympus_click_press / _release).
  */
 static int16_t stick_touch_press_threshold(void)
 {
+	if(cap_user_stick_on > 0)
+	{
+		return (int16_t)MIN(cap_user_stick_on, INT16_MAX);
+	}
 	if(CONFIG_IBEX_STICK_TOUCH_PRESS > 0)
 	{
 		return CONFIG_IBEX_STICK_TOUCH_PRESS;
@@ -203,6 +214,12 @@ static int16_t stick_touch_press_threshold(void)
 
 static int16_t stick_touch_release_threshold(void)
 {
+	if(cap_user_stick_on > 0)
+	{
+		uint16_t off = cap_user_stick_off > 0 ? cap_user_stick_off : (cap_user_stick_on * 4U) / 5U;
+
+		return (int16_t)MIN(MIN(off, cap_user_stick_on), INT16_MAX);
+	}
 	if(CONFIG_IBEX_STICK_TOUCH_PRESS > 0)
 	{
 		return CONFIG_IBEX_STICK_TOUCH_RELEASE > 0
@@ -328,6 +345,10 @@ static int32_t pad_click_threshold(bool right, bool active)
 
 static int32_t grip_touch_threshold(void)
 {
+	if(cap_user_grip_on > 0)
+	{
+		return cap_user_grip_on;
+	}
 	int16_t percent = registry_setting_or_default(IBEX_SETTING_OLYMPUS_GRIP_TOUCH_PERCENT,
 	                                              OLYMPUS_GRIP_TOUCH_PERCENT);
 
@@ -1207,6 +1228,62 @@ static void olympus_thread_entry(void *unused1, void *unused2, void *unused3)
 	}
 }
 
+void olympus_capsense_get(uint8_t out[OLYMPUS_CAPSENSE_SIZE])
+{
+	sys_put_le16((uint16_t)MAX(stick_touch_press_threshold(), 0), &out[0]);
+	sys_put_le16((uint16_t)MAX(stick_touch_release_threshold(), 0), &out[2]);
+	sys_put_le16((uint16_t)CLAMP(grip_touch_threshold(), 0, UINT16_MAX), &out[4]);
+}
+
+int olympus_capsense_set(const uint8_t *data, size_t len)
+{
+	if(data == NULL || len < OLYMPUS_CAPSENSE_SIZE)
+	{
+		return -EINVAL;
+	}
+	cap_user_stick_on = MIN(sys_get_le16(&data[0]), 16000U);
+	cap_user_stick_off = MIN(sys_get_le16(&data[2]), 16000U);
+	cap_user_grip_on = MIN(sys_get_le16(&data[4]), 16000U);
+	LOG_INF("capsense thresholds: stick on %u off %u, grip on %u (0 = default)",
+	        cap_user_stick_on, cap_user_stick_off, cap_user_grip_on);
+	return 0;
+}
+
+int olympus_capsense_save(void)
+{
+	uint8_t buf[OLYMPUS_CAPSENSE_SIZE];
+
+	if(!IS_ENABLED(CONFIG_SETTINGS))
+	{
+		return -ENOTSUP;
+	}
+	sys_put_le16(cap_user_stick_on, &buf[0]);
+	sys_put_le16(cap_user_stick_off, &buf[2]);
+	sys_put_le16(cap_user_grip_on, &buf[4]);
+	if(cap_user_stick_on == 0 && cap_user_stick_off == 0 && cap_user_grip_on == 0)
+	{
+		return settings_delete(CAPSENSE_USER_PATH);
+	}
+	return settings_save_one(CAPSENSE_USER_PATH, buf, sizeof(buf));
+}
+
+static int capsense_load_cb(const char *key, size_t len, settings_read_cb read_cb, void *cb_arg,
+                            void *param)
+{
+	uint8_t buf[OLYMPUS_CAPSENSE_SIZE];
+
+	ARG_UNUSED(param);
+	if((key != NULL && key[0] != '\0') || len != sizeof(buf))
+	{
+		return 0;
+	}
+	if(read_cb(cb_arg, buf, sizeof(buf)) == (ssize_t)sizeof(buf))
+	{
+		(void)olympus_capsense_set(buf, sizeof(buf));
+	}
+	return 1;
+}
+
 int olympus_init(void)
 {
 	int err;
@@ -1216,6 +1293,11 @@ int olympus_init(void)
 	   !gpio_is_ready_dt(&olympus_reset))
 	{
 		return -ENODEV;
+	}
+
+	if(IS_ENABLED(CONFIG_SETTINGS))
+	{
+		(void)settings_load_subtree_direct(CAPSENSE_USER_PATH, capsense_load_cb, NULL);
 	}
 
 	err = gpio_pin_configure_dt(&olympus_reset, GPIO_OUTPUT_INACTIVE);
