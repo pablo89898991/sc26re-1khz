@@ -230,6 +230,7 @@ static bool gyro_chord_poll(const struct controller_report *r)
 	static int64_t since;
 	static int64_t armed_at;
 	static uint8_t step;
+	static bool drift_only;
 	static struct rgbw_color saved_led;
 	static int64_t last_beep;
 	const uint32_t chord = BIT(CONTROLLER_BUTTON_LEFT_SHOULDER) |
@@ -244,6 +245,7 @@ static bool gyro_chord_poll(const struct controller_report *r)
 	if(state == GYRO_CHORD_IDLE && imu_take_full_cal_request())
 	{
 		start = true;
+		drift_only = false; /* the meter's button always runs the full routine */
 	}
 	switch(state)
 	{
@@ -262,6 +264,7 @@ static bool gyro_chord_poll(const struct controller_report *r)
 			else if(now - since >= GYRO_CHORD_HOLD_MS)
 			{
 				start = true;
+				drift_only = sc26re_cfg_get(SC26RE_CFG_GYRO_CHORD_MODE) == 1;
 			}
 			break;
 		case GYRO_CHORD_WAIT_HANDS_OFF:
@@ -297,7 +300,13 @@ static bool gyro_chord_poll(const struct controller_report *r)
 				{
 					gyro_bands_apply(false);
 				}
-				if(step == 4)
+				if(drift_only)
+				{
+					/* drift-only chord: one calibration, dead bands untouched */
+					gyro_chord_finish(true, saved_led);
+					state = GYRO_CHORD_IDLE;
+				}
+				else if(step == 4)
 				{
 					imu_set_full_cal_step(5);
 					gyro_bands_apply(true);
@@ -329,8 +338,8 @@ static bool gyro_chord_poll(const struct controller_report *r)
 		imu_force_on(true);
 		armed_at = now;
 		since = now;
-		step = 1;
-		imu_set_full_cal_step(1);
+		step = drift_only ? 2 : 1;
+		imu_set_full_cal_step(step);
 		state = GYRO_CHORD_WAIT_HANDS_OFF;
 		LOG_INF("full gyro calibration: put the controller down");
 	}

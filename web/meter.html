@@ -80,6 +80,7 @@
     <table id="lsTable" style="width:100%;border-collapse:collapse;margin-top:8px"></table>
     <div class="lbl" style="margin-top:14px">Tools</div>
     <div class="bar" style="flex-wrap:wrap;gap:10px">
+      <label>LB + RB + X + Y does <select id="chordMode"><option value="0">full calibration (drift + dead bands)</option><option value="1">drift only (no dead bands)</option></select></label>
       <button class="primary" id="gyFull">Full gyro calibration</button>
       <button id="gyCal">Calibrate gyro</button>
       <button id="gyReset">Reset gyro calibration</button>
@@ -101,6 +102,7 @@
       <tr><td>Roll</td><td id="grLoY">—</td><td id="grHiY">—</td><td id="grAvY">—</td></tr>
     </table>
     <p class="note"><b>Gyro at rest:</b> put the controller on a table and press <i>Measure</i>. For 5 s the gyro dead zone and dead bands are switched off (only live, nothing is saved) so the real resting values are seen, then put back. The lowest/highest value per axis, in °/s, is what drift and noise look like on your unit. <i>Use as dead bands</i> copies them, plus the margin, into the X/Y/Z dead band rows above; then press Apply or Save. Keep “Gyro on (standalone)” ticked at the top (otherwise the IMU may be off: all zeros) — calibrate the gyro first for the smallest bands.</p>
+    <p class="note"><b>LB + RB + X + Y does</b> (v46+): <i>full calibration</i> = the 5-step routine below (drift + pitch/yaw/roll dead bands); <i>drift only</i> = just one drift calibration, same LED and sounds, about 2 s, dead bands left as they are. The meter's “Full gyro calibration” button always runs the full routine.</p>
     <p class="note"><b>Full gyro calibration</b> (v43+, also: hold LB + RB + X + Y for 3 s on the controller — purple LED + chime): put the controller on a table and let go. It measures the gyro at rest for 5 s and sets the pitch/yaw/roll dead bands, calibrates the gyro, measures at rest again, calibrates again and saves — about 15 s. A second chime confirms; touching or moving it just repeats the current step.</p>
     <p class="note"><b>Reset gyro calibration:</b> removes your gyro calibration — the drift goes back to the factory value from Valve's storage and the pitch/yaw/roll dead bands are switched off (saved). Other settings are not touched.</p>
     <p class="note"><b>Calibrate gyro:</b> put the controller on a table, press, and don't touch it for 2 s (v43+: the gyro is measured while still; if it moved, nothing changes). <b>Zero sticks:</b> hands off both sticks, press; their resting point becomes the centre.</p>
@@ -464,6 +466,7 @@ async function lsReadAll(){
     }
     capShow();
     try{ const b=await featRead(d,"user/haptic_boot_level"); if(b.length) $("#bootChime").value=b[0]; }catch(e){}
+    try{ const b=await featRead(d,"sc26re/gyro_chord_mode"); if(b.length>=2){ $("#chordMode").value=String(s16(b,0)); $("#chordMode").disabled=false; } }catch(e){ $("#chordMode").disabled=true; }
     $("#lsStatus").innerHTML='<span class="ok">read</span>';
   }catch(e){ $("#lsStatus").innerHTML=`<span class="err">${e.message}</span>`; }
 }
@@ -514,6 +517,11 @@ async function toolSend(buf,msg){
   let ok=0,last=""; for(const d of targets()){ try{ await fsend(d,1,buf); ok++; }catch(e){ last=e.message; } }
   $("#toolStatus").innerHTML=ok?`<span class="ok">${msg}</span>`:`<span class="err">failed: ${last||"not connected"}</span>`;
 }
+$("#chordMode").onchange=async e=>{
+  const v=+e.target.value; let last="";
+  for(const d of targets()){ try{ await fsend(d,1,pathCmd(0xEE,"sc26re/gyro_chord_mode",[v,0])); await fsend(d,1,pathCmd(0xEF,"sc26re/gyro_chord_mode")); }catch(err){ last=err.message; } }
+  $("#toolStatus").innerHTML=last?`<span class="err">failed: ${last} (needs v46+)</span>`:`<span class="ok">LB + RB + X + Y now does: ${v?"drift only":"full calibration"} (saved)</span>`;
+};
 $("#gyReset").onclick=async()=>{
   if(!devs.length){ $("#toolStatus").innerHTML='<span class="err">connect first</span>'; return; }
   if(!confirm("Reset the gyro calibration?\nThe saved drift goes back to the factory value and the pitch/yaw/roll dead bands are switched off.")) return;
