@@ -1504,7 +1504,13 @@ static bool imu_send_mouse(void)
 	}
 	m[1] = (uint8_t)dx;
 	m[2] = (uint8_t)dy;
-	return transport_send_input_report(0x40, m, sizeof(m)) == 0;
+	if(transport_send_input_report(0x40, m, sizeof(m)) != 0)
+	{
+		/* link busy: the movement stays for the next report */
+		gyro_mouse_give_back(dx, dy);
+		return false;
+	}
+	return true;
 }
 
 static void imu_fast_thread_main(void *arg1, void *arg2, void *arg3)
@@ -1517,7 +1523,6 @@ static void imu_fast_thread_main(void *arg1, void *arg2, void *arg3)
 	int16_t applied_lpf = INT16_MIN;
 	float gm_dps[3];
 	uint32_t gm_last_us = 0;
-	uint32_t gm_frame = 0;
 	bool gm_have_state;
 	int16_t mid_gyro_raw[3] = { 0 };
 	bool mid_gyro_valid = false;
@@ -1735,9 +1740,9 @@ static void imu_fast_thread_main(void *arg1, void *arg2, void *arg3)
 		}
 		else if(transport_usb_configured() || transport_esb_connected() || transport_ble_connected())
 		{
-			/* Puck / Bluetooth: mouse every other sample, the report loop sends the pad */
-			gm_frame++;
-			if((gm_frame & 1U) && gyro_mouse_has_counts())
+			/* Puck / Bluetooth: mouse on every sample (the link merges waiting mouse
+			 * reports), the report loop sends the pad */
+			if(gyro_mouse_has_counts())
 			{
 				(void)imu_send_mouse();
 			}

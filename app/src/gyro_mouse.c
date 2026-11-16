@@ -315,6 +315,12 @@ void gyro_mouse_feed(const float dps[3], uint32_t buttons, float dt_s)
 	}
 }
 
+void gyro_mouse_give_back(int8_t dx, int8_t dy)
+{
+	acc_x += (float)dx;
+	acc_y += (float)dy;
+}
+
 bool gyro_mouse_has_counts(void)
 {
 	return fabsf(acc_x) >= 1.0f || fabsf(acc_y) >= 1.0f;

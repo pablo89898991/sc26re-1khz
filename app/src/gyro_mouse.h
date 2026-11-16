@@ -15,6 +15,8 @@ struct gyro_mouse_status
 /* one gyro sample: pitch, yaw, roll in deg/s (bias removed, no dead zones) */
 void gyro_mouse_feed(const float dps[3], uint32_t buttons, float dt_s);
 /* whole counts to send now (fractions stay for the next report); true if any */
+/* a mouse report could not be sent: keep its movement for the next one */
+void gyro_mouse_give_back(int8_t dx, int8_t dy);
 bool gyro_mouse_has_counts(void);
 bool gyro_mouse_take(int8_t *dx, int8_t *dy);
 bool gyro_mouse_enabled(void);

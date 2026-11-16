@@ -1422,6 +1422,39 @@ static int queue_input_report(uint8_t report_id, const uint8_t *data, size_t len
 		k_spin_unlock(&latest_input_lock, key);
 		return -ENOTCONN;
 	}
+	if(report_id == ESB_REPORT_40_ID && len == ESB_REPORT_40_BODY_SIZE)
+	{
+		/* mouse (gyro mouse / lizard): add to a mouse report still waiting
+		 * instead of queueing another, so movement is never dropped or delayed */
+		for(uint8_t n = 0; n < input_report_queue_count; ++n)
+		{
+			struct esb_input_report_entry *e =
+			    &input_report_queue[(input_report_queue_head + n) % ARRAY_SIZE(input_report_queue)];
+			bool fits = true;
+
+			if(e->id != ESB_REPORT_40_ID || e->len != len)
+			{
+				continue;
+			}
+			for(size_t i = 1; i < len; ++i)
+			{
+				int32_t v = (int8_t)e->data[i] + (int8_t)data[i];
+
+				fits = fits && v >= -127 && v <= 127;
+			}
+			if(!fits)
+			{
+				continue;
+			}
+			e->data[0] = data[0];
+			for(size_t i = 1; i < len; ++i)
+			{
+				e->data[i] = (uint8_t)(int8_t)((int8_t)e->data[i] + (int8_t)data[i]);
+			}
+			k_spin_unlock(&latest_input_lock, key);
+			return 0;
+		}
+	}
 	if(input_report_queue_count == ARRAY_SIZE(input_report_queue))
 	{
 		/* This producer tracks absolute keyboard and button state, so it must
