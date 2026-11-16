@@ -1307,45 +1307,49 @@ static void imu_stream_thread_main(void *arg1, void *arg2, void *arg3)
 /*
  * Direct gyro/accel path. The FIFO only carries the SFLP words (quaternion and
  * drift estimate, 120 Hz); gyro and accel run at 2 kHz in the sensor and are read
- * straight from the output registers, both in one 12-byte I2C transaction, once
- * per USB frame (SOF) or every 1 ms from a timer when there is no USB host. Each
- * read therefore finds a sample at most 0.5 ms old that the previous read did
- * not have: every report carries a new gyro and accel sample, with no beating
- * between the sensor clock and the USB frames and no FIFO batching jitter.
+ * straight from the output registers, both in one 12-byte I2C transaction.
+ *
+ * On USB the read is started by the host fetching the previous state report
+ * (IN transfer done): the next report is then ready about half a frame before
+ * the host's next poll, whatever point of the frame the host polls at, so each
+ * poll gets a new sample (at most ~1 ms old). Without USB polls (Puck,
+ * Bluetooth, nothing fetched for 1.5 ms) a 1 ms timer starts the reads.
  */
 #define IMU_REG_CTRL6 0x15U /* FS_G [3:0], LPF1_G_BW [6:4] */
 #define IMU_REG_CTRL7 0x16U /* LPF1_G_EN bit 0 */
 #define IMU_REG_CTRL8 0x17U /* FS_XL [1:0] */
 #define IMU_REG_OUTX_L_G 0x22U
-#define IMU_SOF_TIMEOUT_MS 3U
+#define IMU_PACE_TIMEOUT_MS 3U
+#define IMU_POLL_GAP_TICKS ((uint32_t)k_us_to_ticks_ceil32(1500))
 
 static const struct i2c_dt_spec imu_i2c = I2C_DT_SPEC_GET(DT_ALIAS(accel0));
 K_SEM_DEFINE(imu_tick_sem, 0, 1);
-static atomic_t imu_last_sof_ms;
+static atomic_t imu_last_poll_ticks;
+static atomic_t imu_last_poll_ms;
 static atomic_t imu_fast_reads;
 static atomic_t imu_fast_errors;
-
 static atomic_t imu_last_read_ms;
 
 bool imu_paces_usb(void)
 {
 	uint32_t now = k_uptime_get_32();
 
-	return now - (uint32_t)atomic_get(&imu_last_read_ms) <= IMU_SOF_TIMEOUT_MS &&
-	       now - (uint32_t)atomic_get(&imu_last_sof_ms) <= IMU_SOF_TIMEOUT_MS;
+	return now - (uint32_t)atomic_get(&imu_last_read_ms) <= IMU_PACE_TIMEOUT_MS &&
+	       now - (uint32_t)atomic_get(&imu_last_poll_ms) <= IMU_PACE_TIMEOUT_MS;
 }
 
-void imu_usb_sof(void)
+void imu_usb_in_done(void)
 {
-	atomic_set(&imu_last_sof_ms, (atomic_val_t)k_uptime_get_32());
+	atomic_set(&imu_last_poll_ticks, (atomic_val_t)(uint32_t)k_uptime_ticks());
+	atomic_set(&imu_last_poll_ms, (atomic_val_t)k_uptime_get_32());
 	k_sem_give(&imu_tick_sem);
 }
 
 static void imu_tick_timer_fn(struct k_timer *timer)
 {
 	ARG_UNUSED(timer);
-	/* only when no USB frames arrive (Puck / Bluetooth / suspended) */
-	if(k_uptime_get_32() - (uint32_t)atomic_get(&imu_last_sof_ms) > IMU_SOF_TIMEOUT_MS)
+	/* only when the host is not fetching reports (Puck / Bluetooth / idle USB) */
+	if((uint32_t)k_uptime_ticks() - (uint32_t)atomic_get(&imu_last_poll_ticks) > IMU_POLL_GAP_TICKS)
 	{
 		k_sem_give(&imu_tick_sem);
 	}
@@ -1456,7 +1460,7 @@ static void imu_fast_thread_main(void *arg1, void *arg2, void *arg3)
 	}
 }
 #else
-void imu_usb_sof(void)
+void imu_usb_in_done(void)
 {
 }
 

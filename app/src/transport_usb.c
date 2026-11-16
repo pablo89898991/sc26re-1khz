@@ -494,6 +494,10 @@ static void usb_input_ready(const struct device *dev, const uint8_t *const repor
 	}
 	submit_next = completion_matched && (k_msgq_num_used_get(&input_queue) != 0 || pending_state_valid);
 	k_spin_unlock(&input_queue_lock, key);
+	if(completion_matched && report != NULL && report[0] == ID_TRITON_CONTROLLER_STATE)
+	{
+		imu_usb_in_done();
+	}
 
 	if(submit_next)
 	{
@@ -511,14 +515,7 @@ static void usb_output_ready(const struct device *dev, uint16_t len, const uint8
 	}
 }
 
-static void usb_sof(const struct device *dev)
-{
-	ARG_UNUSED(dev);
-	imu_usb_sof();
-}
-
 static const struct hid_device_ops hid_ops = {
-	.sof = usb_sof,
 	.get_report = usb_get_report,
 	.set_report = usb_set_report,
 	.input_report_done = usb_input_ready,

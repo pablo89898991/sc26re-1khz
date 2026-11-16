@@ -53,6 +53,7 @@
       <label class="note" title="Switches the controller's gyro/accelerometer on from this page, the way Steam does, so nothing else has to be open. Switched off again when you close the page."><input type="checkbox" id="imuOn" checked> Gyro on (standalone)</label>
       <label class="note" id="ctlPick" style="display:none">Controller <select id="ctlSel"></select></label>
       <span id="status" class="note">not connected</span>
+      <span id="bootInfo" class="note"></span>
     </div>
   </div>
 
@@ -285,9 +286,22 @@ async function connect(){
     $("#status").innerHTML=devs.length?`<span class="ok">connected: ${devs.map(d=>d.productName||"device").join(", ")}</span>`:"no device selected";
     if(devs.length && $("#imuOn").checked) await imuMode(IMU_MODE_ON);
     reset();
+    showBoot();
   }catch(e){ $("#status").innerHTML=`<span class="err">${e.message}</span>`; }
 }
 $("#connect").onclick=connect;
+/* why the controller last started (v47+): helps tell a crash from a normal restart */
+async function showBoot(){
+  const d=ctl(); if(!d) return;
+  let b; try{ b=await featRead(d,"sc26re/boot"); }catch(e){ return; }
+  if(!b||b.length<28) return;
+  const dv=new DataView(b.buffer,b.byteOffset,b.length), rr=dv.getUint32(0,true), up=dv.getUint32(4,true);
+  let why=rr===0?"power on":rr&0x8?"LOCKUP":rr&0x2?"WATCHDOG (it hung)":rr&0x4?"restart (software)":rr&0x1?"reset pin":rr&0x10000?"woke from off":rr&0x100000?"USB plugged in":"0x"+rr.toString(16);
+  let crash="";
+  if(b[8]){ const name=new TextDecoder().decode(b.slice(18,28)).replace(/\0.*$/,"");
+    crash=` · <span class="err">CRASH: reason ${b[9]}, thread “${name}”, pc 0x${dv.getUint32(10,true).toString(16)}, lr 0x${dv.getUint32(14,true).toString(16)}</span>`; }
+  $("#bootInfo").innerHTML=` · up ${Math.round(up/1000)} s, last start: ${why}${crash}`;
+}
 $("#ctlSel").onchange=e=>{ ctlDev=devs[+e.target.value]; ctlManual=true; };
 
 /* ---- IMU on without Steam: SET_SETTINGS_VALUES (0x87) setting 48 imu_mode = raw accel | raw gyro | orientation ---- */

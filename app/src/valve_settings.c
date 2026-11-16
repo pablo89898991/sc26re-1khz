@@ -18,6 +18,7 @@
 #include "sc26re_cfg.h"
 #include "valve_feature.h"
 #include "valve_settings.h"
+#include "power.h"
 
 /* Report meter: stick/grip capacitive thresholds (live via STAGE, saved via COMMIT). */
 #define SC26RE_CAPSENSE_PATH "sc26re/capsense"
@@ -551,6 +552,25 @@ bool valve_settings_read(const char *path, uint8_t *buf, size_t capacity, size_t
 	{
 		sys_put_le32(valve_feature_ms_since_host_traffic(), buf);
 		*len = 4;
+		return true;
+	}
+	if(strcmp(path, "sc26re/boot") == 0 && capacity >= 28)
+	{
+		/* why the controller last started: RESETREAS, uptime, crash record */
+		const struct power_crash_info *c = power_last_crash();
+
+		memset(buf, 0, 28);
+		sys_put_le32(power_boot_reset_reason(), &buf[0]);
+		sys_put_le32((uint32_t)k_uptime_get(), &buf[4]);
+		if(c != NULL)
+		{
+			buf[8] = 1;
+			buf[9] = (uint8_t)c->reason;
+			sys_put_le32(c->pc, &buf[10]);
+			sys_put_le32(c->lr, &buf[14]);
+			memcpy(&buf[18], c->thread, 10);
+		}
+		*len = 28;
 		return true;
 	}
 	if(strcmp(path, "sc26re/awake") == 0 && capacity >= 1)

@@ -11,6 +11,16 @@ bool power_take_continue_wireless(void);
 int power_reboot_to_valve_isp(void);
 void power_capture_boot_state(void);
 uint32_t power_boot_reset_reason(void);
+struct power_crash_info
+{
+	bool valid;
+	uint32_t reason;
+	uint32_t pc;
+	uint32_t lr;
+	char thread[12];
+};
+/* the fatal error that caused this boot, or NULL */
+const struct power_crash_info *power_last_crash(void);
 void power_boot_gpio_latches(uint32_t latches[2]);
 void power_off(void);
 /* power off without the power-off chime (charge-only mode) */

@@ -36,8 +36,8 @@ void imu_set_full_cal_step(uint8_t step);
 uint8_t imu_full_cal_step(void);
 void imu_gyro_cal_result(int16_t std_mdps[3], int16_t spread_mdps[3]);
 void imu_reset(void);
-/* USB start of frame: read the gyro/accel for the next report */
-void imu_usb_sof(void);
+/* the host fetched a state report: read the gyro/accel for the next one */
+void imu_usb_in_done(void);
 /* true while the IMU is read once per USB frame (USB reports wait for each new sample) */
 bool imu_paces_usb(void);
 

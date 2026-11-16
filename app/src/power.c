@@ -15,6 +15,9 @@
 #include <zephyr/sys/poweroff.h>
 #endif
 #include <zephyr/sys/reboot.h>
+#include <zephyr/fatal.h>
+#include <zephyr/linker/section_tags.h>
+#include <string.h>
 
 #include "analog.h"
 #include "battery.h"
@@ -58,6 +61,16 @@ static uint32_t boot_reset_reason;
 static uint32_t boot_gpio_latches[2];
 static bool boot_state_captured;
 static atomic_t power_off_claimed;
+#define CRASH_MAGIC 0x5C26C0DEU
+static __noinit struct
+{
+	uint32_t magic;
+	uint32_t reason;
+	uint32_t pc;
+	uint32_t lr;
+	char thread[12];
+} crash_record;
+static struct power_crash_info last_crash;
 static uint32_t power_off_release_mask;
 static bool power_off_quiet_request;
 K_SEM_DEFINE(power_off_sem, 0, 1);
@@ -168,9 +181,51 @@ void power_capture_boot_state(void)
 	nrf_gpio_latches_read_and_clear(0, ARRAY_SIZE(boot_gpio_latches), boot_gpio_latches);
 #endif
 
+	if(crash_record.magic == CRASH_MAGIC)
+	{
+		last_crash.valid = true;
+		last_crash.reason = crash_record.reason;
+		last_crash.pc = crash_record.pc;
+		last_crash.lr = crash_record.lr;
+		memcpy(last_crash.thread, crash_record.thread, sizeof(last_crash.thread));
+		last_crash.thread[sizeof(last_crash.thread) - 1U] = '\0';
+	}
+	crash_record.magic = 0U;
 	boot_state_captured = true;
 	LOG_INF("boot reset reason=0x%08x gpio_latch=p0:0x%08x p1:0x%08x", boot_reset_reason,
 	        boot_gpio_latches[0], boot_gpio_latches[1]);
+}
+
+/*
+ * Crash record for the report meter: a fatal error (fault, assert, stack
+ * overflow) is noted in RAM that survives the reset, then the controller
+ * restarts at once instead of halting until the watchdog fires.
+ */
+
+void k_sys_fatal_error_handler(unsigned int reason, const struct arch_esf *esf)
+{
+	const char *name = k_thread_name_get(k_current_get());
+
+	crash_record.magic = CRASH_MAGIC;
+	crash_record.reason = reason;
+	crash_record.pc = esf != NULL ? esf->basic.pc : 0U;
+	crash_record.lr = esf != NULL ? esf->basic.lr : 0U;
+	memset(crash_record.thread, 0, sizeof(crash_record.thread));
+	if(name != NULL)
+	{
+		strncpy(crash_record.thread, name, sizeof(crash_record.thread) - 1U);
+	}
+	sys_reboot(SYS_REBOOT_COLD);
+	CODE_UNREACHABLE;
+}
+
+const struct power_crash_info *power_last_crash(void)
+{
+	if(!boot_state_captured)
+	{
+		return NULL;
+	}
+	return last_crash.valid ? &last_crash : NULL;
 }
 
 uint32_t power_boot_reset_reason(void)
