@@ -48,6 +48,8 @@ static enum cal_state cal;
 static float cal_counts;     /* counts sent during the calibration turn */
 static uint32_t cal_button_mask;
 static K_MUTEX_DEFINE(lock);
+/* counts handed to the transport (report meter link test) */
+static atomic_t sent_abs_x, sent_abs_y, sent_reports;
 
 /* saving takes a flash write: done from the system work queue */
 static int16_t pending_enabled = -1;
@@ -167,6 +169,9 @@ void gyro_mouse_status(struct gyro_mouse_status *st)
 	st->cal_state = (uint8_t)cal;
 	st->cal_counts = (int32_t)cal_counts;
 	st->counts_per_360 = gyro_mouse_counts_per_360();
+	st->sent_abs_x = (uint32_t)atomic_get(&sent_abs_x);
+	st->sent_abs_y = (uint32_t)atomic_get(&sent_abs_y);
+	st->sent_reports = (uint32_t)atomic_get(&sent_reports);
 	k_mutex_unlock(&lock);
 }
 
@@ -324,6 +329,14 @@ void gyro_mouse_feed(const float dps[3], uint32_t buttons, float dt_s)
 			}
 		}
 	}
+}
+
+
+void gyro_mouse_note_sent(int8_t dx, int8_t dy)
+{
+	atomic_add(&sent_abs_x, abs(dx));
+	atomic_add(&sent_abs_y, abs(dy));
+	atomic_inc(&sent_reports);
 }
 
 void gyro_mouse_give_back(int8_t dx, int8_t dy)

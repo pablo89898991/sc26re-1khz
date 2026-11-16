@@ -555,7 +555,7 @@ bool valve_settings_read(const char *path, uint8_t *buf, size_t capacity, size_t
 		*len = 4;
 		return true;
 	}
-	if(strcmp(path, "sc26re/gm_state") == 0 && capacity >= 10)
+	if(strcmp(path, "sc26re/gm_state") == 0 && capacity >= 22)
 	{
 		struct gyro_mouse_status st;
 
@@ -564,7 +564,10 @@ bool valve_settings_read(const char *path, uint8_t *buf, size_t capacity, size_t
 		buf[1] = st.cal_state;
 		sys_put_le32((uint32_t)st.cal_counts, &buf[2]);
 		sys_put_le32((uint32_t)st.counts_per_360, &buf[6]);
-		*len = 10;
+		sys_put_le32(st.sent_abs_x, &buf[10]);
+		sys_put_le32(st.sent_abs_y, &buf[14]);
+		sys_put_le32(st.sent_reports, &buf[18]);
+		*len = 22;
 		return true;
 	}
 	if(strcmp(path, "sc26re/imu_stats") == 0 && capacity >= 20)

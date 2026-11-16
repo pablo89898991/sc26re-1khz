@@ -146,6 +146,10 @@
     <div class="bar" style="flex-wrap:wrap;gap:10px;margin-top:6px">
       <button class="primary" id="gmCalStart">Start calibration</button><button id="gmCalTurn">Start turn</button><button id="gmCalStop">Stop at 360° &amp; save</button><button id="gmCalCancel">Cancel</button>
     </div>
+    <h2 style="margin-top:16px;font-size:13px">Mouse link test</h2>
+    <p class="note">Checks whether every count the controller sends arrives at the PC (cable vs Puck). Turn the gyro mouse on, press <b>Start</b>, then for 10 s move the controller steadily (keep the activation button held if you use one). The cursor is captured meanwhile; Esc ends early.</p>
+    <div class="bar" style="flex-wrap:wrap;gap:10px"><button id="gmLink">Start link test (10 s)</button><span id="gmLinkOut" class="note"></span></div>
+
   </div>
 
   <div class="panel">
@@ -331,6 +335,31 @@ async function connect(){
   }catch(e){ $("#status").innerHTML=`<span class="err">${e.message}</span>`; }
 }
 $("#connect").onclick=connect;
+
+/* ---- mouse link test: counts sent by the controller vs counts the PC got (raw, pointer lock) ---- */
+async function gmStateRaw(){ try{ const b=await featRead(ctl(),"sc26re/gm_state"); if(b&&b.length>=22){ const dv=new DataView(b.buffer,b.byteOffset,22); return {x:dv.getUint32(10,true),y:dv.getUint32(14,true),n:dv.getUint32(18,true)}; } }catch(e){} return null; }
+$("#gmLink").onclick=async()=>{
+  const out=$("#gmLinkOut");
+  if(!devs.length){ out.innerHTML='<span class="err">connect first</span>'; return; }
+  const el=$("#gmLink");
+  try{ await el.requestPointerLock({unadjustedMovement:true}); }catch(e){ try{ await el.requestPointerLock(); }catch(e2){ out.innerHTML='<span class="err">pointer lock refused</span>'; return; } }
+  const a=await gmStateRaw();
+  if(!a){ document.exitPointerLock(); out.innerHTML='<span class="err">needs firmware v49test11+</span>'; return; }
+  let rx=0, ry=0, n=0, last=null; const gaps=[];
+  const mv=e=>{ rx+=Math.abs(e.movementX); ry+=Math.abs(e.movementY); n++; const t=e.timeStamp; if(last!==null) gaps.push(t-last); last=t; };
+  document.addEventListener("mousemove",mv);
+  out.textContent="recording… move the controller";
+  const t0=performance.now();
+  await new Promise(r=>{ const iv=setInterval(()=>{ if(performance.now()-t0>10000||document.pointerLockElement!==el){ clearInterval(iv); r(); } },100); });
+  document.removeEventListener("mousemove",mv);
+  if(document.pointerLockElement) document.exitPointerLock();
+  await new Promise(r=>setTimeout(r,300));
+  const b=await gmStateRaw(); const secs=(performance.now()-t0)/1000;
+  const sx=b.x-a.x, sy=b.y-a.y, sent=sx+sy, got=rx+ry;
+  gaps.sort((p,q)=>p-q); const pct=q=>gaps.length?gaps[Math.min(gaps.length-1,Math.floor(q*gaps.length))].toFixed(1):"—";
+  const loss=sent?((1-got/sent)*100):0;
+  out.innerHTML=`controller sent <b>${sent}</b> counts in ${b.n-a.n} reports · PC got <b>${got}</b> (${loss>=0?"lost":"extra"} ${Math.abs(loss).toFixed(1)} %) · PC mouse events ${(n/secs).toFixed(0)}/s · gap median ${pct(.5)} ms, p99 ${pct(.99)} ms, max ${gaps.length?gaps[gaps.length-1].toFixed(1):"—"} ms`;
+};
 
 /* ---- gyro as mouse (v49+) ---- */
 const GM_BTNS=[[0,"A"],[1,"B"],[2,"X"],[3,"Y"],[9,"RB"],[19,"LB"],[23,"RT click"],[27,"LT click"],[7,"R4"],[8,"R5"],[17,"L4"],[18,"L5"],[5,"R3"],[15,"L3"],[6,"View"],[14,"Menu"],[10,"D-pad down"],[11,"D-pad right"],[12,"D-pad left"],[13,"D-pad up"],[22,"right pad click"],[26,"left pad click"],[21,"right pad touch"],[25,"left pad touch"],[20,"right stick touch"],[24,"left stick touch"],[28,"right grip touch"],[29,"left grip touch"]];

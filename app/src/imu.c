@@ -1537,6 +1537,7 @@ static bool imu_send_mouse(void)
 		gyro_mouse_give_back(dx, dy);
 		return false;
 	}
+	gyro_mouse_note_sent(dx, dy);
 	return true;
 }
 

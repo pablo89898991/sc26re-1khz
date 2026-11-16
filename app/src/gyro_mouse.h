@@ -10,7 +10,10 @@ struct gyro_mouse_status
 	uint8_t cal_state; /* 0 idle, 1 waiting for the start press, 2 turning */
 	int32_t cal_counts;
 	int32_t counts_per_360;
+	uint32_t sent_abs_x, sent_abs_y, sent_reports;
 };
+
+void gyro_mouse_note_sent(int8_t dx, int8_t dy);
 
 /* one gyro sample: pitch, yaw, roll in deg/s (bias removed, no dead zones) */
 /* report loop: handles the LB+RB+View chord and hides its buttons from the host while held */
