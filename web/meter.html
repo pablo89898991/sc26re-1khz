@@ -441,25 +441,30 @@ async function findBlPort(ask){
   return navigator.serial.requestPort({filters:[{usbVendorId:0x28DE,usbProductId:0x1005}]});
 }
 function attach(d){ if(!d.__listening){ d.addEventListener("inputreport",onReport); d.__listening=true; } }
-async function waitForHid(){
-  for(let t=0;t<160;t++){
-    const ds=(await navigator.hid.getDevices()).filter(d=>d.vendorId===0x28DE && d.productId===0x1302 && d.collections.some(c=>c.featureReports&&c.featureReports.length));
+/* the controller after a restart: wait for the old device to drop off first, then for a new one.
+   Returns null when the browser does not hand it back without a click (permission lost on re-plug). */
+async function waitForHid(old=null,secs=20){
+  if(old){ for(let t=0;t<24;t++){ const all=await navigator.hid.getDevices(); if(!all.includes(old)) break; await fwSleep(250); } }
+  for(let t=0;t<secs*4;t++){
+    const ds=(await navigator.hid.getDevices()).filter(d=>d!==old && d.vendorId===0x28DE && d.productId===0x1302 && d.collections.some(c=>c.featureReports&&c.featureReports.length));
     if(ds.length){ const d=ds[0];
       if(!d.opened){ try{ await Promise.race([d.open(),fwSleep(2000).then(()=>{throw new Error("open timeout");})]); }catch(e){ await fwSleep(500); continue; } }
       d.__send=d.sendFeatureReport.bind(d); return d; }
     if(t%4===0) fwSay(`waiting for the controller to come back… ${Math.round(t/4)} s`);
     await fwSleep(250);
   }
-  throw new Error("controller did not come back after flashing");
+  return null;
 }
+function adopt(d){ devs=[d]; ctlDev=d; attach(d); reset(); $("#status").innerHTML='<span class="ok">reconnected</span>'; }
+function needClick(){ devs=[]; ctlDev=null; $("#status").innerHTML='<span class="err">controller restarted — press “Connect controller…” to see it again</span>'; }
 let lastBackup=null;
 async function restoreAndReboot(d,bk){
   await nvsRestore(d,bk);
   lastBackup=null;
   fwSay("restarting with your settings…");
   await sendAndDrop(d,0x95);
-  await fwSleep(3000);
-  try{ const d2=await waitForHid(); devs=[d2]; ctlDev=d2; attach(d2); }catch(e){}
+  const d2=await waitForHid(d,15);
+  if(d2) adopt(d2); else needClick();
 }
 $("#fwRestore").onclick=async()=>{
   try{
@@ -482,7 +487,7 @@ $("#fwRestore").onclick=async()=>{
     }
     fwSay("restoring settings…"); fwBar(90);
     await restoreAndReboot(d,bk);
-    fwBar(100); fwSay("done — settings restored","ok");
+    fwBar(100); fwSay(devs.length?"done — settings restored":"done — settings restored (press “Connect controller…” to see the controller again)","ok");
   }catch(e){ fwSay("restore failed: "+e.message,"err"); }
 };
 let fwPending=null; /* {fw, bk} while waiting for the user to pick the bootloader port */
@@ -505,23 +510,21 @@ async function fwRun(port){
     try{ await within(bl.cmd(FW.RESET,new Uint8Array(0),2000),2500); }catch(e){}
   }finally{ if(bl) await bl.close(); $("#fwPort").style.display="none"; }
   fwPending=null;
-  await fwSleep(2500);
+  await fwSleep(1500);
   if(bk) lastBackup=bk;
-  let d;
-  try{ d=await waitForHid(); }
-  catch(e){
-    fwBar(90);
-    fwSay(bk?"firmware flashed, but the page lost the controller — press “Restore settings” (pick the controller if asked) to write your settings back"
-            :"firmware flashed — reconnect the controller above","err");
+  const d=await waitForHid(null,20);
+  if(!d){
+    fwBar(90); needClick();
+    fwSay(bk?"firmware flashed ✔ — now press “Restore settings” and pick the controller in the browser window to write your settings back (the browser needs your click to see the restarted controller)"
+            :"firmware flashed ✔ — press “Connect controller…” to see the controller again", bk?"err":"ok");
     return;
   }
-  devs=[d]; ctlDev=d; attach(d);
-  $("#status").innerHTML='<span class="ok">reconnected after flashing</span>';
+  adopt(d);
   if(bk){
     fwSay("restoring settings…"); await fwSleep(1500);
     await restoreAndReboot(d,bk);
   }
-  fwBar(100); fwSay(bk?"done — firmware flashed and your settings restored":"done — firmware flashed","ok");
+  fwBar(100); fwSay((bk?"done — firmware flashed and your settings restored":"done — firmware flashed")+(devs.length?"":" (press “Connect controller…” to see the controller again)"),"ok");
 }
 $("#fwFlash").onclick=async(ev)=>{
   const force=ev&&ev.shiftKey; /* Shift+click skips the Steam check (if it ever misfires) */
@@ -884,7 +887,7 @@ function draw(){
   const ridSel=$("#rid"); const have=new Set([...ridSel.options].map(o=>o.value));
   for(const id of ids) if(!have.has(String(id))){const o=document.createElement("option");o.value=id;o.textContent=`0x${id.toString(16)}`;ridSel.appendChild(o);}
   $("#ids").textContent= ids.length ? "IDs seen: "+ids.map(id=>{const s=idStats[id];const r=s.times.filter(t=>now-t<=1000).length;return `0x${id.toString(16)} (${s.len} B, ${r}/s)`;}).join(" · ") : "IDs seen: —";
-  if(w.length>1){
+  if(w.length>1 && w[w.length-1].t>w[0].t){
     const span=(w[w.length-1].t-w[0].t)/1000, rate=(w.length-1)/span;
     const iv=[]; for(let i=1;i<w.length;i++) iv.push(w[i].t-w[i-1].t);
     const mean=iv.reduce((a,b)=>a+b,0)/iv.length, sd=Math.sqrt(iv.reduce((a,b)=>a+(b-mean)**2,0)/iv.length);
