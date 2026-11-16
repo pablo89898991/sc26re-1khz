@@ -44,6 +44,7 @@ enum sc26re_cfg_id
 	SC26RE_CFG_GYRO_HW_LPF,    /* sensor gyro low-pass: 0 = off, 1..8 = LPF1 widest..narrowest */
 	SC26RE_CFG_IMU_PACE,       /* what starts an IMU read on USB: 0 = frame start, 1 = report fetched, 2 = timer */
 	SC26RE_CFG_IMU_I2C_KHZ,    /* IMU I2C bus speed, kHz (400 standard) */
+	SC26RE_CFG_GYRO_FSR,       /* gyro full scale, dps: 250, 500, 1000, 2000 */
 	SC26RE_CFG_COUNT,
 };
 

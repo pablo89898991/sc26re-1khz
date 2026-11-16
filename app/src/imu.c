@@ -1445,6 +1445,21 @@ static void imu_fast_thread_main(void *arg1, void *arg2, void *arg3)
 			/* the stream thread configures the sensor; wait for it */
 			continue;
 		}
+		{
+			/* gyro full scale (Live setting): 250/500/1000/2000 dps -> FS_G code 1..4.
+			 * Report units stay the same; a lower range gives finer steps and clips
+			 * above it. Re-reading CTRL6 below picks up the new sensitivity. */
+			static int16_t applied_fsr;
+			int16_t fsr = sc26re_cfg_get(SC26RE_CFG_GYRO_FSR);
+			uint8_t code = fsr <= 250 ? 1U : fsr <= 500 ? 2U : fsr <= 1000 ? 3U : 4U;
+
+			if(fsr != applied_fsr &&
+			   i2c_reg_update_byte_dt(&imu_i2c, IMU_REG_CTRL6, 0x0FU, code) == 0)
+			{
+				applied_fsr = fsr;
+				gyro_rad_per_lsb = 0.0f;
+			}
+		}
 		if(gyro_rad_per_lsb == 0.0f)
 		{
 			if(i2c_reg_read_byte_dt(&imu_i2c, IMU_REG_CTRL6, &reg) != 0)

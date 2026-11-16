@@ -653,6 +653,7 @@ const LS=[
  ["gyro_deadzone","Gyro dead zone","raw units; small = more precise, large = steadier"],
  ["gyro_filter","Gyro smoothing","0 = off, 1 light … 4 strong (adds a few ms)"],
  ["gyro_hw_lpf","Gyro hardware filter (in the sensor)","0 = off (rawest, most noise), 1 = lightest (default) … 8 = strongest. Filters inside the IMU before the data leaves it; less noise for a little delay (v47+)"],
+ ["gyro_fsr","Gyro range (full scale)","°/s: 250, 500, 1000 or 2000 (default). Lower = finer steps from the sensor, but turns faster than this are cut off (500 is a common choice for gyro aiming) (v48+)"],
  ["imu_pace","IMU read timing (USB)","what starts each gyro/accel read: 0 = start of each USB frame (default), 1 = when the PC has fetched the previous report, 2 = 1 ms timer (v47+, for testing)"],
  ["imu_i2c_khz","IMU bus speed","kHz, 400 = standard (default) … 800 = faster reads (outside the chip's spec; if the gyro misbehaves set 400) (v47+)"],
  ["gyro_auto_cal","Auto gyro calibration","seconds lying untouched (no hands on grips/sticks/pads) before it recalibrates itself; 0 = off (default 3)"],
