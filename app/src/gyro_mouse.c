@@ -215,13 +215,9 @@ static bool active(uint32_t buttons, uint32_t pressed)
 	}
 }
 
-void gyro_mouse_feed(const float dps[3], uint32_t buttons, float dt_s)
+uint32_t gyro_mouse_filter_buttons(uint32_t raw)
 {
-	uint32_t pressed = buttons & ~prev_buttons;
-	bool chord = (buttons & CHORD_MASK) == CHORD_MASK;
-
-	prev_buttons = buttons;
-	dt_s = CLAMP(dt_s, 0.0f, 0.005f);
+	bool chord = (raw & CHORD_MASK) == CHORD_MASK;
 
 	/* LB + RB + View: toggle on release; with A as well: calibration */
 	if(chord)
@@ -231,12 +227,12 @@ void gyro_mouse_feed(const float dps[3], uint32_t buttons, float dt_s)
 			chord_down = true;
 			chord_saw_a = false;
 		}
-		if(buttons & CHORD_CAL_EXTRA)
+		if(raw & CHORD_CAL_EXTRA)
 		{
 			chord_saw_a = true;
 		}
 	}
-	else if(chord_down && (buttons & CHORD_MASK) == 0U)
+	else if(chord_down && (raw & (CHORD_MASK | CHORD_CAL_EXTRA)) == 0U)
 	{
 		chord_down = false;
 		if(chord_saw_a)
@@ -247,6 +243,21 @@ void gyro_mouse_feed(const float dps[3], uint32_t buttons, float dt_s)
 		{
 			gyro_mouse_set_enabled(sc26re_cfg_get(SC26RE_CFG_GM_ENABLED) != 1);
 		}
+	}
+	/* from the moment the chord is complete until all its buttons are up,
+	 * the game does not see them */
+	return chord_down ? raw & ~(CHORD_MASK | CHORD_CAL_EXTRA) : raw;
+}
+
+void gyro_mouse_feed(const float dps[3], uint32_t buttons, float dt_s)
+{
+	uint32_t pressed = buttons & ~prev_buttons;
+
+	prev_buttons = buttons;
+	dt_s = CLAMP(dt_s, 0.0f, 0.005f);
+
+	if(chord_down)
+	{
 		pressed = 0U; /* the chord's own presses don't start anything */
 	}
 

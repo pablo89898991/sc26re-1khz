@@ -13,6 +13,8 @@ struct gyro_mouse_status
 };
 
 /* one gyro sample: pitch, yaw, roll in deg/s (bias removed, no dead zones) */
+/* report loop: handles the LB+RB+View chord and hides its buttons from the host while held */
+uint32_t gyro_mouse_filter_buttons(uint32_t raw);
 void gyro_mouse_feed(const float dps[3], uint32_t buttons, float dt_s);
 /* whole counts to send now (fractions stay for the next report); true if any */
 /* a mouse report could not be sent: keep its movement for the next one */

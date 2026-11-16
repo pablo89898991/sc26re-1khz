@@ -712,6 +712,7 @@ int main(void)
 				last_state_cyc = k_cycle_get_32();
 			}
 		}
+		current.buttons = gyro_mouse_filter_buttons(current.buttons);
 		hardware_store_state(&current);
 		imu_keep_on(gyro_mouse_enabled());
 		if(changed || refresh_due || esb_state_boundary)
