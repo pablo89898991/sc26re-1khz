@@ -370,6 +370,10 @@ function frameEncode(payload){
   for(const b of payload){ if(b===FW.ESC) out.push(FW.ESC,0); else if(b===FW.SOF) out.push(FW.ESC,1); else if(b===FW.EOF) out.push(FW.ESC,2); else out.push(b); }
   out.push(FW.EOF); return new Uint8Array(out);
 }
+/* resolves after ms even if p never settles (USB device gone mid-request) */
+function within(p,ms){ return Promise.race([Promise.resolve(p).catch(()=>{}),fwSleep(ms)]); }
+/* a command after which the controller drops off USB: don't let a hung request block the queue */
+function sendAndDrop(d,op){ return serial(()=>within(d.__send(1,cmd63(op)),1200)); }
 class BlPort{
   constructor(port){ this.port=port; this.buf=[]; this.reading=false; }
   async open(){ await this.port.open({baudRate:115200,bufferSize:65536}); this.reader=this.port.readable.getReader(); this.writer=this.port.writable.getWriter(); this.pump(); }
@@ -398,7 +402,10 @@ class BlPort{
     }
     throw new Error("bootloader sent garbage");
   }
-  async close(){ try{ this.reader.cancel(); }catch(e){} try{ this.reader.releaseLock(); }catch(e){} try{ this.writer.releaseLock(); }catch(e){} try{ await this.port.close(); }catch(e){} }
+  async close(){ /* the device may vanish mid-way (reset): never wait on it for long */
+    try{ await within(this.reader.cancel(),500); }catch(e){} try{ this.reader.releaseLock(); }catch(e){}
+    try{ await within(this.writer.abort(),500); }catch(e){} try{ this.writer.releaseLock(); }catch(e){}
+    try{ await within(this.port.close(),1500); }catch(e){} }
 }
 async function nvsBackup(d){
   let info; try{ info=await featRead(d,"nvs/info"); }catch(e){ return null; }
@@ -437,7 +444,10 @@ function attach(d){ if(!d.__listening){ d.addEventListener("inputreport",onRepor
 async function waitForHid(){
   for(let t=0;t<160;t++){
     const ds=(await navigator.hid.getDevices()).filter(d=>d.vendorId===0x28DE && d.productId===0x1302 && d.collections.some(c=>c.featureReports&&c.featureReports.length));
-    if(ds.length){ const d=ds[0]; if(!d.opened) await d.open(); d.__send=d.sendFeatureReport.bind(d); return d; }
+    if(ds.length){ const d=ds[0];
+      if(!d.opened){ try{ await Promise.race([d.open(),fwSleep(2000).then(()=>{throw new Error("open timeout");})]); }catch(e){ await fwSleep(500); continue; } }
+      d.__send=d.sendFeatureReport.bind(d); return d; }
+    if(t%4===0) fwSay(`waiting for the controller to come back… ${Math.round(t/4)} s`);
     await fwSleep(250);
   }
   throw new Error("controller did not come back after flashing");
@@ -447,7 +457,7 @@ async function restoreAndReboot(d,bk){
   await nvsRestore(d,bk);
   lastBackup=null;
   fwSay("restarting with your settings…");
-  try{ await fsend(d,1,cmd63(0x95)); }catch(e){}
+  await sendAndDrop(d,0x95);
   await fwSleep(3000);
   try{ const d2=await waitForHid(); devs=[d2]; ctlDev=d2; attach(d2); }catch(e){}
 }
@@ -492,7 +502,7 @@ async function fwRun(port){
     }
     await bl.cmd(FW.END,fw.header,15000);
     fwSay("restarting the controller…"); fwBar(87);
-    try{ await bl.cmd(FW.RESET,new Uint8Array(0),2000); }catch(e){}
+    try{ await within(bl.cmd(FW.RESET,new Uint8Array(0),2000),2500); }catch(e){}
   }finally{ if(bl) await bl.close(); $("#fwPort").style.display="none"; }
   fwPending=null;
   await fwSleep(2500);
@@ -548,7 +558,7 @@ $("#fwFlash").onclick=async(ev)=>{
     fwSay("switching the controller to its bootloader…"); fwBar(17);
     /* full 63-byte report: Windows rejects shorter feature reports */
     const before=reportCount;
-    try{ await fsend(d,1,cmd63(0x90)); }catch(e){} /* it disconnects right away */
+    await sendAndDrop(d,0x90); /* it disconnects right away */
     await fwSleep(1500);
     if(reportCount-before>200 && devs.includes(d) && d.opened){
       const mid=reportCount; await fwSleep(500);
