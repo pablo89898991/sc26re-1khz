@@ -464,7 +464,7 @@ async function fwRun(port){
     fwSay("restoring settings…"); await fwSleep(1500);
     await nvsRestore(d,bk);
     fwSay("restarting with your settings…");
-    try{ await d.__send(1,new Uint8Array([0x95,0])); }catch(e){}
+    try{ await fsend(d,1,cmd63(0x95)); }catch(e){}
     await fwSleep(3000);
     try{ const d2=await waitForHid(); devs=[d2]; ctlDev=d2; d2.addEventListener("inputreport",onReport); }catch(e){}
   }
@@ -503,8 +503,15 @@ $("#fwFlash").onclick=async(ev)=>{
     }
     fwPending={fw,bk};
     fwSay("switching the controller to its bootloader…"); fwBar(17);
-    try{ await d.__send(1,new Uint8Array([0x90,0])); }catch(e){} /* it disconnects right away */
-    await fwSleep(3000);
+    /* full 63-byte report: Windows rejects shorter feature reports */
+    const before=reportCount;
+    try{ await fsend(d,1,cmd63(0x90)); }catch(e){} /* it disconnects right away */
+    await fwSleep(1500);
+    if(reportCount-before>200 && devs.includes(d) && d.opened){
+      const mid=reportCount; await fwSleep(500);
+      if(reportCount-mid>50) throw new Error("the controller did not switch to its bootloader (it is still sending reports). Unplug and replug the cable, reconnect and try again.");
+    }
+    await fwSleep(1500);
     const port=await findBlPort(false);
     if(port) return fwRun(port);
     $("#fwPort").style.display="";
@@ -766,6 +773,7 @@ function capShow(){
   document.querySelectorAll(".capS").forEach(e=>e.textContent=`touch above ${capTh.on} · release below ${capTh.off}`);
   document.querySelectorAll(".capG").forEach(e=>e.textContent=capTh.grip?`touch above ${capTh.grip}`:"");
 }
+function cmd63(op){ const b=new Uint8Array(63); b[0]=op; b[1]=0; return b; }
 function pathCmd(op,path,data=[]){
   const p=new TextEncoder().encode(path), buf=new Uint8Array(63);
   buf[0]=op; buf[1]=p.length+1+data.length; buf.set(p,2); buf.set(data,2+p.length+1); return buf;
@@ -780,7 +788,9 @@ function wantedId(){
   let best=null,bn=0; for(const [id,s] of Object.entries(idStats)) if(s.len>=45&&s.n>bn){bn=s.n;best=+id;} return best;
 }
 
+let reportCount=0;
 function onReport(e){
+  reportCount++;
   const id=e.reportId, dv=e.data, t=e.timeStamp||performance.now();
   if(id===0x42){ devRate.set(e.device,(devRate.get(e.device)||0)+1); if(!ctlManual && (!ctlDev||!devRate.get(ctlDev))) ctlDev=e.device; } /* the interface the controller's state arrives on */
   const st=idStats[id]||(idStats[id]={n:0,len:dv.byteLength,times:[]}); st.n++; st.len=dv.byteLength; st.times.push(t);
