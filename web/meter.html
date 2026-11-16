@@ -251,7 +251,11 @@ function ctlPickerRefresh(){
 }
 setInterval(()=>{ ctlPickerRefresh(); for(const d of devs) devRate.set(d,0); },1000);
 function targets(){ return (ctlDev&&devs.includes(ctlDev))?[ctlDev]:devs; }
-let steamSeenAt=-1e9; /* last time a reply meant for another program showed up */
+/* replies that were clearly meant for another program (Steam); several within
+   10 s = someone else is talking to the controller */
+let foreignHits=[];
+function noteForeign(){ const t=performance.now(); foreignHits=foreignHits.filter(x=>t-x<10000); foreignHits.push(t); }
+function foreignRecent(){ const t=performance.now(); return foreignHits.filter(x=>t-x<10000).length>=3; }
 let featChain=Promise.resolve();
 function serial(fn){ const p=featChain.then(fn,fn); featChain=p.catch(()=>{}); return p; }
 async function fsend(d,id,buf){
@@ -466,7 +470,8 @@ async function fwRun(port){
   }
   fwBar(100); fwSay(bk?"done — firmware flashed and your settings restored":"done — firmware flashed","ok");
 }
-$("#fwFlash").onclick=async()=>{
+$("#fwFlash").onclick=async(ev)=>{
+  const force=ev&&ev.shiftKey; /* Shift+click skips the Steam check (if it ever misfires) */
   try{
     if(!("serial" in navigator)) throw new Error("this browser has no Web Serial (use Chrome / Edge / Brave on desktop)");
     const f=$("#fwFile").files[0]; if(!f) throw new Error("pick a .fw file first");
@@ -480,11 +485,14 @@ $("#fwFlash").onclick=async()=>{
     if(d.productId!==0x1302) throw new Error("connect the controller by USB cable (not through the Puck) to flash it");
     /* refuse while Steam (or anything else) is talking to the controller */
     fwSay("checking that Steam is closed…");
-    let busy=performance.now()-steamSeenAt<10000;
-    try{ const h=await featRead(d,"sc26re/host"); if(h.length>=4){ const ms=new DataView(h.buffer,h.byteOffset,4).getUint32(0,true); if(ms<4000) busy=true; } }catch(e){}
-    if(!busy){ await fwSleep(1500); try{ const h=await featRead(d,"sc26re/host"); if(h.length>=4 && new DataView(h.buffer,h.byteOffset,4).getUint32(0,true)<1500) busy=true; }catch(e){} }
-    if(busy || performance.now()-steamSeenAt<10000)
-      throw new Error("Steam (or another program) is talking to the controller. Close Steam completely (tray icon → Exit), wait a few seconds and press Flash again.");
+    let busy=null;
+    for(let i=0;i<2;i++){
+      try{ const h=await featRead(d,"sc26re/host");
+        if(h.length>=4){ const ms=new DataView(h.buffer,h.byteOffset,4).getUint32(0,true); busy=(busy||false)||ms<4000; } }catch(e){}
+      if(i===0) await fwSleep(1500);
+    }
+    if(busy===null) busy=foreignRecent(); /* firmware older than v46: only the meter's own evidence */
+    if(busy && !force) throw new Error("Steam (or another program) is talking to the controller. Close Steam completely (tray icon → Exit), wait a few seconds and press Flash again.");
     if(!confirm(`Flash ${f.name} (${(fw.payload.length/1024).toFixed(0)} KB)?\nDon't unplug the controller until it says done.`)) return;
     let bk=null;
     if($("#fwKeep").checked){
@@ -602,10 +610,10 @@ async function featRead(d,path){
           }catch(e){ recvErr=e; }
           await new Promise(res=>setTimeout(res,15+k*10));
         }
-        if(o<0){ steamSeenAt=performance.now(); throw (recvErr||new Error("reply for another request (Steam?)")); }
+        if(o<0){ if(r && !recvErr) noteForeign(); throw (recvErr||new Error("no reply from the controller")); }
         const data=r.slice(o+2,o+2+r[o+1]);
         if(tagged){
-          if(!data.length || data[0]!==tag){ lastData=data; steamSeenAt=performance.now(); throw new Error("reply for another request (Steam?)"); }
+          if(!data.length || data[0]!==tag){ lastData=data; noteForeign(); throw new Error("reply for another request (Steam?)"); }
           d.__tagged=true;
           return data.slice(1);
         }

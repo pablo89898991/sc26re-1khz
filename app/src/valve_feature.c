@@ -593,6 +593,11 @@ static int64_t host_traffic_ms = -100000;
 
 static void note_host_traffic(const uint8_t *request, size_t len)
 {
+	/* plain reads don't count (the meter reads a few non-sc26re settings too) */
+	if(len >= 1 && request[0] == VALVE_FEATURE_READ_SETTING)
+	{
+		return;
+	}
 	if(len >= 3 && (request[0] == VALVE_FEATURE_READ_SETTING || request[0] == VALVE_FEATURE_STAGE_SETTING ||
 	                request[0] == VALVE_FEATURE_COMMIT_SETTING || request[0] == VALVE_FEATURE_DELETE_SETTING))
 	{
