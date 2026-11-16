@@ -626,19 +626,26 @@ int transport_usb_init(void)
 	return 0;
 }
 
+static K_MUTEX_DEFINE(state_send_lock);
+
 int transport_usb_send(const struct controller_report *report)
 {
 	uint8_t body[VALVE_INPUT_42_SIZE];
+	int err;
 
 	if(!usb_ready())
 	{
 		return -ENOTCONN;
 	}
 
+	/* called from the report loop and the IMU thread: one at a time */
+	k_mutex_lock(&state_send_lock, K_FOREVER);
 	triton_state_report_pack_body(body, sizeof(body), input_sequence++, report,
 	                              triton_state_report_timestamp_us());
 	next_state_imu_ts = report->imu_timestamp_us;
-	return usb_queue_input_report(ID_TRITON_CONTROLLER_STATE, body, sizeof(body));
+	err = usb_queue_input_report(ID_TRITON_CONTROLLER_STATE, body, sizeof(body));
+	k_mutex_unlock(&state_send_lock);
+	return err;
 }
 
 int transport_usb_send_battery_status(const struct controller_battery_report *report)

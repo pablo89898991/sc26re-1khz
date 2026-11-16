@@ -711,6 +711,7 @@ int main(void)
 				last_state_cyc = k_cycle_get_32();
 			}
 		}
+		hardware_store_state(&current);
 		if(changed || refresh_due || esb_state_boundary)
 		{
 			if(changed && (current.buttons & ~previous.buttons) != 0U)

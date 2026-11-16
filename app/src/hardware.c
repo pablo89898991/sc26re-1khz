@@ -290,6 +290,32 @@ void hardware_wait_for_change(void)
 	(void)k_sem_take(&input_changed, K_MSEC(HARDWARE_REPORT_POLL_MS));
 }
 
+static struct controller_report last_state;
+static bool last_state_valid;
+static struct k_spinlock last_state_lock;
+
+void hardware_store_state(const struct controller_report *report)
+{
+	k_spinlock_key_t key = k_spin_lock(&last_state_lock);
+
+	last_state = *report;
+	last_state_valid = true;
+	k_spin_unlock(&last_state_lock, key);
+}
+
+bool hardware_load_state(struct controller_report *report)
+{
+	k_spinlock_key_t key = k_spin_lock(&last_state_lock);
+	bool valid = last_state_valid;
+
+	if(valid)
+	{
+		*report = last_state;
+	}
+	k_spin_unlock(&last_state_lock, key);
+	return valid;
+}
+
 void hardware_signal_input_changed(void)
 {
 	k_sem_give(&input_changed);

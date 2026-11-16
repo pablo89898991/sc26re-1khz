@@ -119,6 +119,9 @@ int hardware_init(void);
 void hardware_read_report(struct controller_report *report);
 void hardware_wait_for_change(void);
 void hardware_signal_input_changed(void);
+/* latest full state built by the report loop (the IMU thread sends it with each new sample) */
+void hardware_store_state(const struct controller_report *report);
+bool hardware_load_state(struct controller_report *report);
 uint32_t hardware_read_buttons(void);
 bool hardware_pairing_chord_pressed(void);
 void hardware_haptic_pulse(void);
@@ -155,6 +158,8 @@ const char *transport_usb_radio_mode_name(void);
 void transport_enter_usb_mode(void);
 int transport_usb_init(void);
 int transport_usb_send(const struct controller_report *report);
+/* USB host attached and state reports go to it (not the diagnostic radio mode) */
+bool transport_usb_state_reports_allowed(void);
 int transport_usb_send_battery_status(const struct controller_battery_report *report);
 int transport_usb_send_input_report(uint8_t report_id, const uint8_t *data, size_t len);
 

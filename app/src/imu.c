@@ -1524,7 +1524,27 @@ static void imu_fast_thread_main(void *arg1, void *arg2, void *arg3)
 		report.imu_timestamp_us = (uint32_t)k_ticks_to_us_floor64(k_uptime_ticks());
 		store_cached_imu_report(&report);
 		k_mutex_unlock(&imu_io_lock);
-		if(transport_usb_configured() || transport_esb_connected())
+		if(transport_usb_state_reports_allowed() && imu_paces_usb() &&
+		   sc26re_cfg_get(SC26RE_CFG_REPORT_RATE) >= 1000)
+		{
+			/*
+			 * Send the new sample right here with the report loop's latest
+			 * buttons/sticks/pads: going through the report loop added its
+			 * scan time and sometimes missed the host's next poll.
+			 */
+			struct controller_report state;
+
+			if(hardware_load_state(&state))
+			{
+				load_cached_imu_report(&state);
+				(void)transport_usb_send(&state);
+			}
+			else
+			{
+				hardware_signal_input_changed();
+			}
+		}
+		else if(transport_usb_configured() || transport_esb_connected())
 		{
 			hardware_signal_input_changed();
 		}

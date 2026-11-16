@@ -213,6 +213,12 @@ static bool transport_usb_reports_suppressed(void)
 	return suppressed;
 }
 
+bool transport_usb_state_reports_allowed(void)
+{
+	return IS_ENABLED(CONFIG_IBEX_USB_HID) && transport_usb_configured() &&
+	       !transport_usb_reports_suppressed();
+}
+
 static bool transport_usb_radio_mode_valid(enum transport_usb_radio_mode mode)
 {
 	return mode == TRANSPORT_USB_RADIO_OFF ||
