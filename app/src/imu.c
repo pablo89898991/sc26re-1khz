@@ -7,6 +7,7 @@
 #include <zephyr/devicetree.h>
 #include <zephyr/drivers/sensor.h>
 #include <zephyr/drivers/sensor/lsm6dsv16x.h>
+#include <zephyr/dt-bindings/sensor/lsm6dsvxxx.h>
 #include <zephyr/drivers/i2c.h>
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
@@ -1321,6 +1322,8 @@ static void imu_stream_thread_main(void *arg1, void *arg2, void *arg3)
 #define IMU_USB_GAP_TICKS ((uint32_t)k_us_to_ticks_ceil32(1500))
 
 static const struct i2c_dt_spec imu_i2c = I2C_DT_SPEC_GET(DT_ALIAS(accel0));
+/* Zephyr LSM6DSV16X driver: sets the gyro ODR and remembers it across stream restarts */
+int lsm6dsv16x_gyro_set_odr_raw(const struct device *dev, uint8_t odr);
 K_SEM_DEFINE(imu_tick_sem, 0, 1);
 static atomic_t imu_last_usb_ticks;
 static atomic_t imu_last_usb_ms;
@@ -1484,6 +1487,30 @@ static void imu_fast_thread_main(void *arg1, void *arg2, void *arg3)
 		if(!atomic_cas(&imu_tick_pending, 1, 0))
 		{
 			continue;
+		}
+		{
+			/* gyro ODR in the sensor (Live setting): 2000/4000/8000 Hz (HAODR set 1).
+			 * Still read once per frame; a higher rate gives the sensor's low-pass
+			 * more samples to average internally, at no extra bus cost. */
+			static int16_t applied_odr = 2000;
+			int16_t odr = sc26re_cfg_get(SC26RE_CFG_GYRO_ODR);
+			uint8_t raw = odr >= 8000 ? LSM6DSVXXX_DT_ODR_HA01_AT_8000Hz
+			              : odr >= 4000 ? LSM6DSVXXX_DT_ODR_HA01_AT_4000Hz
+			                            : LSM6DSVXXX_DT_ODR_HA01_AT_2000Hz;
+
+			if(odr != applied_odr)
+			{
+				int err;
+
+				k_mutex_lock(&imu_io_lock, K_FOREVER);
+				err = lsm6dsv16x_gyro_set_odr_raw(imu_dev, raw);
+				k_mutex_unlock(&imu_io_lock);
+				if(err == 0)
+				{
+					applied_odr = odr;
+					LOG_INF("gyro ODR %d Hz", odr);
+				}
+			}
 		}
 		{
 			/* gyro full scale (Live setting): 250/500/1000/2000 dps -> FS_G code 1..4.
