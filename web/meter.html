@@ -461,6 +461,7 @@ let lastBackup=null;
 async function restoreAndReboot(d,bk){
   await nvsRestore(d,bk);
   lastBackup=null;
+  { const b=$("#fwRestore"); b.textContent="Restore settings"; b.classList.remove("primary"); }
   fwSay("restarting with your settings…");
   await sendAndDrop(d,0x95);
   const d2=await waitForHid(d,15);
@@ -515,7 +516,8 @@ async function fwRun(port){
   const d=await waitForHid(null,20);
   if(!d){
     fwBar(90); needClick();
-    fwSay(bk?"firmware flashed ✔ — now press “Restore settings” and pick the controller in the browser window to write your settings back (the browser needs your click to see the restarted controller)"
+    if(bk){ const b=$("#fwRestore"); b.textContent="Reconnect & restore settings"; b.classList.add("primary"); }
+    fwSay(bk?"firmware flashed ✔ — last step: press “Reconnect & restore settings” and pick the controller in the browser window (the browser needs your click to see the restarted controller)"
             :"firmware flashed ✔ — press “Connect controller…” to see the controller again", bk?"err":"ok");
     return;
   }
