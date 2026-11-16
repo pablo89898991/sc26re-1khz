@@ -7,6 +7,7 @@
 #include <zephyr/devicetree.h>
 #include <zephyr/drivers/sensor.h>
 #include <zephyr/drivers/sensor/lsm6dsv16x.h>
+#include <zephyr/drivers/i2c.h>
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
 #include <zephyr/rtio/rtio.h>
@@ -217,6 +218,12 @@ K_MUTEX_DEFINE(imu_bias_program_lock);
 K_THREAD_STACK_DEFINE(imu_stream_stack, IMU_STREAM_THREAD_STACK_SIZE);
 static struct k_thread imu_stream_thread;
 static void imu_stream_thread_main(void *arg1, void *arg2, void *arg3);
+static void imu_fast_thread_main(void *arg1, void *arg2, void *arg3);
+#define IMU_FAST_THREAD_STACK_SIZE 2048
+/* above the FIFO stream thread: it reads the sample the next report carries */
+#define IMU_FAST_THREAD_PRIORITY 5
+K_THREAD_STACK_DEFINE(imu_fast_stack, IMU_FAST_THREAD_STACK_SIZE);
+static struct k_thread imu_fast_thread;
 #endif
 
 struct imu_settings_load_target
@@ -717,6 +724,10 @@ int imu_init(void)
 		                K_THREAD_STACK_SIZEOF(imu_stream_stack), imu_stream_thread_main, NULL, NULL,
 		                NULL, K_PRIO_PREEMPT(IMU_STREAM_THREAD_PRIORITY), K_FP_REGS, K_NO_WAIT);
 		(void)k_thread_name_set(&imu_stream_thread, "imu_stream");
+		k_thread_create(&imu_fast_thread, imu_fast_stack, K_THREAD_STACK_SIZEOF(imu_fast_stack),
+		                imu_fast_thread_main, NULL, NULL, NULL,
+		                K_PRIO_PREEMPT(IMU_FAST_THREAD_PRIORITY), K_FP_REGS, K_NO_WAIT);
+		(void)k_thread_name_set(&imu_fast_thread, "imu_fast");
 	}
 #else
 	LOG_WRN("no accel0 device-tree alias, reports will contain zeroes");
@@ -949,6 +960,101 @@ static void imu_free_fall_update(const float accel[3])
 }
 #endif
 
+/* accel sample (m/s^2, sensor frame) -> report fields */
+static void process_accel(const float accel[3], struct controller_report *report)
+{
+	int16_t oriented[3];
+
+#if CONFIG_IBEX_DROP_SCREAM
+	imu_free_fall_update(accel);
+#endif
+	oriented[0] = accel_axis_to_report(accel[0]);
+	oriented[1] = accel_axis_to_report(accel[1]);
+	oriented[2] = accel_axis_to_report(accel[2]);
+	apply_orientation_i16(oriented);
+	report->accel_x = oriented[0];
+	report->accel_y = oriented[1];
+	report->accel_z = oriented[2];
+}
+
+/* gyro sample (rad/s, sensor frame) -> calibration, dead zones, filters -> report fields */
+static void process_gyro(const float gyro[3], struct controller_report *report)
+{
+	int16_t oriented[3];
+	float bias[3];
+
+	gyro_cal_sample(gyro);
+	memcpy(bias, latest_sflp_bias_valid ? latest_sflp_bias : gyro_bias, sizeof(bias));
+	if(!use_gyro_bias)
+	{
+		memset(bias, 0, sizeof(bias));
+	}
+	oriented[0] = gyro_axis_to_report(gyro[0] - bias[0]);
+	oriented[1] = gyro_axis_to_report(gyro[1] - bias[1]);
+	oriented[2] = gyro_axis_to_report(gyro[2] - bias[2]);
+	apply_orientation_i16(oriented);
+	{
+		/* report meter overrides: dead zone (auto = Steam's) and low-pass strength */
+		int16_t cfg_dz = sc26re_cfg_get(SC26RE_CFG_GYRO_DEADZONE);
+		int16_t cfg_lp = sc26re_cfg_get(SC26RE_CFG_GYRO_FILTER);
+		int32_t dz = cfg_dz == SC26RE_CFG_AUTO ? gyro_dz_threshold : cfg_dz;
+		static int32_t gyro_lp_q8[3];
+		static bool gyro_lp_primed;
+
+		for(size_t i = 0; i < 3; ++i)
+		{
+			if(cfg_lp > 0)
+			{
+				int32_t x = (int32_t)oriented[i] << 8;
+
+				if(!gyro_lp_primed)
+				{
+					gyro_lp_q8[i] = x;
+				}
+				gyro_lp_q8[i] += (x - gyro_lp_q8[i]) >> MIN(cfg_lp, 4);
+				oriented[i] = (int16_t)CLAMP(gyro_lp_q8[i] >> 8, INT16_MIN, INT16_MAX);
+			}
+			if(atomic_get(&band_meas_active))
+			{
+				/* measuring the resting band: dead zones are bypassed */
+				band_meas_sample(i, oriented[i]);
+				continue;
+			}
+			if(-dz < oriented[i] && dz > oriented[i])
+			{
+				oriented[i] = 0;
+			}
+			{
+				/* per-axis dead band from the report meter, 0.01 deg/s -> report
+				 * units (+-2000 deg/s full scale: 16.384 counts per deg/s) */
+				int32_t lo = sc26re_cfg_get(SC26RE_CFG_GYRO_BAND_X_LO + 2 * i);
+				int32_t hi = sc26re_cfg_get(SC26RE_CFG_GYRO_BAND_X_HI + 2 * i);
+
+				if(lo != 0 || hi != 0)
+				{
+					lo = (lo * 16384) / 100000;
+					hi = (hi * 16384) / 100000;
+					if(oriented[i] >= lo && oriented[i] <= hi)
+					{
+						oriented[i] = 0;
+					}
+					else if(sc26re_cfg_get(SC26RE_CFG_GYRO_BAND_SOFT) == 1)
+					{
+						/* soft: continue from 0 at the band's edge, no jump */
+						oriented[i] = (int16_t)(oriented[i] > hi ? oriented[i] - hi
+						                                         : oriented[i] - lo);
+					}
+				}
+			}
+		}
+		gyro_lp_primed = cfg_lp > 0;
+		band_meas_frame_done();
+	}
+	report->gyro_x = oriented[0];
+	report->gyro_y = oriented[1];
+	report->gyro_z = oriented[2];
+}
+
 static int build_imu_report_from_stream(const uint8_t *buf)
 {
 	const struct sensor_decoder_api *decoder;
@@ -957,9 +1063,7 @@ static int build_imu_report_from_stream(const uint8_t *buf)
 	float gyro[3];
 	float sflp_bias[3];
 	float quaternion[4];
-	float bias[3];
 	uint32_t timestamp_us = 0;
-	int16_t oriented[3];
 	bool updated = false;
 	bool gyro_updated = false;
 	uint64_t gyro_timestamp_ns = 0;
@@ -1000,92 +1104,14 @@ static int build_imu_report_from_stream(const uint8_t *buf)
 	err = decode_latest_three_axis(decoder, buf, SENSOR_CHAN_ACCEL_XYZ, accel);
 	if(err == 0)
 	{
-#if CONFIG_IBEX_DROP_SCREAM
-		imu_free_fall_update(accel);
-#endif
-		oriented[0] = accel_axis_to_report(accel[0]);
-		oriented[1] = accel_axis_to_report(accel[1]);
-		oriented[2] = accel_axis_to_report(accel[2]);
-		apply_orientation_i16(oriented);
-		report.accel_x = oriented[0];
-		report.accel_y = oriented[1];
-		report.accel_z = oriented[2];
+		process_accel(accel, &report);
 		updated = true;
 	}
 
 	err = decode_latest_three_axis_ts(decoder, buf, SENSOR_CHAN_GYRO_XYZ, gyro, &gyro_timestamp_ns);
 	if(err == 0)
 	{
-		gyro_cal_sample(gyro);
-		memcpy(bias, latest_sflp_bias_valid ? latest_sflp_bias : gyro_bias, sizeof(bias));
-		if(!use_gyro_bias)
-		{
-			memset(bias, 0, sizeof(bias));
-		}
-		oriented[0] = gyro_axis_to_report(gyro[0] - bias[0]);
-		oriented[1] = gyro_axis_to_report(gyro[1] - bias[1]);
-		oriented[2] = gyro_axis_to_report(gyro[2] - bias[2]);
-		apply_orientation_i16(oriented);
-		{
-			/* report meter overrides: dead zone (auto = Steam's) and low-pass strength */
-			int16_t cfg_dz = sc26re_cfg_get(SC26RE_CFG_GYRO_DEADZONE);
-			int16_t cfg_lp = sc26re_cfg_get(SC26RE_CFG_GYRO_FILTER);
-			int32_t dz = cfg_dz == SC26RE_CFG_AUTO ? gyro_dz_threshold : cfg_dz;
-			static int32_t gyro_lp_q8[3];
-			static bool gyro_lp_primed;
-
-			for(size_t i = 0; i < 3; ++i)
-			{
-				if(cfg_lp > 0)
-				{
-					int32_t x = (int32_t)oriented[i] << 8;
-
-					if(!gyro_lp_primed)
-					{
-						gyro_lp_q8[i] = x;
-					}
-					gyro_lp_q8[i] += (x - gyro_lp_q8[i]) >> MIN(cfg_lp, 4);
-					oriented[i] = (int16_t)CLAMP(gyro_lp_q8[i] >> 8, INT16_MIN, INT16_MAX);
-				}
-				if(atomic_get(&band_meas_active))
-				{
-					/* measuring the resting band: dead zones are bypassed */
-					band_meas_sample(i, oriented[i]);
-					continue;
-				}
-				if(-dz < oriented[i] && dz > oriented[i])
-				{
-					oriented[i] = 0;
-				}
-				{
-					/* per-axis dead band from the report meter, 0.01 deg/s -> report
-					 * units (+-2000 deg/s full scale: 16.384 counts per deg/s) */
-					int32_t lo = sc26re_cfg_get(SC26RE_CFG_GYRO_BAND_X_LO + 2 * i);
-					int32_t hi = sc26re_cfg_get(SC26RE_CFG_GYRO_BAND_X_HI + 2 * i);
-
-					if(lo != 0 || hi != 0)
-					{
-						lo = (lo * 16384) / 100000;
-						hi = (hi * 16384) / 100000;
-						if(oriented[i] >= lo && oriented[i] <= hi)
-						{
-							oriented[i] = 0;
-						}
-						else if(sc26re_cfg_get(SC26RE_CFG_GYRO_BAND_SOFT) == 1)
-						{
-							/* soft: continue from 0 at the band's edge, no jump */
-							oriented[i] = (int16_t)(oriented[i] > hi ? oriented[i] - hi
-							                                         : oriented[i] - lo);
-						}
-					}
-				}
-			}
-			gyro_lp_primed = cfg_lp > 0;
-			band_meas_frame_done();
-		}
-		report.gyro_x = oriented[0];
-		report.gyro_y = oriented[1];
-		report.gyro_z = oriented[2];
+		process_gyro(gyro, &report);
 		updated = true;
 		gyro_updated = true;
 	}
@@ -1278,6 +1304,150 @@ static void imu_stream_thread_main(void *arg1, void *arg2, void *arg3)
 	}
 }
 
+/*
+ * Direct gyro/accel path. The FIFO only carries the SFLP words (quaternion and
+ * drift estimate, 120 Hz); gyro and accel run at 2 kHz in the sensor and are read
+ * straight from the output registers, both in one 12-byte I2C transaction, once
+ * per USB frame (SOF) or every 1 ms from a timer when there is no USB host. Each
+ * read therefore finds a sample at most 0.5 ms old that the previous read did
+ * not have: every report carries a new gyro and accel sample, with no beating
+ * between the sensor clock and the USB frames and no FIFO batching jitter.
+ */
+#define IMU_REG_CTRL6 0x15U /* FS_G [3:0], LPF1_G_BW [6:4] */
+#define IMU_REG_CTRL7 0x16U /* LPF1_G_EN bit 0 */
+#define IMU_REG_CTRL8 0x17U /* FS_XL [1:0] */
+#define IMU_REG_OUTX_L_G 0x22U
+#define IMU_SOF_TIMEOUT_MS 3U
+
+static const struct i2c_dt_spec imu_i2c = I2C_DT_SPEC_GET(DT_ALIAS(accel0));
+K_SEM_DEFINE(imu_tick_sem, 0, 1);
+static atomic_t imu_last_sof_ms;
+static atomic_t imu_fast_reads;
+static atomic_t imu_fast_errors;
+
+void imu_usb_sof(void)
+{
+	atomic_set(&imu_last_sof_ms, (atomic_val_t)k_uptime_get_32());
+	k_sem_give(&imu_tick_sem);
+}
+
+static void imu_tick_timer_fn(struct k_timer *timer)
+{
+	ARG_UNUSED(timer);
+	/* only when no USB frames arrive (Puck / Bluetooth / suspended) */
+	if(k_uptime_get_32() - (uint32_t)atomic_get(&imu_last_sof_ms) > IMU_SOF_TIMEOUT_MS)
+	{
+		k_sem_give(&imu_tick_sem);
+	}
+}
+K_TIMER_DEFINE(imu_tick_timer, imu_tick_timer_fn, NULL);
+
+/* sensor hardware low-pass on the gyro: 0 = off, 1..8 = LPF1 bandwidth 0..7 (widest..narrowest) */
+static int imu_apply_gyro_hw_lpf(int16_t level)
+{
+	int err;
+
+	if(level > 0)
+	{
+		err = i2c_reg_update_byte_dt(&imu_i2c, IMU_REG_CTRL6, 0x70U, (uint8_t)(((level - 1) & 7) << 4));
+		if(err == 0)
+		{
+			err = i2c_reg_update_byte_dt(&imu_i2c, IMU_REG_CTRL7, 0x01U, 0x01U);
+		}
+	}
+	else
+	{
+		err = i2c_reg_update_byte_dt(&imu_i2c, IMU_REG_CTRL7, 0x01U, 0x00U);
+	}
+	return err;
+}
+
+static void imu_fast_thread_main(void *arg1, void *arg2, void *arg3)
+{
+	/* LSM6DSV16X sensitivities: gyro 4.375 mdps/LSB at +-125 dps, doubling per step;
+	 * accel 0.061 mg/LSB at +-2 g, doubling per step */
+	static const uint8_t gyro_fs_shift[16] = { 0, 1, 2, 3, 4, 0, 0, 0, 0, 0, 0, 0, 5, 0, 0, 0 };
+	float gyro_rad_per_lsb = 0.0f;
+	float accel_ms2_per_lsb = 0.0f;
+	int16_t applied_lpf = INT16_MIN;
+	uint8_t reg;
+
+	ARG_UNUSED(arg1);
+	ARG_UNUSED(arg2);
+	ARG_UNUSED(arg3);
+
+	k_timer_start(&imu_tick_timer, K_USEC(1000), K_USEC(1000));
+	for(;;)
+	{
+		uint8_t raw[12];
+		struct controller_report report;
+		float gyro[3];
+		float accel[3];
+
+		k_sem_take(&imu_tick_sem, K_FOREVER);
+		if(atomic_get(&imu_motion_trigger_enabled) == 0 || atomic_get(&imu_stream_active) == 0)
+		{
+			/* the stream thread configures the sensor; wait for it */
+			continue;
+		}
+		if(gyro_rad_per_lsb == 0.0f)
+		{
+			if(i2c_reg_read_byte_dt(&imu_i2c, IMU_REG_CTRL6, &reg) != 0)
+			{
+				atomic_inc(&imu_fast_errors);
+				continue;
+			}
+			gyro_rad_per_lsb = 0.004375f * (float)(1U << gyro_fs_shift[reg & 0x0FU]) *
+			                   (3.14159265f / 180.0f);
+			if(i2c_reg_read_byte_dt(&imu_i2c, IMU_REG_CTRL8, &reg) != 0)
+			{
+				gyro_rad_per_lsb = 0.0f;
+				atomic_inc(&imu_fast_errors);
+				continue;
+			}
+			accel_ms2_per_lsb = 0.000061f * (float)(1U << (reg & 0x03U)) * 9.80665f;
+			LOG_INF("direct IMU path: %d mdps/LSB, %d ug/LSB",
+			        (int)(gyro_rad_per_lsb * 180.0f / 3.14159265f * 1000000.0f) / 1000,
+			        (int)(accel_ms2_per_lsb / 9.80665f * 1000000.0f));
+		}
+		{
+			int16_t lpf = sc26re_cfg_get(SC26RE_CFG_GYRO_HW_LPF);
+
+			if(lpf != applied_lpf && imu_apply_gyro_hw_lpf(lpf) == 0)
+			{
+				applied_lpf = lpf;
+			}
+		}
+		/* gyro X/Y/Z then accel X/Y/Z, little endian; BDU keeps each pair coherent */
+		if(i2c_burst_read_dt(&imu_i2c, IMU_REG_OUTX_L_G, raw, sizeof(raw)) != 0)
+		{
+			atomic_inc(&imu_fast_errors);
+			continue;
+		}
+		atomic_inc(&imu_fast_reads);
+		for(size_t i = 0; i < 3; ++i)
+		{
+			gyro[i] = (float)(int16_t)sys_get_le16(&raw[2 * i]) * gyro_rad_per_lsb;
+			accel[i] = (float)(int16_t)sys_get_le16(&raw[6 + 2 * i]) * accel_ms2_per_lsb;
+		}
+
+		k_mutex_lock(&imu_io_lock, K_FOREVER);
+		load_cached_imu_report(&report);
+		process_accel(accel, &report);
+		process_gyro(gyro, &report);
+		report.imu_timestamp_us = (uint32_t)k_ticks_to_us_floor64(k_uptime_ticks());
+		store_cached_imu_report(&report);
+		k_mutex_unlock(&imu_io_lock);
+		if(transport_usb_configured() || transport_esb_connected())
+		{
+			hardware_signal_input_changed();
+		}
+	}
+}
+#else
+void imu_usb_sof(void)
+{
+}
 #endif
 
 int imu_read_report(struct controller_report *report)

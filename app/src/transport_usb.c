@@ -14,6 +14,7 @@
 
 #include "controller.h"
 #include "haptics.h"
+#include "imu.h"
 #include "lizard.h"
 #include "power.h"
 #include "sdl/controller_structs.h"
@@ -497,7 +498,14 @@ static void usb_output_ready(const struct device *dev, uint16_t len, const uint8
 	}
 }
 
+static void usb_sof(const struct device *dev)
+{
+	ARG_UNUSED(dev);
+	imu_usb_sof();
+}
+
 static const struct hid_device_ops hid_ops = {
+	.sof = usb_sof,
 	.get_report = usb_get_report,
 	.set_report = usb_set_report,
 	.input_report_done = usb_input_ready,

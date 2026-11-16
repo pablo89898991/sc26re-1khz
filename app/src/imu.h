@@ -36,6 +36,8 @@ void imu_set_full_cal_step(uint8_t step);
 uint8_t imu_full_cal_step(void);
 void imu_gyro_cal_result(int16_t std_mdps[3], int16_t spread_mdps[3]);
 void imu_reset(void);
+/* USB start of frame: read the gyro/accel for the next report */
+void imu_usb_sof(void);
 
 bool imu_settings_read(const char *path, uint8_t *buf, size_t capacity, size_t *len);
 int imu_settings_stage(const char *path, const uint8_t *value, size_t len);

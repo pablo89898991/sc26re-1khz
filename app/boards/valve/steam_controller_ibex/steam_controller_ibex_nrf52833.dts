@@ -343,12 +343,14 @@
 		compatible = "st,lsm6dsv16x";
 		reg = <0x6a>;
 		accel-range = <LSM6DSV16X_DT_FS_2G>;
-		accel-odr = <LSM6DSVXXX_DT_ODR_HA01_AT_500Hz>;
+		/* 2 kHz in the sensor; app/src/imu.c reads gyro+accel from the output
+		 * registers once per USB frame. The FIFO carries only the SFLP words. */
+		accel-odr = <LSM6DSVXXX_DT_ODR_HA01_AT_2000Hz>;
 		gyro-range = <LSM6DSV16X_DT_FS_2000DPS>;
-		gyro-odr = <LSM6DSVXXX_DT_ODR_HA01_AT_1000Hz>;
-		fifo-watermark = <1>;
-		accel-fifo-batch-rate = <LSM6DSVXXX_DT_XL_BATCHED_AT_240Hz>;
-		gyro-fifo-batch-rate = <LSM6DSVXXX_DT_GY_BATCHED_AT_960Hz>;
+		gyro-odr = <LSM6DSVXXX_DT_ODR_HA01_AT_2000Hz>;
+		fifo-watermark = <2>;
+		accel-fifo-batch-rate = <LSM6DSVXXX_DT_XL_NOT_BATCHED>;
+		gyro-fifo-batch-rate = <LSM6DSVXXX_DT_GY_NOT_BATCHED>;
 		sflp-odr = <LSM6DSVXXX_DT_SFLP_ODR_AT_120Hz>;
 		sflp-fifo-enable = <LSM6DSVXXX_DT_SFLP_FIFO_GAME_ROTATION_GBIAS>;
 		int1-gpios = <&gpio0 7 GPIO_ACTIVE_HIGH>;
