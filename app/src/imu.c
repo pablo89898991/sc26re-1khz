@@ -340,6 +340,22 @@ static void load_cached_imu_report(struct controller_report *report)
 	k_spin_unlock(&cached_imu_report_lock, key);
 }
 
+/*
+ * While the gyro mouse is on, nothing else gets the motion data: the pad
+ * report carries no gyro/accel and an identity quaternion (the timestamp
+ * still moves, so report freshness stays visible).
+ */
+static void hide_motion_if_mouse(struct controller_report *report)
+{
+	if(!gyro_mouse_enabled())
+	{
+		return;
+	}
+	report->gyro_x = report->gyro_y = report->gyro_z = 0;
+	report->accel_x = report->accel_y = report->accel_z = 0;
+	fill_identity_quaternion_report(report);
+}
+
 #if IMU_HAS_DEVICE
 static void update_bias_candidate_from_sflp(const float value[3])
 {
@@ -1719,6 +1735,7 @@ static void imu_fast_thread_main(void *arg1, void *arg2, void *arg3)
 			{
 				gm_last_mouse = false;
 				load_cached_imu_report(&state);
+				hide_motion_if_mouse(&state);
 				(void)transport_usb_send(&state);
 			}
 			else
@@ -1774,6 +1791,7 @@ int imu_read_report(struct controller_report *report)
 	}
 
 	load_cached_imu_report(report);
+	hide_motion_if_mouse(report);
 	return 0;
 }
 
