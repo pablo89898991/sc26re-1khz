@@ -15,6 +15,7 @@
 #include "controller.h"
 #include "haptics.h"
 #include "imu.h"
+#include "sc26re_cfg.h"
 #include "lizard.h"
 #include "power.h"
 #include "sdl/controller_structs.h"
@@ -87,6 +88,15 @@ static bool pending_state_valid;
  * USB frame they would have used anyway. Without this, such a report could take
  * the frame's slot with the previous IMU sample and the host saw it twice.
  */
+/*
+ * Mouse reports (0x40: gyro mouse, lizard) are merged, not queued: a new one
+ * adds its movement to the one still waiting, so a busy endpoint never builds
+ * up a backlog of old movement (that was felt as lag).
+ */
+static int32_t pending_mouse_acc[4]; /* x, y, wheel, hwheel */
+static uint8_t pending_mouse_buttons;
+static bool pending_mouse_valid;
+static uint8_t mouse_turn;
 static uint32_t pending_imu_ts;
 static uint32_t submitted_imu_ts;
 static uint32_t next_state_imu_ts;
@@ -142,7 +152,14 @@ static void usb_input_queue_reset(void)
 	/* Keep an active buffer pinned, but its drained queue entry is retired. */
 	input_transfer_dequeue_on_completion = false;
 	pending_state_valid = false;
+	pending_mouse_valid = false;
+	memset(pending_mouse_acc, 0, sizeof(pending_mouse_acc));
 	k_spin_unlock(&input_queue_lock, key);
+}
+
+static bool state_ready_locked(void)
+{
+	return pending_state_valid && !(imu_paces_usb() && pending_imu_ts == submitted_imu_ts);
 }
 
 static int usb_submit_next_input(void)
@@ -165,12 +182,39 @@ static int usb_submit_next_input(void)
 	{
 		input_transfer_dequeue_on_completion = true;
 	}
-	else if(pending_state_valid && !(imu_paces_usb() && pending_imu_ts == submitted_imu_ts))
+	else if(pending_mouse_valid || state_ready_locked())
 	{
-		submitted_imu_ts = pending_imu_ts;
-		memcpy(&input_transfer, &pending_state, sizeof(input_transfer));
-		input_transfer.data[1] = state_sequence++;
-		pending_state_valid = false;
+		bool mouse = pending_mouse_valid;
+
+		if(mouse && state_ready_locked())
+		{
+			/* both waiting: share the frames (gm_rate 1000 = mouse 3 of 4, 500 = alternate) */
+			mouse_turn++;
+			mouse = sc26re_cfg_get(SC26RE_CFG_GM_RATE) >= 1000 ? (mouse_turn & 3U) != 0U
+			                                                   : (mouse_turn & 1U) != 0U;
+		}
+		if(mouse)
+		{
+			input_transfer.len = 6;
+			input_transfer.data[0] = 0x40;
+			input_transfer.data[1] = pending_mouse_buttons;
+			for(size_t i = 0; i < 4; ++i)
+			{
+				int32_t v = CLAMP(pending_mouse_acc[i], -127, 127);
+
+				input_transfer.data[2 + i] = (uint8_t)(int8_t)v;
+				pending_mouse_acc[i] -= v;
+			}
+			pending_mouse_valid = pending_mouse_acc[0] || pending_mouse_acc[1] ||
+			                      pending_mouse_acc[2] || pending_mouse_acc[3];
+		}
+		else
+		{
+			submitted_imu_ts = pending_imu_ts;
+			memcpy(&input_transfer, &pending_state, sizeof(input_transfer));
+			input_transfer.data[1] = state_sequence++;
+			pending_state_valid = false;
+		}
 		input_transfer_dequeue_on_completion = false;
 	}
 	else
@@ -238,7 +282,17 @@ static int usb_queue_input_report(uint8_t report_id, const uint8_t *data, size_t
 	memcpy(&entry.data[1], data, len);
 
 	key = k_spin_lock(&input_queue_lock);
-	if(report_id == ID_TRITON_CONTROLLER_STATE)
+	if(report_id == 0x40 && len == 5)
+	{
+		pending_mouse_buttons = data[0];
+		for(size_t i = 0; i < 4; ++i)
+		{
+			pending_mouse_acc[i] += (int8_t)data[1 + i];
+		}
+		pending_mouse_valid = true;
+		err = 0;
+	}
+	else if(report_id == ID_TRITON_CONTROLLER_STATE)
 	{
 		memcpy(&pending_state, &entry, sizeof(pending_state));
 		pending_state_valid = true;
@@ -492,7 +546,8 @@ static void usb_input_ready(const struct device *dev, const uint8_t *const repor
 		}
 		input_transfer_dequeue_on_completion = false;
 	}
-	submit_next = completion_matched && (k_msgq_num_used_get(&input_queue) != 0 || pending_state_valid);
+	submit_next = completion_matched &&
+	              (k_msgq_num_used_get(&input_queue) != 0 || pending_state_valid || pending_mouse_valid);
 	k_spin_unlock(&input_queue_lock, key);
 	if(completion_matched && report != NULL && report[0] == ID_TRITON_CONTROLLER_STATE)
 	{

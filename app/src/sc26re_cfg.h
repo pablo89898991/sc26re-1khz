@@ -48,7 +48,7 @@ enum sc26re_cfg_id
 	SC26RE_CFG_GYRO_AVG,       /* gyro samples averaged per report: 1 or 2 */
 	SC26RE_CFG_GYRO_ODR,       /* gyro rate in the sensor, Hz: 2000, 4000, 8000 */
 	/* gyro as mouse (gyro_mouse.c) */
-	SC26RE_CFG_GM_ENABLED,     /* 0/1, toggled by LB+RB+QAM */
+	SC26RE_CFG_GM_ENABLED,     /* 0/1, toggled by LB+RB+View */
 	SC26RE_CFG_GM_ACT_BUTTON,  /* controller button bit that activates it, -1 = none */
 	SC26RE_CFG_GM_ACT_MODE,    /* 0 = always on, 1 = hold to enable, 2 = hold to disable, 3 = toggle */
 	SC26RE_CFG_GM_AXIS_PITCH,  /* 0 none, 1 horizontal, 2 vertical, negative = inverted */

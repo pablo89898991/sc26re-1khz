@@ -111,7 +111,7 @@
 
   <div class="panel" id="gmPanel">
     <h2>Gyro as mouse (SC26RE v49+)</h2>
-    <p class="note">The controller turns the gyro into mouse movement itself, like Alpakka, with no built-in dead zone and with fractions of a count carried over (sub-pixel accumulation). Everything else stays a normal Steam controller. Works over cable, Puck and Bluetooth. <b>On/off on the controller: press LB + RB + QAM together</b> (high beep = on, low = off). Tip: in Steam turn the controller's own gyro off for the game, so the camera isn't moved twice.</p>
+    <p class="note">The controller turns the gyro into mouse movement itself, like Alpakka, with no built-in dead zone and with fractions of a count carried over (sub-pixel accumulation). Everything else stays a normal Steam controller. Works over cable, Puck and Bluetooth. <b>On/off on the controller: press LB + RB + View together</b> (high beep = on, low = off). While it is on, no program (Steam included) gets the gyro: the pad report carries no motion data, so the camera is never moved twice (the IMU panel and “Measure at rest” read 0 until you turn it off).</p>
     <div class="bar" style="flex-wrap:wrap;gap:10px">
       <button class="primary" id="gmToggle">Turn on</button>
       <span id="gmState" class="note">connect the controller</span>
@@ -135,7 +135,7 @@
       <button id="gmRead">Read</button><button class="primary" id="gmApply">Apply</button><button id="gmSave">Save</button><span id="gmStatus" class="note"></span>
     </div>
     <h2 style="margin-top:16px;font-size:13px">Real world calibration (per game)</h2>
-    <p class="note">Teaches the controller how many mouse counts the game needs for a full 360° turn. In the game, look at something you can find again, then: <b>Start calibration</b> (or LB + RB + QAM + A on the controller) → press the <b>calibration button</b> to start a slow horizontal turn → press it again when the camera has done <b>exactly 360°</b>. The value is saved. Re-do it per game (or when you change the game's mouse sensitivity). If the turn is too slow or fast, change the speed.</p>
+    <p class="note">Teaches the controller how many mouse counts the game needs for a full 360° turn. In the game, look at something you can find again, then: <b>Start calibration</b> (or LB + RB + View + A on the controller) → press the <b>calibration button</b> to start a slow horizontal turn → press it again when the camera has done <b>exactly 360°</b>. The value is saved. Re-do it per game (or when you change the game's mouse sensitivity). If the turn is too slow or fast, change the speed.</p>
     <div class="bar" style="flex-wrap:wrap;gap:10px">
       <label class="note">calibration button <select id="gmCalBtn"></select></label>
       <label class="note">turn speed <input type="number" id="gmCalSpeed" min="100" max="20000" step="100" style="width:80px"> counts/s</label>

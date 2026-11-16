@@ -1518,7 +1518,6 @@ static void imu_fast_thread_main(void *arg1, void *arg2, void *arg3)
 	float gm_dps[3];
 	uint32_t gm_last_us = 0;
 	uint32_t gm_frame = 0;
-	bool gm_last_mouse = false;
 	bool gm_have_state;
 	int16_t mid_gyro_raw[3] = { 0 };
 	bool mid_gyro_valid = false;
@@ -1714,26 +1713,17 @@ static void imu_fast_thread_main(void *arg1, void *arg2, void *arg3)
 			 * buttons/sticks/pads: going through the report loop added its
 			 * scan time and sometimes missed the host's next poll.
 			 *
-			 * Gyro mouse: the mouse report shares the USB frames with the
-			 * pad report. 500: they alternate while the mouse moves; 1000:
-			 * mouse in 3 of 4 frames, pad in the 4th.
+			 * Gyro mouse: the movement goes out as a mouse report; the USB
+			 * transport merges it and shares the frames with the pad report.
 			 */
 			struct controller_report state;
-			bool send_mouse = false;
 
-			gm_frame++;
 			if(gyro_mouse_has_counts())
 			{
-				send_mouse = sc26re_cfg_get(SC26RE_CFG_GM_RATE) >= 1000 ? (gm_frame & 3U) != 0U
-				                                                       : !gm_last_mouse;
+				(void)imu_send_mouse();
 			}
-			if(send_mouse && imu_send_mouse())
+			if(hardware_load_state(&state))
 			{
-				gm_last_mouse = true;
-			}
-			else if(hardware_load_state(&state))
-			{
-				gm_last_mouse = false;
 				load_cached_imu_report(&state);
 				hide_motion_if_mouse(&state);
 				(void)transport_usb_send(&state);

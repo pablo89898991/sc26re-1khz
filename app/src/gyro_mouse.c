@@ -10,8 +10,8 @@
  * - Sensitivity is "real world": with RWS 1.0 a 90 deg turn of the controller
  *   turns the game camera 90 deg. That needs the game's mouse counts per 360 deg,
  *   measured by the calibration turn.
- * - LB + RB + QAM toggles it; LB + RB + QAM + A starts the calibration: the
- *   calibration button starts a slow horizontal turn, and pressing it again
+ * - LB + RB + View toggles it (not QAM: with QAM Steam opens its magnifier);
+ *   LB + RB + View + A starts the calibration: the calibration button starts a slow horizontal turn, and pressing it again
  *   when the game camera has done exactly 360 deg saves the count.
  */
 #include <math.h>
@@ -30,7 +30,7 @@
 LOG_MODULE_REGISTER(gyro_mouse, LOG_LEVEL_INF);
 
 #define CHORD_MASK (BIT(CONTROLLER_BUTTON_LEFT_SHOULDER) | BIT(CONTROLLER_BUTTON_RIGHT_SHOULDER) | \
-                    BIT(CONTROLLER_BUTTON_QAM))
+                    BIT(CONTROLLER_BUTTON_VIEW))
 #define CHORD_CAL_EXTRA BIT(CONTROLLER_BUTTON_A)
 
 enum cal_state
@@ -223,7 +223,7 @@ void gyro_mouse_feed(const float dps[3], uint32_t buttons, float dt_s)
 	prev_buttons = buttons;
 	dt_s = CLAMP(dt_s, 0.0f, 0.005f);
 
-	/* LB + RB + QAM: toggle on release; with A as well: calibration */
+	/* LB + RB + View: toggle on release; with A as well: calibration */
 	if(chord)
 	{
 		if(!chord_down)
