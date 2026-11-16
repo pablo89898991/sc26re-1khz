@@ -1522,6 +1522,7 @@ static void imu_fast_thread_main(void *arg1, void *arg2, void *arg3)
 	float accel_ms2_per_lsb = 0.0f;
 	int16_t applied_lpf = INT16_MIN;
 	float gm_dps[3];
+	uint32_t gm_wl_last = 0;
 	uint32_t gm_last_us = 0;
 	bool gm_have_state;
 	int16_t mid_gyro_raw[3] = { 0 };
@@ -1742,9 +1743,16 @@ static void imu_fast_thread_main(void *arg1, void *arg2, void *arg3)
 		{
 			/* Puck / Bluetooth: mouse on every sample (the link merges waiting mouse
 			 * reports), the report loop sends the pad */
-			if(gyro_mouse_has_counts())
+			/* steady cadence the Puck can pass on: a mouse report every
+			 * 1000/gm_rate_wl ms, movement in between is merged */
+			uint32_t now = (uint32_t)k_uptime_ticks();
+			/* a bit under the period, so the ~1 ms reads don't slip a cycle */
+			uint32_t period = k_us_to_ticks_floor32(
+			    1000000U / (uint32_t)MAX(sc26re_cfg_get(SC26RE_CFG_GM_RATE_WL), 125) - 300U);
+
+			if(now - gm_wl_last >= period && gyro_mouse_has_counts() && imu_send_mouse())
 			{
-				(void)imu_send_mouse();
+				gm_wl_last = now;
 			}
 			hardware_signal_input_changed();
 		}

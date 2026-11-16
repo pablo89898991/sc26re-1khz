@@ -60,6 +60,7 @@ enum sc26re_cfg_id
 	SC26RE_CFG_GM_CAL_BUTTON,  /* button bit that starts/stops the calibration turn */
 	SC26RE_CFG_GM_CAL_SPEED,   /* calibration turn, mouse counts per second */
 	SC26RE_CFG_GM_RATE,        /* mouse reports on USB: 500 (shares frames with the pad) or 1000 */
+	SC26RE_CFG_GM_RATE_WL,     /* mouse reports per second over Puck/Bluetooth: 1000, 500, 250 */
 	SC26RE_CFG_GM_BAND_SOFT,   /* mouse dead bands: 0 hard, 1 soft */
 	SC26RE_CFG_GM_BAND_P_LO,   /* mouse dead bands, 0.01 deg/s, pitch/yaw/roll */
 	SC26RE_CFG_GM_BAND_P_HI,
