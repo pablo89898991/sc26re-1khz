@@ -165,6 +165,10 @@ void imu_band_measure_result(int16_t lo[3], int16_t hi[3], int16_t margin)
 
 static atomic_t full_cal_request;
 static atomic_t full_cal_step;
+/* why the full calibration is waiting (report meter): 1 = touched / button, 2 = moved */
+static atomic_t full_cal_reason;
+static atomic_t full_cal_buttons;
+static atomic_t full_cal_moves;
 
 void imu_request_full_cal(void)
 {
@@ -178,7 +182,30 @@ bool imu_take_full_cal_request(void)
 
 void imu_set_full_cal_step(uint8_t step)
 {
+	if(step == 1U || step == 2U)
+	{
+		atomic_set(&full_cal_moves, 0);
+		atomic_set(&full_cal_reason, 0);
+	}
 	atomic_set(&full_cal_step, step);
+}
+
+
+void imu_full_cal_note(uint8_t reason, uint32_t buttons)
+{
+	atomic_set(&full_cal_reason, reason);
+	atomic_set(&full_cal_buttons, (atomic_val_t)buttons);
+	if(reason == 2U)
+	{
+		atomic_inc(&full_cal_moves);
+	}
+}
+
+void imu_full_cal_diag(uint8_t *reason, uint32_t *buttons, uint8_t *moves)
+{
+	*reason = (uint8_t)atomic_get(&full_cal_reason);
+	*buttons = (uint32_t)atomic_get(&full_cal_buttons);
+	*moves = (uint8_t)MIN(atomic_get(&full_cal_moves), 255);
 }
 
 uint8_t imu_full_cal_step(void)

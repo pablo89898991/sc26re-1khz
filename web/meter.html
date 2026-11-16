@@ -948,11 +948,18 @@ $("#gyFull").onclick=async()=>{
   const steps={1:"1/5 measuring at rest (5 s)…",2:"2/5 calibrating…",3:"3/5 measuring at rest again (5 s)…",4:"4/5 calibrating again…",5:"5/5 saving…"};
   for(let t=0;t<200;t++){
     await new Promise(r=>setTimeout(r,400));
-    let st=null; try{ const r=await featRead(ctl(),"sc26re/gyro_full_cal"); st=r.length?r[0]:null; }catch(e){}
+    let st=null, r_full=null; try{ r_full=await featRead(ctl(),"sc26re/gyro_full_cal"); st=r_full.length?r_full[0]:null; }catch(e){}
     if(st===null){ $("#toolStatus").innerHTML='<span class="err">this firmware has no full calibration (needs v43+)</span>'; return; }
     if(st===6){ $("#toolStatus").innerHTML='<span class="ok">full gyro calibration done and saved</span>'; await lsReadAll(); return; }
-    if(st===7){ $("#toolStatus").innerHTML='<span class="err">failed — it kept moving for 60 s; old calibration kept</span>'; return; }
-    if(steps[st]) $("#toolStatus").textContent=steps[st]+" don't touch the controller";
+    let why="";
+    if(r_full&&r_full.length>=7){
+      const reason=r_full[1], btn=new DataView(r_full.buffer,r_full.byteOffset,7).getUint32(2,true), moves=r_full[6];
+      const names=GM_BTNS.filter(([b])=>btn&(1<<b)).map(([,n])=>n).concat(btn&(1<<4)?["QAM"]:[]).concat(btn&(1<<16)?["Steam"]:[]);
+      if(reason===1) why=` — last wait: touched / pressed: ${names.join(", ")||"?"}`;
+      else if(reason===2) why=` — last wait: the gyro moved (${moves}×)`;
+    }
+    if(st===7){ $("#toolStatus").innerHTML=`<span class="err">failed — it kept being touched or moving for 60 s; old calibration kept${why}</span>`; return; }
+    if(steps[st]) $("#toolStatus").textContent=steps[st]+" don't touch the controller"+why;
   }
 };
 $("#gyCal").onclick=async()=>{

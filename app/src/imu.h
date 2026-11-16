@@ -34,6 +34,8 @@ bool imu_take_full_cal_request(void);
 /* progress for the meter: 0 idle, 1..5 steps, 6 done, 7 failed */
 void imu_set_full_cal_step(uint8_t step);
 uint8_t imu_full_cal_step(void);
+void imu_full_cal_note(uint8_t reason, uint32_t buttons);
+void imu_full_cal_diag(uint8_t *reason, uint32_t *buttons, uint8_t *moves);
 void imu_gyro_cal_result(int16_t std_mdps[3], int16_t spread_mdps[3]);
 void imu_reset(void);
 /* keep the IMU running whatever the host asks (gyro mouse) */

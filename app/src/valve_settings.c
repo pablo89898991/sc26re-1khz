@@ -606,10 +606,17 @@ bool valve_settings_read(const char *path, uint8_t *buf, size_t capacity, size_t
 		*len = 1;
 		return true;
 	}
-	if(strcmp(path, "sc26re/gyro_full_cal") == 0 && capacity >= 1)
+	if(strcmp(path, "sc26re/gyro_full_cal") == 0 && capacity >= 7)
 	{
+		uint8_t reason, moves;
+		uint32_t buttons;
+
+		imu_full_cal_diag(&reason, &buttons, &moves);
 		buf[0] = imu_full_cal_step();
-		*len = 1;
+		buf[1] = reason;
+		sys_put_le32(buttons, &buf[2]);
+		buf[6] = moves;
+		*len = 7;
 		return true;
 	}
 	if(strcmp(path, "sc26re/gyro_cal") == 0 && capacity >= 13)

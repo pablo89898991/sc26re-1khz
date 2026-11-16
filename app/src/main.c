@@ -272,6 +272,7 @@ static bool gyro_chord_poll(const struct controller_report *r)
 			if(!hands_off)
 			{
 				since = now;
+				imu_full_cal_note(1U, r->buttons);
 			}
 			else if(now - since >= GYRO_CHORD_HANDS_OFF_MS)
 			{
@@ -286,6 +287,7 @@ static bool gyro_chord_poll(const struct controller_report *r)
 
 			if(!hands_off || st == 3U)
 			{
+				imu_full_cal_note(hands_off ? 2U : 1U, r->buttons);
 				/* touched or moved: repeat this step once it is still again */
 				since = now;
 				state = GYRO_CHORD_WAIT_HANDS_OFF;
