@@ -1325,6 +1325,16 @@ static atomic_t imu_last_sof_ms;
 static atomic_t imu_fast_reads;
 static atomic_t imu_fast_errors;
 
+static atomic_t imu_last_read_ms;
+
+bool imu_paces_usb(void)
+{
+	uint32_t now = k_uptime_get_32();
+
+	return now - (uint32_t)atomic_get(&imu_last_read_ms) <= IMU_SOF_TIMEOUT_MS &&
+	       now - (uint32_t)atomic_get(&imu_last_sof_ms) <= IMU_SOF_TIMEOUT_MS;
+}
+
 void imu_usb_sof(void)
 {
 	atomic_set(&imu_last_sof_ms, (atomic_val_t)k_uptime_get_32());
@@ -1425,6 +1435,7 @@ static void imu_fast_thread_main(void *arg1, void *arg2, void *arg3)
 			continue;
 		}
 		atomic_inc(&imu_fast_reads);
+		atomic_set(&imu_last_read_ms, (atomic_val_t)k_uptime_get_32());
 		for(size_t i = 0; i < 3; ++i)
 		{
 			gyro[i] = (float)(int16_t)sys_get_le16(&raw[2 * i]) * gyro_rad_per_lsb;
@@ -1447,6 +1458,11 @@ static void imu_fast_thread_main(void *arg1, void *arg2, void *arg3)
 #else
 void imu_usb_sof(void)
 {
+}
+
+bool imu_paces_usb(void)
+{
+	return false;
 }
 #endif
 

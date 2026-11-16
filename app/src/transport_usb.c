@@ -79,6 +79,17 @@ static bool input_transfer_dequeue_on_completion;
  */
 static struct usb_input_queue_entry pending_state;
 static bool pending_state_valid;
+/*
+ * IMU-paced state reports: while the IMU is read once per USB frame, a state
+ * report is only handed to the USB controller when it carries an IMU sample the
+ * host has not had yet. Reports triggered by sticks/buttons in between stay in
+ * pending_state (latest wins) and go out with the next IMU sample, in the same
+ * USB frame they would have used anyway. Without this, such a report could take
+ * the frame's slot with the previous IMU sample and the host saw it twice.
+ */
+static uint32_t pending_imu_ts;
+static uint32_t submitted_imu_ts;
+static uint32_t next_state_imu_ts;
 static uint8_t state_sequence;
 static atomic_t usb_initialized;
 static atomic_t usb_attached;
@@ -154,8 +165,9 @@ static int usb_submit_next_input(void)
 	{
 		input_transfer_dequeue_on_completion = true;
 	}
-	else if(pending_state_valid)
+	else if(pending_state_valid && !(imu_paces_usb() && pending_imu_ts == submitted_imu_ts))
 	{
+		submitted_imu_ts = pending_imu_ts;
 		memcpy(&input_transfer, &pending_state, sizeof(input_transfer));
 		input_transfer.data[1] = state_sequence++;
 		pending_state_valid = false;
@@ -230,6 +242,7 @@ static int usb_queue_input_report(uint8_t report_id, const uint8_t *data, size_t
 	{
 		memcpy(&pending_state, &entry, sizeof(pending_state));
 		pending_state_valid = true;
+		pending_imu_ts = next_state_imu_ts;
 		err = 0;
 	}
 	else
@@ -620,6 +633,7 @@ int transport_usb_send(const struct controller_report *report)
 
 	triton_state_report_pack_body(body, sizeof(body), input_sequence++, report,
 	                              triton_state_report_timestamp_us());
+	next_state_imu_ts = report->imu_timestamp_us;
 	return usb_queue_input_report(ID_TRITON_CONTROLLER_STATE, body, sizeof(body));
 }
 
