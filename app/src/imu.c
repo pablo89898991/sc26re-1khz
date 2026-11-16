@@ -21,9 +21,7 @@
 #if CONFIG_IBEX_IMU_DEBUG_IN_QUAT
 #include <zephyr/drivers/sensor_clock.h>
 #endif
-#if CONFIG_IBEX_IMU_I2C_FREQ_KHZ != 400
 #include <hal/nrf_twim.h>
-#endif
 #include "ibex_settings_registry.h"
 #include "imu.h"
 #include "sc26re_cfg.h"
@@ -1320,36 +1318,79 @@ static void imu_stream_thread_main(void *arg1, void *arg2, void *arg3)
 #define IMU_REG_CTRL8 0x17U /* FS_XL [1:0] */
 #define IMU_REG_OUTX_L_G 0x22U
 #define IMU_PACE_TIMEOUT_MS 3U
-#define IMU_POLL_GAP_TICKS ((uint32_t)k_us_to_ticks_ceil32(1500))
+#define IMU_USB_GAP_TICKS ((uint32_t)k_us_to_ticks_ceil32(1500))
 
 static const struct i2c_dt_spec imu_i2c = I2C_DT_SPEC_GET(DT_ALIAS(accel0));
 K_SEM_DEFINE(imu_tick_sem, 0, 1);
-static atomic_t imu_last_poll_ticks;
-static atomic_t imu_last_poll_ms;
+static atomic_t imu_last_usb_ticks;
+static atomic_t imu_last_usb_ms;
 static atomic_t imu_fast_reads;
 static atomic_t imu_fast_errors;
 static atomic_t imu_last_read_ms;
+static struct k_spinlock imu_stats_lock;
+static uint32_t imu_read_us_sum, imu_read_n, imu_read_us_max;
+
+/* what starts a read on USB (Live setting imu_pace): 0 = USB frame start (SOF),
+ * 1 = host fetched the previous report, 2 = 1 ms timer only */
+static int16_t imu_pace_mode(void)
+{
+	return sc26re_cfg_get(SC26RE_CFG_IMU_PACE);
+}
 
 bool imu_paces_usb(void)
 {
 	uint32_t now = k_uptime_get_32();
 
 	return now - (uint32_t)atomic_get(&imu_last_read_ms) <= IMU_PACE_TIMEOUT_MS &&
-	       now - (uint32_t)atomic_get(&imu_last_poll_ms) <= IMU_PACE_TIMEOUT_MS;
+	       now - (uint32_t)atomic_get(&imu_last_usb_ms) <= IMU_PACE_TIMEOUT_MS;
+}
+
+static void imu_usb_event(int16_t mode)
+{
+	if(imu_pace_mode() != mode)
+	{
+		return;
+	}
+	atomic_set(&imu_last_usb_ticks, (atomic_val_t)(uint32_t)k_uptime_ticks());
+	atomic_set(&imu_last_usb_ms, (atomic_val_t)k_uptime_get_32());
+	k_sem_give(&imu_tick_sem);
+}
+
+void imu_usb_sof(void)
+{
+	imu_usb_event(0);
 }
 
 void imu_usb_in_done(void)
 {
-	atomic_set(&imu_last_poll_ticks, (atomic_val_t)(uint32_t)k_uptime_ticks());
-	atomic_set(&imu_last_poll_ms, (atomic_val_t)k_uptime_get_32());
-	k_sem_give(&imu_tick_sem);
+	imu_usb_event(1);
+}
+
+void imu_fast_stats(uint32_t out[5])
+{
+	k_spinlock_key_t key = k_spin_lock(&imu_stats_lock);
+
+	out[0] = (uint32_t)atomic_get(&imu_fast_reads);
+	out[1] = (uint32_t)atomic_get(&imu_fast_errors);
+	out[2] = imu_read_n ? imu_read_us_sum / imu_read_n : 0U;
+	out[3] = imu_read_us_max;
+	out[4] = (uint32_t)k_uptime_get_32();
+	imu_read_us_sum = imu_read_n = imu_read_us_max = 0U;
+	k_spin_unlock(&imu_stats_lock, key);
 }
 
 static void imu_tick_timer_fn(struct k_timer *timer)
 {
 	ARG_UNUSED(timer);
-	/* only when the host is not fetching reports (Puck / Bluetooth / idle USB) */
-	if((uint32_t)k_uptime_ticks() - (uint32_t)atomic_get(&imu_last_poll_ticks) > IMU_POLL_GAP_TICKS)
+	if(imu_pace_mode() == 2)
+	{
+		/* timer pacing: USB reports still wait for each new sample */
+		atomic_set(&imu_last_usb_ms, (atomic_val_t)k_uptime_get_32());
+		k_sem_give(&imu_tick_sem);
+		return;
+	}
+	/* only when the host is not polling (Puck / Bluetooth / idle USB) */
+	if((uint32_t)k_uptime_ticks() - (uint32_t)atomic_get(&imu_last_usb_ticks) > IMU_USB_GAP_TICKS)
 	{
 		k_sem_give(&imu_tick_sem);
 	}
@@ -1424,6 +1465,25 @@ static void imu_fast_thread_main(void *arg1, void *arg2, void *arg3)
 			        (int)(gyro_rad_per_lsb * 180.0f / 3.14159265f * 1000000.0f) / 1000,
 			        (int)(accel_ms2_per_lsb / 9.80665f * 1000000.0f));
 		}
+#if DT_NODE_HAS_COMPAT(DT_BUS(DT_ALIAS(accel0)), nordic_nrf_twim)
+		{
+			/* IMU I2C bus speed (Live setting, 400 = standard; above is undocumented
+			 * on nRF52833 but 800 ran in testing). The FREQUENCY word is a fraction
+			 * of 16 MHz; only touched while this thread owns the latest transfer. */
+			static int16_t applied_khz = 400;
+			int16_t khz = sc26re_cfg_get(SC26RE_CFG_IMU_I2C_KHZ);
+
+			if(khz != applied_khz)
+			{
+				NRF_TWIM_Type *twim = (NRF_TWIM_Type *)DT_REG_ADDR(DT_BUS(DT_ALIAS(accel0)));
+
+				twim->FREQUENCY = khz <= 400 ? 0x06400000UL
+				                             : (uint32_t)(((uint64_t)khz << 32) / 16000U);
+				applied_khz = khz;
+				LOG_INF("IMU I2C bus at %d kHz", khz);
+			}
+		}
+#endif
 		{
 			int16_t lpf = sc26re_cfg_get(SC26RE_CFG_GYRO_HW_LPF);
 
@@ -1433,10 +1493,21 @@ static void imu_fast_thread_main(void *arg1, void *arg2, void *arg3)
 			}
 		}
 		/* gyro X/Y/Z then accel X/Y/Z, little endian; BDU keeps each pair coherent */
+		uint32_t c0 = k_cycle_get_32();
+
 		if(i2c_burst_read_dt(&imu_i2c, IMU_REG_OUTX_L_G, raw, sizeof(raw)) != 0)
 		{
 			atomic_inc(&imu_fast_errors);
 			continue;
+		}
+		{
+			uint32_t us = k_cyc_to_us_floor32(k_cycle_get_32() - c0);
+			k_spinlock_key_t key = k_spin_lock(&imu_stats_lock);
+
+			imu_read_us_sum += us;
+			imu_read_n++;
+			imu_read_us_max = MAX(imu_read_us_max, us);
+			k_spin_unlock(&imu_stats_lock, key);
 		}
 		atomic_inc(&imu_fast_reads);
 		atomic_set(&imu_last_read_ms, (atomic_val_t)k_uptime_get_32());
@@ -1462,6 +1533,15 @@ static void imu_fast_thread_main(void *arg1, void *arg2, void *arg3)
 #else
 void imu_usb_in_done(void)
 {
+}
+
+void imu_usb_sof(void)
+{
+}
+
+void imu_fast_stats(uint32_t out[5])
+{
+	memset(out, 0, 5 * sizeof(uint32_t));
 }
 
 bool imu_paces_usb(void)

@@ -152,6 +152,7 @@
 
   <div class="panel">
     <h2>IMU in reports</h2>
+    <p class="note" id="imuStats">Controller-side IMU reads (v47+): connect to see them.</p>
     <div class="grid">
       <div class="stat"><div class="k">Fresh IMU</div><div class="v" id="sImuRate">—</div><div class="u">IMU batches / s</div></div>
       <div class="stat"><div class="k">IMU Δt</div><div class="v" id="sImuDt">—</div><div class="u">median µs (device)</div></div>
@@ -290,6 +291,18 @@ async function connect(){
   }catch(e){ $("#status").innerHTML=`<span class="err">${e.message}</span>`; }
 }
 $("#connect").onclick=connect;
+/* controller-side IMU read stats (v47+) */
+let imuStPrev=null;
+setInterval(async()=>{
+  const d=ctl(); if(!d||!devs.length) return;
+  let b; try{ b=await featRead(d,"sc26re/imu_stats"); }catch(e){ return; }
+  if(!b||b.length<20) return;
+  const dv=new DataView(b.buffer,b.byteOffset,20), st=[0,1,2,3,4].map(i=>dv.getUint32(4*i,true));
+  if(imuStPrev){ const dt=(st[4]-imuStPrev[4])/1000; if(dt>0){
+    const rate=(st[0]-imuStPrev[0])/dt, err=st[1]-imuStPrev[1];
+    $("#imuStats").innerHTML=`Controller reads the IMU <b>${rate.toFixed(0)}</b>×/s · one read takes <b>${st[2]}</b> µs (max ${st[3]} µs) · errors ${err}`; } }
+  imuStPrev=st;
+},1000);
 /* why the controller last started (v47+): helps tell a crash from a normal restart */
 async function showBoot(){
   const d=ctl(); if(!d) return;
@@ -640,6 +653,8 @@ const LS=[
  ["gyro_deadzone","Gyro dead zone","raw units; small = more precise, large = steadier"],
  ["gyro_filter","Gyro smoothing","0 = off, 1 light … 4 strong (adds a few ms)"],
  ["gyro_hw_lpf","Gyro hardware filter (in the sensor)","0 = off (rawest, most noise), 1 = lightest (default) … 8 = strongest. Filters inside the IMU before the data leaves it; less noise for a little delay (v47+)"],
+ ["imu_pace","IMU read timing (USB)","what starts each gyro/accel read: 0 = start of each USB frame (default), 1 = when the PC has fetched the previous report, 2 = 1 ms timer (v47+, for testing)"],
+ ["imu_i2c_khz","IMU bus speed","kHz, 400 = standard (default) … 800 = faster reads (outside the chip's spec; if the gyro misbehaves set 400) (v47+)"],
  ["gyro_auto_cal","Auto gyro calibration","seconds lying untouched (no hands on grips/sticks/pads) before it recalibrates itself; 0 = off (default 3)"],
  ["gyro_band_soft","Gyro dead bands: hard / soft","0 = hard (outside the band the full value passes — tiny jump at the edge), 1 = soft (starts from 0 at the edge, no jump, slow moves slightly weaker) (v46+)"],
  ["band:x","Gyro dead band — Pitch","°/s: readings from … to read as 0 (e.g. −0.3 to 0.3); 0 and 0 = off"],

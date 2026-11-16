@@ -554,6 +554,18 @@ bool valve_settings_read(const char *path, uint8_t *buf, size_t capacity, size_t
 		*len = 4;
 		return true;
 	}
+	if(strcmp(path, "sc26re/imu_stats") == 0 && capacity >= 20)
+	{
+		uint32_t st[5];
+
+		imu_fast_stats(st);
+		for(size_t i = 0; i < 5; ++i)
+		{
+			sys_put_le32(st[i], &buf[4 * i]);
+		}
+		*len = 20;
+		return true;
+	}
 	if(strcmp(path, "sc26re/boot") == 0 && capacity >= 28)
 	{
 		/* why the controller last started: RESETREAS, uptime, crash record */

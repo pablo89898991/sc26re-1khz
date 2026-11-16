@@ -38,6 +38,10 @@ void imu_gyro_cal_result(int16_t std_mdps[3], int16_t spread_mdps[3]);
 void imu_reset(void);
 /* the host fetched a state report: read the gyro/accel for the next one */
 void imu_usb_in_done(void);
+/* USB start of frame */
+void imu_usb_sof(void);
+/* reads, errors, avg read us, max read us, uptime ms (avg/max reset on each call) */
+void imu_fast_stats(uint32_t out[5]);
 /* true while the IMU is read once per USB frame (USB reports wait for each new sample) */
 bool imu_paces_usb(void);
 

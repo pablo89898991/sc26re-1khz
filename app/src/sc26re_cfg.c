@@ -61,6 +61,8 @@ static const struct cfg_desc descs[SC26RE_CFG_COUNT] = {
 	[SC26RE_CFG_LINK_LOST_OFF] = { "link_lost_off", 5, 0, 60, NO_REGISTRY, 1 },
 	[SC26RE_CFG_GYRO_BAND_SOFT] = { "gyro_band_soft", 0, 0, 1, NO_REGISTRY, 1 },
 	[SC26RE_CFG_GYRO_HW_LPF] = { "gyro_hw_lpf", 1, 0, 8, NO_REGISTRY, 1 },
+	[SC26RE_CFG_IMU_PACE] = { "imu_pace", 0, 0, 2, NO_REGISTRY, 1 },
+	[SC26RE_CFG_IMU_I2C_KHZ] = { "imu_i2c_khz", 400, 400, 800, NO_REGISTRY, 1 },
 };
 
 static int16_t values[SC26RE_CFG_COUNT];
