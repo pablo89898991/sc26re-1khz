@@ -17,6 +17,7 @@
 #include "lizard.h"
 #include "power.h"
 #include "valve_feature.h"
+#include "gyro_mouse.h"
 #include "valve_identity.h"
 #include "valve_settings.h"
 
@@ -662,6 +663,25 @@ static int handle_feature_request(enum valve_feature_link link, const uint8_t *r
 						(void)sc26re_cfg_set((enum sc26re_cfg_id)id, 0, true);
 					}
 					return imu_reset_gyro_calibration();
+				}
+				if(strncmp(path, "sc26re/gm_cal_", 14) == 0)
+				{
+					/* gyro mouse calibration from the report meter */
+					const char *op = path + 14;
+
+					if(strcmp(op, "start") == 0)
+					{
+						gyro_mouse_cal_start();
+					}
+					else if(strcmp(op, "turn") == 0)
+					{
+						gyro_mouse_cal_turn();
+					}
+					else
+					{
+						gyro_mouse_cal_stop(strcmp(op, "stop") == 0);
+					}
+					return 0;
 				}
 				if(strcmp(path, "sc26re/gyro_full_cal") == 0)
 				{

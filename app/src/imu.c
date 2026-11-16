@@ -28,6 +28,7 @@
 #include "sc26re_cfg.h"
 #include "calibration.h"
 #include "imu_bias.h"
+#include "gyro_mouse.h"
 #include "sdl/controller_constants.h"
 
 LOG_MODULE_REGISTER(imu);
@@ -1437,6 +1438,45 @@ static int imu_apply_gyro_hw_lpf(int16_t level)
 	return err;
 }
 
+/* gyro (rad/s, sensor frame) -> pitch, yaw, roll in deg/s on the report axes, bias removed */
+static void gyro_report_axes_dps(const float gyro[3], float out[3])
+{
+	float g[3];
+	float o[3];
+
+	for(size_t i = 0; i < 3; ++i)
+	{
+		float b = use_gyro_bias ? (latest_sflp_bias_valid ? latest_sflp_bias[i] : gyro_bias[i]) : 0.0f;
+
+		g[i] = (gyro[i] - b) * (180.0f / 3.14159265f);
+	}
+	for(size_t row = 0; row < 3; ++row)
+	{
+		o[row] = 0.0f;
+		for(size_t col = 0; col < 3; ++col)
+		{
+			o[row] += (float)mounting_matrix[row * 3 + col] * g[col];
+		}
+	}
+	out[0] = o[0];  /* pitch */
+	out[1] = o[2];  /* yaw */
+	out[2] = -o[1]; /* roll */
+}
+
+static bool imu_send_mouse(void)
+{
+	int8_t dx, dy;
+	uint8_t m[5] = { 0 };
+
+	if(!gyro_mouse_take(&dx, &dy))
+	{
+		return false;
+	}
+	m[1] = (uint8_t)dx;
+	m[2] = (uint8_t)dy;
+	return transport_send_input_report(0x40, m, sizeof(m)) == 0;
+}
+
 static void imu_fast_thread_main(void *arg1, void *arg2, void *arg3)
 {
 	/* LSM6DSV16X sensitivities: gyro 4.375 mdps/LSB at +-125 dps, doubling per step;
@@ -1445,6 +1485,11 @@ static void imu_fast_thread_main(void *arg1, void *arg2, void *arg3)
 	float gyro_rad_per_lsb = 0.0f;
 	float accel_ms2_per_lsb = 0.0f;
 	int16_t applied_lpf = INT16_MIN;
+	float gm_dps[3];
+	uint32_t gm_last_us = 0;
+	uint32_t gm_frame = 0;
+	bool gm_last_mouse = false;
+	bool gm_have_state;
 	int16_t mid_gyro_raw[3] = { 0 };
 	bool mid_gyro_valid = false;
 	bool avg2 = false;
@@ -1619,7 +1664,18 @@ static void imu_fast_thread_main(void *arg1, void *arg2, void *arg3)
 		process_gyro(gyro, &report);
 		report.imu_timestamp_us = (uint32_t)k_ticks_to_us_floor64(k_uptime_ticks());
 		store_cached_imu_report(&report);
+		gyro_report_axes_dps(gyro, gm_dps);
 		k_mutex_unlock(&imu_io_lock);
+		{
+			/* gyro as mouse: feed every sample (also handles its button chords) */
+			struct controller_report st;
+			uint32_t now_us = report.imu_timestamp_us;
+
+			gm_have_state = hardware_load_state(&st);
+			gyro_mouse_feed(gm_dps, gm_have_state ? st.buttons : 0U,
+			                gm_last_us ? (float)(now_us - gm_last_us) * 1e-6f : 0.001f);
+			gm_last_us = now_us;
+		}
 		if(transport_usb_state_reports_allowed() && imu_paces_usb() &&
 		   sc26re_cfg_get(SC26RE_CFG_REPORT_RATE) >= 1000)
 		{
@@ -1627,11 +1683,27 @@ static void imu_fast_thread_main(void *arg1, void *arg2, void *arg3)
 			 * Send the new sample right here with the report loop's latest
 			 * buttons/sticks/pads: going through the report loop added its
 			 * scan time and sometimes missed the host's next poll.
+			 *
+			 * Gyro mouse: the mouse report shares the USB frames with the
+			 * pad report. 500: they alternate while the mouse moves; 1000:
+			 * mouse in 3 of 4 frames, pad in the 4th.
 			 */
 			struct controller_report state;
+			bool send_mouse = false;
 
-			if(hardware_load_state(&state))
+			gm_frame++;
+			if(gyro_mouse_has_counts())
 			{
+				send_mouse = sc26re_cfg_get(SC26RE_CFG_GM_RATE) >= 1000 ? (gm_frame & 3U) != 0U
+				                                                       : !gm_last_mouse;
+			}
+			if(send_mouse && imu_send_mouse())
+			{
+				gm_last_mouse = true;
+			}
+			else if(hardware_load_state(&state))
+			{
+				gm_last_mouse = false;
 				load_cached_imu_report(&state);
 				(void)transport_usb_send(&state);
 			}
@@ -1640,8 +1712,14 @@ static void imu_fast_thread_main(void *arg1, void *arg2, void *arg3)
 				hardware_signal_input_changed();
 			}
 		}
-		else if(transport_usb_configured() || transport_esb_connected())
+		else if(transport_usb_configured() || transport_esb_connected() || transport_ble_connected())
 		{
+			/* Puck / Bluetooth: mouse every other sample, the report loop sends the pad */
+			gm_frame++;
+			if((gm_frame & 1U) && gyro_mouse_has_counts())
+			{
+				(void)imu_send_mouse();
+			}
 			hardware_signal_input_changed();
 		}
 	}

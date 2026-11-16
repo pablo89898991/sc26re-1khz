@@ -47,6 +47,26 @@ enum sc26re_cfg_id
 	SC26RE_CFG_GYRO_FSR,       /* gyro full scale, dps: 250, 500, 1000, 2000 */
 	SC26RE_CFG_GYRO_AVG,       /* gyro samples averaged per report: 1 or 2 */
 	SC26RE_CFG_GYRO_ODR,       /* gyro rate in the sensor, Hz: 2000, 4000, 8000 */
+	/* gyro as mouse (gyro_mouse.c) */
+	SC26RE_CFG_GM_ENABLED,     /* 0/1, toggled by LB+RB+QAM */
+	SC26RE_CFG_GM_ACT_BUTTON,  /* controller button bit that activates it, -1 = none */
+	SC26RE_CFG_GM_ACT_MODE,    /* 0 = always on, 1 = hold to enable, 2 = hold to disable, 3 = toggle */
+	SC26RE_CFG_GM_AXIS_PITCH,  /* 0 none, 1 horizontal, 2 vertical, negative = inverted */
+	SC26RE_CFG_GM_AXIS_YAW,
+	SC26RE_CFG_GM_AXIS_ROLL,
+	SC26RE_CFG_GM_SENS,        /* real world sensitivity x100 (100 = 1:1) */
+	SC26RE_CFG_GM_CAL_HI,      /* mouse counts for a 360 deg turn in the game, high/low 15 bits */
+	SC26RE_CFG_GM_CAL_LO,
+	SC26RE_CFG_GM_CAL_BUTTON,  /* button bit that starts/stops the calibration turn */
+	SC26RE_CFG_GM_CAL_SPEED,   /* calibration turn, mouse counts per second */
+	SC26RE_CFG_GM_RATE,        /* mouse reports on USB: 500 (shares frames with the pad) or 1000 */
+	SC26RE_CFG_GM_BAND_SOFT,   /* mouse dead bands: 0 hard, 1 soft */
+	SC26RE_CFG_GM_BAND_P_LO,   /* mouse dead bands, 0.01 deg/s, pitch/yaw/roll */
+	SC26RE_CFG_GM_BAND_P_HI,
+	SC26RE_CFG_GM_BAND_Y_LO,
+	SC26RE_CFG_GM_BAND_Y_HI,
+	SC26RE_CFG_GM_BAND_R_LO,
+	SC26RE_CFG_GM_BAND_R_HI,
 	SC26RE_CFG_COUNT,
 };
 

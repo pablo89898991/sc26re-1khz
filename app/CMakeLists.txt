@@ -28,6 +28,7 @@ target_sources(app PRIVATE
 	src/valve_identity.c
 	src/valve_settings.c
 	src/sc26re_cfg.c
+	src/gyro_mouse.c
 )
 
 target_sources_ifdef(CONFIG_HAPTICS_PWM_NRF app PRIVATE src/haptics_pwm_nrf.c)

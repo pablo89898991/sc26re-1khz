@@ -13,6 +13,7 @@
 #include "calibration.h"
 #include "ibex_settings_registry.h"
 #include "imu.h"
+#include "gyro_mouse.h"
 #include "valve_nvs.h"
 #include "olympus.h"
 #include "sc26re_cfg.h"
@@ -552,6 +553,18 @@ bool valve_settings_read(const char *path, uint8_t *buf, size_t capacity, size_t
 	{
 		sys_put_le32(valve_feature_ms_since_host_traffic(), buf);
 		*len = 4;
+		return true;
+	}
+	if(strcmp(path, "sc26re/gm_state") == 0 && capacity >= 10)
+	{
+		struct gyro_mouse_status st;
+
+		gyro_mouse_status(&st);
+		buf[0] = st.enabled ? 1U : 0U;
+		buf[1] = st.cal_state;
+		sys_put_le32((uint32_t)st.cal_counts, &buf[2]);
+		sys_put_le32((uint32_t)st.counts_per_360, &buf[6]);
+		*len = 10;
 		return true;
 	}
 	if(strcmp(path, "sc26re/imu_stats") == 0 && capacity >= 20)
