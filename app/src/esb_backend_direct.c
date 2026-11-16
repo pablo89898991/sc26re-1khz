@@ -547,6 +547,22 @@ int valve_esb_backend_write_payload(const struct valve_esb_payload *payload)
  * the freshest report instead of one queued a whole poll interval ago.
  * Returns 1 when an entry was replaced.
  */
+uint8_t valve_esb_backend_fixed_pending(void)
+{
+	k_spinlock_key_t key = k_spin_lock(&fifo_lock);
+	uint8_t n = 0;
+
+	for(uint8_t i = 0; i < tx_count; ++i)
+	{
+		if(!tx_replaceable[(tx_tail + i) % TX_FIFO_SIZE])
+		{
+			n++;
+		}
+	}
+	k_spin_unlock(&fifo_lock, key);
+	return n;
+}
+
 int valve_esb_backend_write_latest_payload(const struct valve_esb_payload *payload)
 {
 	k_spinlock_key_t key;

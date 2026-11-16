@@ -486,7 +486,13 @@ static void queue_latest_input(void)
 		payload.length += latest_input_42.length - 1;
 		report_included = true;
 	}
-	for(uint8_t i = 0; i < input_report_queue_count; ++i)
+	/*
+	 * Mouse/keyboard reports ride in a payload that cannot be replaced. Only one
+	 * such payload at a time: meanwhile the reports wait (mouse movement merges
+	 * into the waiting one) and the pad state keeps using the replaceable slot,
+	 * instead of the queue filling with fixed payloads and stale pad states.
+	 */
+	for(uint8_t i = 0; valve_esb_backend_fixed_pending() == 0U && i < input_report_queue_count; ++i)
 	{
 		const uint8_t queue_index = (input_report_queue_head + i) % ARRAY_SIZE(input_report_queue);
 		const struct esb_input_report_entry *entry = &input_report_queue[queue_index];
