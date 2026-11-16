@@ -109,6 +109,20 @@
   </div>
 
   <div class="panel">
+    <h2>Flash firmware (USB cable)</h2>
+    <p class="note">Flashes a <code>.fw</code> file over the cable, like Ibex Web Utilities, but it <b>keeps your settings</b>: before flashing it saves the controller's sc26re storage (pairings, calibrations, Live settings) and writes it back afterwards. Flashing wipes that storage, which is why Steam asked to pair with the Puck again after every update. Close Steam, connect the controller <b>by cable</b> above, pick the file and press Flash. Chrome / Edge / Brave on desktop (WebHID + Web Serial).</p>
+    <div class="bar" style="flex-wrap:wrap;gap:10px">
+      <input type="file" id="fwFile" accept=".fw">
+      <label class="note"><input type="checkbox" id="fwKeep" checked> keep settings (backup + restore)</label>
+      <button class="primary" id="fwFlash">Flash</button>
+      <button id="fwPort" style="display:none">Select bootloader port…</button>
+    </div>
+    <div class="cbar" style="margin-top:10px"><b id="fwBar" style="width:0%"></b></div>
+    <p class="note" id="fwStatus"></p>
+    <p class="note">If the controller is still running stock firmware (or sc26re older than v15), there is nothing to save; it flashes anyway. A copy of the saved storage is also downloaded as a file, just in case. If anything goes wrong mid-way the bootloader stays active: run Flash again with the same file (the bootloader port can be selected directly).</p>
+  </div>
+
+  <div class="panel">
     <h2>Hard reset to factory settings (SC26RE v40+)</h2>
     <p class="note">Forgets everything sc26re stored &mdash; trigger, stick, trackpad-pressure and gyro calibration, settings sent by Steam, boot chime level, Bluetooth/Puck mode, <b>all Bluetooth and Puck pairings</b> &mdash; and reboots the controller. Calibration then comes back from Valve's own storage, the same values the stock firmware uses. Afterwards pair the controller with the Puck or Bluetooth again. Works over USB or the Puck; close Steam first. Same as holding Menu + View + LB + RB for 3 s while switching on.</p>
     <div class="bar">
@@ -317,6 +331,173 @@ async function factoryReset(){
   $("#facStatus").innerHTML=ok?'<span class="ok">sent &mdash; the controller chimes and reboots</span>':`<span class="err">failed: ${last||"not connected"}</span>`;
 }
 $("#facReset").onclick=factoryReset;
+
+/* ======================= Firmware flasher =======================
+   Protocol: FIRMWARE_UPLOAD_PROTOCOL (opensteamcontroller) and sc26re's
+   flash.py: HID 0x90 -> bootloader (CDC serial 28DE:1005, 115200),
+   framed messages SOF 0xAD / EOF 0xAE / ESC 0xAC, u16 LE message ids:
+   INFO 0x1233, FW_BEGIN 0x1234, FW_DATA 0x1235, FW_END 0x1236, RESET 0x1237.
+   Settings: READ nvs/info + nvs/<off>, then COMMIT nvs/erase + STAGE nvs/<off>. */
+const FW={SOF:0xAD,EOF:0xAE,ESC:0xAC,INFO:0x1233,BEGIN:0x1234,DATA:0x1235,END:0x1236,RESET:0x1237,CHUNK:0x7FFC,MAGIC:0xD2D86467};
+const fwSleep=ms=>new Promise(r=>setTimeout(r,ms));
+function fwSay(t,cls){ $("#fwStatus").innerHTML=cls?`<span class="${cls}">${t}</span>`:t; }
+function fwBar(p){ $("#fwBar").style.width=Math.max(0,Math.min(100,p))+"%"; }
+function crc32(buf){ let c,crc=0xFFFFFFFF; for(let n=0;n<buf.length;n++){ c=(crc^buf[n])&0xFF; for(let k=0;k<8;k++) c=c&1?(c>>>1)^0xEDB88320:c>>>1; crc=(crc>>>8)^c; } return (crc^0xFFFFFFFF)>>>0; }
+function parseFw(data){
+  if(data.length<33) throw new Error("not a firmware file");
+  const dv=new DataView(data.buffer,data.byteOffset,data.byteLength);
+  const magic=dv.getUint32(0,true), len=dv.getUint32(4,true), crc=dv.getUint32(8,true);
+  if(magic!==FW.MAGIC) throw new Error("not a Steam Controller (Ibex) firmware file");
+  if(len!==data.length-32) throw new Error("firmware size doesn't match its header");
+  const payload=data.slice(32);
+  if(crc32(payload)!==crc) throw new Error("firmware checksum is wrong (damaged file)");
+  if(len>0x7CFE0-0x8000) throw new Error("firmware too big");
+  return {header:data.slice(0,32),payload};
+}
+function frameEncode(payload){
+  const out=[FW.SOF];
+  for(const b of payload){ if(b===FW.ESC) out.push(FW.ESC,0); else if(b===FW.SOF) out.push(FW.ESC,1); else if(b===FW.EOF) out.push(FW.ESC,2); else out.push(b); }
+  out.push(FW.EOF); return new Uint8Array(out);
+}
+class BlPort{
+  constructor(port){ this.port=port; this.buf=[]; this.reading=false; }
+  async open(){ await this.port.open({baudRate:115200,bufferSize:65536}); this.reader=this.port.readable.getReader(); this.writer=this.port.writable.getWriter(); this.pump(); }
+  async pump(){ this.reading=true; try{ for(;;){ const {value,done}=await this.reader.read(); if(done) break; if(value) for(const b of value) this.buf.push(b); } }catch(e){} this.reading=false; }
+  async readFrame(timeoutMs){
+    const end=performance.now()+timeoutMs;
+    for(;;){
+      const s=this.buf.indexOf(FW.SOF);
+      if(s>=0){ const e=this.buf.indexOf(FW.EOF,s+1);
+        if(e>=0){ const body=this.buf.slice(s+1,e); this.buf=this.buf.slice(e+1);
+          const out=[]; for(let i=0;i<body.length;i++){ if(body[i]===FW.ESC){ out.push(FW.ESC+body[++i]); } else out.push(body[i]); }
+          return new Uint8Array(out); } }
+      if(performance.now()>end) throw new Error("bootloader did not answer");
+      await fwSleep(5);
+    }
+  }
+  async cmd(id,body=new Uint8Array(0),timeoutMs=5000){
+    const p=new Uint8Array(2+body.length); p[0]=id&255; p[1]=id>>8; p.set(body,2);
+    await this.writer.write(frameEncode(p));
+    for(let ignored=0;ignored<16;ignored++){
+      const r=await this.readFrame(timeoutMs);
+      if(!r.length) continue;
+      if(r[0]!==0 && r.length>1) continue;          /* stray frame */
+      if(r[0]!==0) throw new Error("bootloader refused command 0x"+id.toString(16));
+      return r.slice(1);
+    }
+    throw new Error("bootloader sent garbage");
+  }
+  async close(){ try{ this.reader.cancel(); }catch(e){} try{ this.reader.releaseLock(); }catch(e){} try{ this.writer.releaseLock(); }catch(e){} try{ await this.port.close(); }catch(e){} }
+}
+async function nvsBackup(d){
+  let info; try{ info=await featRead(d,"nvs/info"); }catch(e){ return null; }
+  if(!info||info.length!==8) return null;
+  const dv=new DataView(info.buffer,info.byteOffset,8), size=dv.getUint32(0,true), chunk=dv.getUint32(4,true);
+  if(!size||!chunk) return null;
+  const img=new Uint8Array(size);
+  for(let off=0;off<size;off+=chunk){
+    const c=await featRead(d,"nvs/"+off.toString(16).padStart(4,"0"));
+    const want=Math.min(chunk,size-off);
+    if(c.length!==want) throw new Error("settings backup read failed at 0x"+off.toString(16));
+    img.set(c,off); fwBar(off/size*15); fwSay(`saving settings… ${Math.round(off/size*100)} %`);
+  }
+  return {img,chunk};
+}
+async function nvsRestore(d,bk){
+  const info=await featRead(d,"nvs/info");
+  const dv=new DataView(info.buffer,info.byteOffset,8);
+  if(dv.getUint32(0,true)!==bk.img.length||dv.getUint32(4,true)!==bk.chunk) throw new Error("new firmware has a different settings layout — not restored (the backup file was downloaded)");
+  await fsend(d,1,pathCmd(0xEF,"nvs/erase")); await fwSleep(150);
+  for(let off=0;off<bk.img.length;off+=bk.chunk){
+    await fsend(d,1,pathCmd(0xEE,"nvs/"+off.toString(16).padStart(4,"0"),Array.from(bk.img.slice(off,off+bk.chunk))));
+    fwBar(90+off/bk.img.length*8); fwSay(`restoring settings… ${Math.round(off/bk.img.length*100)} %`);
+  }
+  const back=await nvsBackup(d);
+  if(!back||back.img.some((v,i)=>v!==bk.img[i])) throw new Error("settings restore could not be verified (the backup file was downloaded)");
+}
+function downloadBlob(data,name){ const a=document.createElement("a"); a.href=URL.createObjectURL(new Blob([data])); a.download=name; a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),5000); }
+async function findBlPort(ask){
+  const ok=p=>{ const i=p.getInfo(); return i.usbVendorId===0x28DE && i.usbProductId===0x1005; };
+  for(let t=0;t<40;t++){ const ps=(await navigator.serial.getPorts()).filter(ok); if(ps.length) return ps[0]; if(!ask) await fwSleep(250); else break; }
+  if(!ask) return null;
+  return navigator.serial.requestPort({filters:[{usbVendorId:0x28DE,usbProductId:0x1005}]});
+}
+async function waitForHid(){
+  for(let t=0;t<60;t++){
+    const ds=(await navigator.hid.getDevices()).filter(d=>d.vendorId===0x28DE && d.productId===0x1302 && d.collections.some(c=>c.featureReports&&c.featureReports.length));
+    if(ds.length){ const d=ds[0]; if(!d.opened) await d.open(); d.__send=d.sendFeatureReport.bind(d); return d; }
+    await fwSleep(250);
+  }
+  throw new Error("controller did not come back after flashing");
+}
+let fwPending=null; /* {fw, bk} while waiting for the user to pick the bootloader port */
+async function fwRun(port){
+  const {fw,bk}=fwPending; let bl=null;
+  try{
+    bl=new BlPort(port); await bl.open(); bl.buf=[];
+    fwSay("bootloader connected — erasing…"); fwBar(20);
+    await bl.cmd(FW.BEGIN,new Uint8Array(0),30000);
+    let sent=0;
+    for(let off=0;off<fw.payload.length;off+=FW.CHUNK){
+      const chunk=fw.payload.slice(off,off+FW.CHUNK); /* as flash.py: no padding */
+      const body=new Uint8Array(2+chunk.length); body[0]=chunk.length&255; body[1]=chunk.length>>8; body.set(chunk,2);
+      await bl.cmd(FW.DATA,body,15000);
+      sent+=Math.min(FW.CHUNK,fw.payload.length-off);
+      fwBar(20+sent/fw.payload.length*65); fwSay(`writing firmware… ${Math.round(sent/fw.payload.length*100)} %`);
+    }
+    await bl.cmd(FW.END,fw.header,15000);
+    fwSay("restarting the controller…"); fwBar(87);
+    try{ await bl.cmd(FW.RESET,new Uint8Array(0),2000); }catch(e){}
+  }finally{ if(bl) await bl.close(); $("#fwPort").style.display="none"; }
+  fwPending=null;
+  await fwSleep(2500);
+  const d=await waitForHid();
+  devs=[d]; ctlDev=d; d.addEventListener("inputreport",onReport);
+  $("#status").innerHTML='<span class="ok">reconnected after flashing</span>';
+  if(bk){
+    fwSay("restoring settings…"); await fwSleep(1500);
+    await nvsRestore(d,bk);
+    fwSay("restarting with your settings…");
+    try{ await d.__send(1,new Uint8Array([0x95,0])); }catch(e){}
+    await fwSleep(3000);
+    try{ const d2=await waitForHid(); devs=[d2]; ctlDev=d2; d2.addEventListener("inputreport",onReport); }catch(e){}
+  }
+  fwBar(100); fwSay(bk?"done — firmware flashed and your settings restored":"done — firmware flashed","ok");
+}
+$("#fwFlash").onclick=async()=>{
+  try{
+    if(!("serial" in navigator)) throw new Error("this browser has no Web Serial (use Chrome / Edge / Brave on desktop)");
+    const f=$("#fwFile").files[0]; if(!f) throw new Error("pick a .fw file first");
+    const fw=parseFw(new Uint8Array(await f.arrayBuffer()));
+    fwBar(0);
+    /* already in the bootloader (e.g. after a failed attempt)? */
+    const blReady=await findBlPort(false).catch(()=>null);
+    if(blReady){ fwPending={fw,bk:null}; fwSay("bootloader found — flashing without settings backup"); return fwRun(blReady); }
+    const d=ctl();
+    if(!d) throw new Error("connect the controller (by cable) first");
+    if(d.productId!==0x1302) throw new Error("connect the controller by USB cable (not through the Puck) to flash it");
+    if(!confirm(`Flash ${f.name} (${(fw.payload.length/1024).toFixed(0)} KB)?\nDon't unplug the controller until it says done.`)) return;
+    let bk=null;
+    if($("#fwKeep").checked){
+      fwSay("saving settings…");
+      bk=await nvsBackup(d);
+      if(bk) downloadBlob(bk.img,`sc26re-settings-backup-${new Date().toISOString().slice(0,19).replace(/[:T]/g,"-")}.bin`);
+      else fwSay("no sc26re settings to save (stock or old firmware) — flashing anyway");
+    }
+    fwPending={fw,bk};
+    fwSay("switching the controller to its bootloader…"); fwBar(17);
+    try{ await d.__send(1,new Uint8Array([0x90,0])); }catch(e){} /* it disconnects right away */
+    await fwSleep(3000);
+    const port=await findBlPort(false);
+    if(port) return fwRun(port);
+    $("#fwPort").style.display="";
+    fwSay("click “Select bootloader port…” and pick the Steam Controller bootloader (first time only)","err");
+  }catch(e){ fwSay("flash failed: "+e.message,"err"); }
+};
+$("#fwPort").onclick=async()=>{
+  try{ const port=await findBlPort(true); if(!port) throw new Error("no port selected"); await fwRun(port); }
+  catch(e){ fwSay("flash failed: "+e.message+" — you can press Flash again","err"); }
+};
 
 /* ---- gyro at rest: min/max per axis with the dead zones switched off live ---- */
 let grAcc=null, grResult=null;
