@@ -363,6 +363,7 @@ const LS=[
  ["gyro_deadzone","Gyro dead zone","raw units; small = more precise, large = steadier"],
  ["gyro_filter","Gyro smoothing","0 = off, 1 light … 4 strong (adds a few ms)"],
  ["gyro_auto_cal","Auto gyro calibration","seconds lying untouched (no hands on grips/sticks/pads) before it recalibrates itself; 0 = off (default 3)"],
+ ["gyro_band_soft","Gyro dead bands: hard / soft","0 = hard (outside the band the full value passes — tiny jump at the edge), 1 = soft (starts from 0 at the edge, no jump, slow moves slightly weaker) (v46+)"],
  ["band:x","Gyro dead band — Pitch","°/s: readings from … to read as 0 (e.g. −0.3 to 0.3); 0 and 0 = off"],
  ["band:z","Gyro dead band — Yaw","°/s, can be uneven (e.g. −0.2 to 0.7)"],
  ["band:y","Gyro dead band — Roll","°/s"],

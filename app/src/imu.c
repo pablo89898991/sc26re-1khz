@@ -1071,6 +1071,12 @@ static int build_imu_report_from_stream(const uint8_t *buf)
 						{
 							oriented[i] = 0;
 						}
+						else if(sc26re_cfg_get(SC26RE_CFG_GYRO_BAND_SOFT) == 1)
+						{
+							/* soft: continue from 0 at the band's edge, no jump */
+							oriented[i] = (int16_t)(oriented[i] > hi ? oriented[i] - hi
+							                                         : oriented[i] - lo);
+						}
 					}
 				}
 			}
