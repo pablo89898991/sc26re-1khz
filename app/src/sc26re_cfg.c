@@ -64,6 +64,7 @@ static const struct cfg_desc descs[SC26RE_CFG_COUNT] = {
 	[SC26RE_CFG_IMU_PACE] = { "imu_pace", 0, 0, 2, NO_REGISTRY, 1 },
 	[SC26RE_CFG_IMU_I2C_KHZ] = { "imu_i2c_khz", 400, 400, 800, NO_REGISTRY, 1 },
 	[SC26RE_CFG_GYRO_FSR] = { "gyro_fsr", 2000, 250, 2000, NO_REGISTRY, 1 },
+	[SC26RE_CFG_GYRO_AVG] = { "gyro_avg", 1, 1, 2, NO_REGISTRY, 1 },
 };
 
 static int16_t values[SC26RE_CFG_COUNT];

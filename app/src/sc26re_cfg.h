@@ -45,6 +45,7 @@ enum sc26re_cfg_id
 	SC26RE_CFG_IMU_PACE,       /* what starts an IMU read on USB: 0 = frame start, 1 = report fetched, 2 = timer */
 	SC26RE_CFG_IMU_I2C_KHZ,    /* IMU I2C bus speed, kHz (400 standard) */
 	SC26RE_CFG_GYRO_FSR,       /* gyro full scale, dps: 250, 500, 1000, 2000 */
+	SC26RE_CFG_GYRO_AVG,       /* gyro samples averaged per report: 1 or 2 */
 	SC26RE_CFG_COUNT,
 };
 

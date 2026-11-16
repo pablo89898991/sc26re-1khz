@@ -1328,6 +1328,23 @@ static atomic_t imu_fast_reads;
 static atomic_t imu_fast_errors;
 static atomic_t imu_last_read_ms;
 static struct k_spinlock imu_stats_lock;
+/* a report read is due (USB frame / timer) and/or the mid-frame gyro read (averaging) */
+static atomic_t imu_tick_pending;
+static atomic_t imu_mid_pending;
+
+static void imu_tick(void)
+{
+	atomic_set(&imu_tick_pending, 1);
+	k_sem_give(&imu_tick_sem);
+}
+
+static void imu_mid_timer_fn(struct k_timer *timer)
+{
+	ARG_UNUSED(timer);
+	atomic_set(&imu_mid_pending, 1);
+	k_sem_give(&imu_tick_sem);
+}
+K_TIMER_DEFINE(imu_mid_timer, imu_mid_timer_fn, NULL);
 static uint32_t imu_read_us_sum, imu_read_n, imu_read_us_max;
 
 /* what starts a read on USB (Live setting imu_pace): 0 = USB frame start (SOF),
@@ -1353,7 +1370,7 @@ static void imu_usb_event(int16_t mode)
 	}
 	atomic_set(&imu_last_usb_ticks, (atomic_val_t)(uint32_t)k_uptime_ticks());
 	atomic_set(&imu_last_usb_ms, (atomic_val_t)k_uptime_get_32());
-	k_sem_give(&imu_tick_sem);
+	imu_tick();
 }
 
 void imu_usb_sof(void)
@@ -1386,13 +1403,13 @@ static void imu_tick_timer_fn(struct k_timer *timer)
 	{
 		/* timer pacing: USB reports still wait for each new sample */
 		atomic_set(&imu_last_usb_ms, (atomic_val_t)k_uptime_get_32());
-		k_sem_give(&imu_tick_sem);
+		imu_tick();
 		return;
 	}
 	/* only when the host is not polling (Puck / Bluetooth / idle USB) */
 	if((uint32_t)k_uptime_ticks() - (uint32_t)atomic_get(&imu_last_usb_ticks) > IMU_USB_GAP_TICKS)
 	{
-		k_sem_give(&imu_tick_sem);
+		imu_tick();
 	}
 }
 K_TIMER_DEFINE(imu_tick_timer, imu_tick_timer_fn, NULL);
@@ -1425,6 +1442,9 @@ static void imu_fast_thread_main(void *arg1, void *arg2, void *arg3)
 	float gyro_rad_per_lsb = 0.0f;
 	float accel_ms2_per_lsb = 0.0f;
 	int16_t applied_lpf = INT16_MIN;
+	int16_t mid_gyro_raw[3] = { 0 };
+	bool mid_gyro_valid = false;
+	bool avg2 = false;
 	uint8_t reg;
 
 	ARG_UNUSED(arg1);
@@ -1443,6 +1463,26 @@ static void imu_fast_thread_main(void *arg1, void *arg2, void *arg3)
 		if(atomic_get(&imu_motion_trigger_enabled) == 0 || atomic_get(&imu_stream_active) == 0)
 		{
 			/* the stream thread configures the sensor; wait for it */
+			atomic_clear(&imu_mid_pending);
+			atomic_clear(&imu_tick_pending);
+			continue;
+		}
+		if(atomic_cas(&imu_mid_pending, 1, 0) && gyro_rad_per_lsb != 0.0f)
+		{
+			/* averaging: the gyro sample half a frame before the next report read */
+			uint8_t g[6];
+
+			if(i2c_burst_read_dt(&imu_i2c, IMU_REG_OUTX_L_G, g, sizeof(g)) == 0)
+			{
+				for(size_t i = 0; i < 3; ++i)
+				{
+					mid_gyro_raw[i] = (int16_t)sys_get_le16(&g[2 * i]);
+				}
+				mid_gyro_valid = true;
+			}
+		}
+		if(!atomic_cas(&imu_tick_pending, 1, 0))
+		{
 			continue;
 		}
 		{
@@ -1526,12 +1566,26 @@ static void imu_fast_thread_main(void *arg1, void *arg2, void *arg3)
 		}
 		atomic_inc(&imu_fast_reads);
 		atomic_set(&imu_last_read_ms, (atomic_val_t)k_uptime_get_32());
+		avg2 = sc26re_cfg_get(SC26RE_CFG_GYRO_AVG) >= 2;
 		for(size_t i = 0; i < 3; ++i)
 		{
-			gyro[i] = (float)(int16_t)sys_get_le16(&raw[2 * i]) * gyro_rad_per_lsb;
+			int32_t g = (int16_t)sys_get_le16(&raw[2 * i]);
+
+			/* 2-sample average (Live setting gyro_avg = 2): this read + the one
+			 * half a frame earlier; halves the bandwidth like a light low-pass */
+			gyro[i] = (avg2 && mid_gyro_valid ? (float)(g + mid_gyro_raw[i]) * 0.5f : (float)g) *
+			          gyro_rad_per_lsb;
 			accel[i] = (float)(int16_t)sys_get_le16(&raw[6 + 2 * i]) * accel_ms2_per_lsb;
 		}
 
+		mid_gyro_valid = false;
+		if(avg2)
+		{
+			/* half a frame after this read started, clear of the next one */
+			uint32_t done_us = k_cyc_to_us_floor32(k_cycle_get_32() - c0);
+
+			k_timer_start(&imu_mid_timer, K_USEC(done_us < 450U ? 500U - done_us : 50U), K_NO_WAIT);
+		}
 		k_mutex_lock(&imu_io_lock, K_FOREVER);
 		load_cached_imu_report(&report);
 		process_accel(accel, &report);
