@@ -16,6 +16,7 @@
 #include "valve_nvs.h"
 #include "olympus.h"
 #include "sc26re_cfg.h"
+#include "valve_feature.h"
 #include "valve_settings.h"
 
 /* Report meter: stick/grip capacitive thresholds (live via STAGE, saved via COMMIT). */
@@ -545,6 +546,12 @@ bool valve_settings_read(const char *path, uint8_t *buf, size_t capacity, size_t
 	if(sc26re_cfg_path(path))
 	{
 		return sc26re_cfg_read(path, buf, capacity, len);
+	}
+	if(strcmp(path, "sc26re/host") == 0 && capacity >= 4)
+	{
+		sys_put_le32(valve_feature_ms_since_host_traffic(), buf);
+		*len = 4;
+		return true;
 	}
 	if(strcmp(path, "sc26re/awake") == 0 && capacity >= 1)
 	{

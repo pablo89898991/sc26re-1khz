@@ -583,6 +583,39 @@ static ssize_t build_feature_response(enum valve_feature_link link, const uint8_
 	return (ssize_t)(response[1] + 2);
 }
 
+/*
+ * Time of the last command that did not come from the report meter (Steam or
+ * another program). The meter's flasher refuses to start while something else
+ * is talking to the controller. Meter traffic: sc26re/ and nvs/ paths, and its
+ * single-triplet IMU keep-alive (setting 48).
+ */
+static int64_t host_traffic_ms = -100000;
+
+static void note_host_traffic(const uint8_t *request, size_t len)
+{
+	if(len >= 3 && (request[0] == VALVE_FEATURE_READ_SETTING || request[0] == VALVE_FEATURE_STAGE_SETTING ||
+	                request[0] == VALVE_FEATURE_COMMIT_SETTING || request[0] == VALVE_FEATURE_DELETE_SETTING))
+	{
+		const char *p = (const char *)&request[2];
+		size_t n = MIN((size_t)request[1], len - 2);
+
+		if((n >= 7 && strncmp(p, "sc26re/", 7) == 0) || (n >= 4 && strncmp(p, "nvs/", 4) == 0))
+		{
+			return;
+		}
+	}
+	if(len >= 5 && request[0] == VALVE_FEATURE_SET_SETTINGS_VALUES && request[1] == 3 && request[2] == 48)
+	{
+		return;
+	}
+	host_traffic_ms = k_uptime_get();
+}
+
+uint32_t valve_feature_ms_since_host_traffic(void)
+{
+	return (uint32_t)MIN(k_uptime_get() - host_traffic_ms, (int64_t)UINT32_MAX);
+}
+
 static int handle_feature_request(enum valve_feature_link link, const uint8_t *request, size_t len)
 {
 	char path[VALVE_SETTINGS_PATH_MAX];
@@ -599,6 +632,7 @@ static int handle_feature_request(enum valve_feature_link link, const uint8_t *r
 	}
 
 	log_feature_request(link, request, len);
+	note_host_traffic(request, len);
 #if CONFIG_IBEX_HAPTICS_DEBUG_IN_QUAT
 	haptics_debug_note_feature(request, len);
 #endif
