@@ -1304,7 +1304,7 @@ static void imu_stream_thread_main(void *arg1, void *arg2, void *arg3)
 
 /*
  * Direct gyro/accel path. The FIFO only carries the SFLP words (quaternion and
- * drift estimate, 120 Hz); gyro and accel run at 2 kHz in the sensor and are read
+ * drift estimate, 30 Hz); gyro and accel run at 2 kHz in the sensor and are read
  * straight from the output registers, both in one 12-byte I2C transaction.
  *
  * On USB the read is started by the host fetching the previous state report
