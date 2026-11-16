@@ -487,9 +487,13 @@ static int program_gyro_threshold(void)
 #endif
 }
 
+static bool imu_kept_on;
+
 static void set_motion_trigger_enabled(bool enabled)
 {
 #if IMU_HAS_DEVICE
+	/* the gyro mouse keeps the IMU running even when the host switched it off */
+	enabled = enabled || imu_kept_on;
 	atomic_val_t previous = atomic_set(&imu_motion_trigger_enabled, enabled ? 1 : 0);
 
 	if(enabled && previous == 0)
@@ -523,6 +527,16 @@ void imu_force_on(bool on)
 		imu_forced_on = false;
 		apply_mode((uint16_t)host_mode);
 	}
+}
+
+void imu_keep_on(bool on)
+{
+	if(on == imu_kept_on)
+	{
+		return;
+	}
+	imu_kept_on = on;
+	set_motion_trigger_enabled(*(volatile uint16_t *)&imu_mode != SETTING_GYRO_MODE_OFF);
 }
 
 void imu_reset(void)

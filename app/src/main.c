@@ -15,6 +15,7 @@
 #include "ibex_settings_registry.h"
 #include "analog.h"
 #include "imu.h"
+#include "gyro_mouse.h"
 #include "lizard.h"
 #include "power.h"
 #include "puck_interface.h"
@@ -712,6 +713,7 @@ int main(void)
 			}
 		}
 		hardware_store_state(&current);
+		imu_keep_on(gyro_mouse_enabled());
 		if(changed || refresh_due || esb_state_boundary)
 		{
 			if(changed && (current.buttons & ~previous.buttons) != 0U)

@@ -325,6 +325,7 @@ async function connect(){
     if(devs.length && $("#imuOn").checked) await imuMode(IMU_MODE_ON);
     reset();
     showBoot();
+    gmRead().catch(()=>{});
   }catch(e){ $("#status").innerHTML=`<span class="err">${e.message}</span>`; }
 }
 $("#connect").onclick=connect;
@@ -340,6 +341,7 @@ const GM_BTNS=[[0,"A"],[1,"B"],[2,"X"],[3,"Y"],[9,"RB"],[19,"LB"],[23,"RT click"
 })();
 const GM={act_button:"#gmActBtn",act_mode:"#gmActMode",axis_pitch:"#gmAxP",axis_yaw:"#gmAxY",axis_roll:"#gmAxR",rate:"#gmRate",cal_button:"#gmCalBtn",cal_speed:"#gmCalSpeed"};
 const GM_BANDS={band_p_lo:"#gmBPlo",band_p_hi:"#gmBPhi",band_y_lo:"#gmBYlo",band_y_hi:"#gmBYhi",band_r_lo:"#gmBRlo",band_r_hi:"#gmBRhi"};
+let gmLoaded=false;
 function gmSay(t,c){ $("#gmStatus").innerHTML=c?`<span class="${c}">${t}</span>`:t; }
 async function gmRead(){
   if(!devs.length){ gmSay("connect first","err"); return; }
@@ -351,10 +353,12 @@ async function gmRead(){
   const soft=await readS16("sc26re/gm_band_soft"); if(soft!==null) $("#gmSoft").checked=soft===1;
   const hi=await readS16("sc26re/gm_cal_hi"), lo=await readS16("sc26re/gm_cal_lo");
   if(hi!==null&&lo!==null) $("#gmCal360").value=String(hi*32768+lo);
+  gmLoaded=true;
   gmSay("read","ok");
 }
 async function gmWrite(save){
   if(!devs.length){ gmSay("connect first","err"); return; }
+  if(!gmLoaded){ await gmRead(); if(!gmLoaded) return; gmSay("read the controller's values first — check them and press again","err"); return; }
   const vals={};
   for(const [k,sel] of Object.entries(GM)) vals[k]=Math.round(+$(sel).value);
   for(const [k,sel] of Object.entries(GM_BANDS)) vals[k]=Math.round((+$(sel).value||0)*100);
