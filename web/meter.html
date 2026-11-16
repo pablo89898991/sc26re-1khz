@@ -118,9 +118,14 @@
       <button class="primary" id="fwFlash">Flash</button>
       <button id="fwPort" style="display:none">Select bootloader port…</button>
     </div>
+    <div class="bar" style="flex-wrap:wrap;gap:10px;margin-top:8px">
+      <span class="note">Restore saved settings:</span>
+      <input type="file" id="fwBkFile" accept=".bin">
+      <button id="fwRestore">Restore settings</button>
+    </div>
     <div class="cbar" style="margin-top:10px"><b id="fwBar" style="width:0%"></b></div>
     <p class="note" id="fwStatus"></p>
-    <p class="note">If the controller is still running stock firmware (or sc26re older than v15), there is nothing to save; it flashes anyway. A copy of the saved storage is also downloaded as a file, just in case. If anything goes wrong mid-way the bootloader stays active: run Flash again with the same file (the bootloader port can be selected directly).</p>
+    <p class="note">If the controller is still running stock firmware (or sc26re older than v15), there is nothing to save; it flashes anyway. A copy of the saved storage is also downloaded as a file, just in case. If anything goes wrong mid-way the bootloader stays active: run Flash again with the same file (the bootloader port can be selected directly). If the page loses the controller after flashing, press <b>Restore settings</b> (it uses the backup from this session, or pick the downloaded <code>sc26re-settings-backup-….bin</code>); it asks for the controller if needed.</p>
   </div>
 
   <div class="panel">
@@ -276,7 +281,7 @@ async function connect(){
   try{
     const sel=await navigator.hid.requestDevice({filters:[{vendorId:0x28de}]});
     ctlManual=false; ctlDev=null;
-    for(const d of sel){ if(!d.opened) await d.open(); d.__send=d.sendFeatureReport.bind(d); d.addEventListener("inputreport",onReport); devs.push(d); }
+    for(const d of sel){ if(!d.opened) await d.open(); d.__send=d.sendFeatureReport.bind(d); attach(d); if(!devs.includes(d)) devs.push(d); }
     $("#status").innerHTML=devs.length?`<span class="ok">connected: ${devs.map(d=>d.productName||"device").join(", ")}</span>`:"no device selected";
     if(devs.length && $("#imuOn").checked) await imuMode(IMU_MODE_ON);
     reset();
@@ -428,14 +433,48 @@ async function findBlPort(ask){
   if(!ask) return null;
   return navigator.serial.requestPort({filters:[{usbVendorId:0x28DE,usbProductId:0x1005}]});
 }
+function attach(d){ if(!d.__listening){ d.addEventListener("inputreport",onReport); d.__listening=true; } }
 async function waitForHid(){
-  for(let t=0;t<60;t++){
+  for(let t=0;t<160;t++){
     const ds=(await navigator.hid.getDevices()).filter(d=>d.vendorId===0x28DE && d.productId===0x1302 && d.collections.some(c=>c.featureReports&&c.featureReports.length));
     if(ds.length){ const d=ds[0]; if(!d.opened) await d.open(); d.__send=d.sendFeatureReport.bind(d); return d; }
     await fwSleep(250);
   }
   throw new Error("controller did not come back after flashing");
 }
+let lastBackup=null;
+async function restoreAndReboot(d,bk){
+  await nvsRestore(d,bk);
+  lastBackup=null;
+  fwSay("restarting with your settings…");
+  try{ await fsend(d,1,cmd63(0x95)); }catch(e){}
+  await fwSleep(3000);
+  try{ const d2=await waitForHid(); devs=[d2]; ctlDev=d2; attach(d2); }catch(e){}
+}
+$("#fwRestore").onclick=async()=>{
+  try{
+    let bk=lastBackup;
+    const f=$("#fwBkFile").files[0];
+    if(f){ bk={img:new Uint8Array(await f.arrayBuffer()),chunk:null}; }
+    if(!bk) throw new Error("pick the sc26re-settings-backup-….bin file first");
+    let d=ctl();
+    if(!d||d.productId!==0x1302||!d.opened){
+      const sel=await navigator.hid.requestDevice({filters:[{vendorId:0x28de,productId:0x1302}]});
+      const ok=sel.filter(x=>x.collections.some(c=>c.featureReports&&c.featureReports.length));
+      if(!ok.length) throw new Error("no controller selected (connect it by cable)");
+      d=ok[0]; if(!d.opened) await d.open(); d.__send=d.sendFeatureReport.bind(d); attach(d); devs=[d]; ctlDev=d;
+    }
+    if(!confirm("Write the saved settings (pairings, calibrations, Live settings) back to the controller? It restarts afterwards.")) return;
+    if(bk.chunk==null){
+      const info=await featRead(d,"nvs/info");
+      if(!info||info.length!==8) throw new Error("this firmware can't restore settings (needs sc26re v15+)");
+      bk.chunk=new DataView(info.buffer,info.byteOffset,8).getUint32(4,true);
+    }
+    fwSay("restoring settings…"); fwBar(90);
+    await restoreAndReboot(d,bk);
+    fwBar(100); fwSay("done — settings restored","ok");
+  }catch(e){ fwSay("restore failed: "+e.message,"err"); }
+};
 let fwPending=null; /* {fw, bk} while waiting for the user to pick the bootloader port */
 async function fwRun(port){
   const {fw,bk}=fwPending; let bl=null;
@@ -457,16 +496,20 @@ async function fwRun(port){
   }finally{ if(bl) await bl.close(); $("#fwPort").style.display="none"; }
   fwPending=null;
   await fwSleep(2500);
-  const d=await waitForHid();
-  devs=[d]; ctlDev=d; d.addEventListener("inputreport",onReport);
+  if(bk) lastBackup=bk;
+  let d;
+  try{ d=await waitForHid(); }
+  catch(e){
+    fwBar(90);
+    fwSay(bk?"firmware flashed, but the page lost the controller — press “Restore settings” (pick the controller if asked) to write your settings back"
+            :"firmware flashed — reconnect the controller above","err");
+    return;
+  }
+  devs=[d]; ctlDev=d; attach(d);
   $("#status").innerHTML='<span class="ok">reconnected after flashing</span>';
   if(bk){
     fwSay("restoring settings…"); await fwSleep(1500);
-    await nvsRestore(d,bk);
-    fwSay("restarting with your settings…");
-    try{ await fsend(d,1,cmd63(0x95)); }catch(e){}
-    await fwSleep(3000);
-    try{ const d2=await waitForHid(); devs=[d2]; ctlDev=d2; d2.addEventListener("inputreport",onReport); }catch(e){}
+    await restoreAndReboot(d,bk);
   }
   fwBar(100); fwSay(bk?"done — firmware flashed and your settings restored":"done — firmware flashed","ok");
 }
