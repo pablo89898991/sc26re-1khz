@@ -16,5 +16,7 @@ int analog_read_report(struct controller_report *report);
 int analog_trigger_step_cal(uint8_t stage);
 /* report meter: re-centre both sticks from their current resting position */
 int analog_zero_sticks(void);
+/* a trigger is pressed beyond 5 % (processed value, any trigger_mode) */
+bool analog_triggers_active(void);
 struct controller_report;
 void analog_trigger_debug_quat(struct controller_report *report);

@@ -39,6 +39,7 @@ enum sc26re_cfg_id
 	SC26RE_CFG_GYRO_BAND_Z_HI,
 	SC26RE_CFG_GYRO_AUTO_CAL,  /* seconds lying untouched before an automatic gyro calibration, 0 = off */
 	SC26RE_CFG_GYRO_CHORD_MODE, /* LB+RB+X+Y: 0 = full (drift + dead bands), 1 = drift only */
+	SC26RE_CFG_LINK_LOST_OFF,  /* minutes without a Puck/BT connection before power-off, 0 = never */
 	SC26RE_CFG_COUNT,
 };
 

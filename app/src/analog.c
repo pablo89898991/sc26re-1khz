@@ -183,6 +183,13 @@ void analog_trigger_debug_quat(struct controller_report *report)
  * always lands exactly on the calibration's idle point (= 0 %).
  */
 #define TRIGGER_REST_STABLE_MV 60
+static atomic_t triggers_active;
+
+bool analog_triggers_active(void)
+{
+	return atomic_get(&triggers_active) != 0;
+}
+
 static int32_t trigger_rest_sum[2];
 static int32_t trigger_rest_min[2] = { INT32_MAX, INT32_MAX };
 static int32_t trigger_rest_max[2] = { INT32_MIN, INT32_MIN };
@@ -1161,6 +1168,13 @@ int analog_read_report(struct controller_report *report)
 
 	(void)ibex_setting_get(TRIGGER_MODE_SETTING, &mode);
 	trigger_mode_dbg = (uint8_t)mode;
+	/*
+	 * Inactivity power-off looks at the processed trigger (0 % when released).
+	 * In Steam's raw modes the report carries millivolts / counts, which are
+	 * never 0, so after the Puck lost power the controller never switched off.
+	 */
+	atomic_set(&triggers_active, report->trigger_left > INT16_MAX / 20 ||
+	                                 report->trigger_right > INT16_MAX / 20);
 	if(mode == 1 || mode == 2)
 	{
 #if CONFIG_IBEX_TRIGGER_LOCK_HOST_MODE

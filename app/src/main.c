@@ -13,6 +13,7 @@
 #include "haptics.h"
 #include "controller.h"
 #include "ibex_settings_registry.h"
+#include "analog.h"
 #include "imu.h"
 #include "lizard.h"
 #include "power.h"
@@ -49,8 +50,7 @@ static bool chord_pressed(uint32_t buttons, enum controller_button first,
 static bool report_has_activity(const struct controller_report *report)
 {
 	if((report->buttons & (INACTIVITY_PHYSICAL_BUTTONS | INACTIVITY_TOUCH_BUTTONS)) != 0U ||
-	   report->trigger_left != 0 ||
-	   report->trigger_right != 0)
+	   analog_triggers_active())
 	{
 		return true;
 	}
@@ -644,6 +644,29 @@ int main(void)
 			LOG_INF("input inactive for %d seconds: shutting down", inactivity_timeout_seconds);
 			last_activity_ms = now_ms;
 			power_off();
+		}
+		/*
+		 * No host: when the Puck (or the BT host) is gone, e.g. the PC was shut
+		 * down and its power cut, switch off after link_lost_off minutes like
+		 * stock does, instead of searching until the inactivity timeout.
+		 */
+		{
+			static int64_t link_ok_ms;
+			int16_t lost_min = sc26re_cfg_get(SC26RE_CFG_LINK_LOST_OFF);
+			bool wireless = !transport_usb_attached();
+			bool linked = transport_esb_connected() || transport_ble_connected() ||
+			              transport_ble_pairing_window_open() || valve_settings_meter_keeps_awake();
+
+			if(!wireless || linked || lost_min <= 0 || link_ok_ms == 0)
+			{
+				link_ok_ms = now_ms;
+			}
+			else if(now_ms - link_ok_ms >= (int64_t)lost_min * 60 * MSEC_PER_SEC)
+			{
+				LOG_INF("no Puck/BT host for %d min: shutting down", lost_min);
+				link_ok_ms = now_ms;
+				power_off();
+			}
 		}
 		if((current.buttons & BIT(CONTROLLER_BUTTON_STEAM)) != 0U)
 		{
