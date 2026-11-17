@@ -149,6 +149,7 @@
       <h3>D-pad, sticks and trackpads</h3>
       <p><b>D-pad</b>: 8-way (diagonals press both directions) or 4-way (one direction at a time). <b>Sticks</b>: analog to Steam (with inner / outer dead zones), D-pad 4-way or 8-way (each direction bound like a button, dead zone = how far before it fires), mouse or scroll. <b>Trackpads</b>: to Steam, D-pad 4-way / 8-way, mouse, scroll wheel (circle your finger; each step fires clockwise / counter-clockwise) or gates (4 corners). A trackpad mode works while the pad is <b>touched</b> or only while it is <b>clicked</b>. Click the stick or trackpad to choose; its directions / corners / wheel appear in the list.</p>
       <h3>Xbox 360 output</h3>
+      <p><b>Mouse:</b> left / right buttons, middle, back and forward, wheel steps, and “Mouse move” up / down / left / right (moves while held, speed per profile). Middle / back / forward work over the USB cable; the Puck’s mouse only has left and right.</p>
       <p><b>Pad output</b> at the top (applies after turning the controller off and on; USB cable only — the Puck cannot carry it):<br>
       <b>Steam Controller</b> — as always. <b>Xbox 360 only</b> — Windows also sees an Xbox 360 controller (its own XInput driver, nothing to install) and the game gets the final pad there: buttons, sticks (incl. trackpad / gyro joystick), analog triggers and the “Pad …” actions; the Steam Controller pad keeps only Steam and QAM so nothing arrives twice. <b>Steam + Xbox 360</b> — both pads work separately: the Steam Controller pad as usual, the Xbox pad gets only the “Xbox …” actions you bind (Xbox pad only). Keyboard / mouse outputs work in every case. Back buttons and trackpads have no Xbox equivalent: bind them to something.</p>
       <h3>Mode shifts</h3>
@@ -198,7 +199,7 @@ const KEYS={4:"A",5:"B",6:"C",7:"D",8:"E",9:"F",10:"G",11:"H",12:"I",13:"J",14:"
  58:"F1",59:"F2",60:"F3",61:"F4",62:"F5",63:"F6",64:"F7",65:"F8",66:"F9",67:"F10",68:"F11",69:"F12",70:"Print Screen",71:"Scroll Lock",72:"Pause",73:"Insert",74:"Home",75:"Page Up",76:"Delete",77:"End",78:"Page Down",79:"Right arrow",80:"Left arrow",81:"Down arrow",82:"Up arrow",
  83:"Num Lock",84:"Num /",85:"Num *",86:"Num -",87:"Num +",88:"Num Enter",89:"Num 1",90:"Num 2",91:"Num 3",92:"Num 4",93:"Num 5",94:"Num 6",95:"Num 7",96:"Num 8",97:"Num 9",98:"Num 0",99:"Num .",101:"Menu key"};
 const MODS={0xE0:"Left Ctrl",0xE1:"Left Shift",0xE2:"Left Alt",0xE3:"Left Win",0xE4:"Right Ctrl",0xE5:"Right Shift",0xE6:"Right Alt",0xE7:"Right Win"};
-const MOUSE={0x70:"Mouse left",0x71:"Mouse right",0x72:"Wheel up",0x73:"Wheel down",0x74:"Wheel left",0x75:"Wheel right"};
+const MOUSE={0x70:"Mouse left",0x71:"Mouse right",0x7A:"Mouse middle",0x7B:"Mouse back (4)",0x7C:"Mouse forward (5)",0x76:"Mouse move up",0x77:"Mouse move down",0x78:"Mouse move left",0x79:"Mouse move right",0x72:"Wheel up",0x73:"Wheel down",0x74:"Wheel left",0x75:"Wheel right"};
 const PADB=[[0,"A"],[1,"B"],[2,"X"],[3,"Y"],[19,"LB"],[9,"RB"],[27,"LT click"],[23,"RT click"],[17,"L4"],[18,"L5"],[7,"R4"],[8,"R5"],[13,"D-pad up"],[10,"D-pad down"],[12,"D-pad left"],[11,"D-pad right"],[6,"View"],[14,"Menu"],[4,"QAM"],[15,"L3"],[5,"R3"],[26,"Left pad click"],[22,"Right pad click"]];
 const XBOXB=[[0,"A"],[1,"B"],[2,"X"],[3,"Y"],[19,"LB"],[9,"RB"],[27,"LT (full)"],[23,"RT (full)"],[6,"Back"],[14,"Start"],[15,"L3"],[5,"R3"],[13,"D-pad up"],[10,"D-pad down"],[12,"D-pad left"],[11,"D-pad right"]];
 const OPTS=(()=>{
@@ -485,6 +486,7 @@ function editor(){
     ${trig}
     <div class="modes" style="margin:6px 0">${[[1,"hold"],[2,"double"],[4,"toggle"]].map(([bit,n])=>`<label><input type="checkbox" data-bit="${bit}"${m&bit?" checked":""}> ${n}</label>`).join("")}</div>
     ${[0,1,2].filter(x=>x===0||(x===1&&(m&1))||(x===2&&(m&2))).map(x=>`<div class="grp"><span>${["press","hold","double"][x]}</span>${[0,1,2,3].map(i=>`<select data-gi="${x}:${i}">${OPTS}</select>`).join("")}</div>`).join("")}
+    ${[0,1,2].some(x=>[0,1,2,3].some(i=>b[bo+1+x*4+i]>=0x76&&b[bo+1+x*4+i]<=0x79))?slider("mvs",U16(38)||1000,50,10000,10,"Mouse move speed","counts / s","for every “Mouse move” action in this profile"):""}
     <div class="row2"><label>Haptics</label><select id="bhap">${HAPT.map(([v,n])=>`<option value="${v}">${n}</option>`).join("")}</select><small>when it fires</small></div>
     ${trigLink}`;
   ed.querySelectorAll("[data-bit]").forEach(e=>e.onchange=()=>{ b[bo]=(b[bo]&~+e.dataset.bit)|(e.checked?+e.dataset.bit:0); setDirty(); render(); });
@@ -492,6 +494,7 @@ function editor(){
     e.onchange=()=>{ b[bo+1+x*4+i]=+e.value; setDirty(); render(); }; });
   $("#bhap").value=String(b[bo+13]); $("#bhap").onchange=e=>{ b[bo+13]=+e.target.value; setDirty(); };
   wireSl("tsp",v=>setU16(18+2*(s-58),Math.round(v*100)));
+  wireSl("mvs",v=>setU16(38,Math.round(v)));
   if($("#back")) $("#back").onclick=e=>{ e.preventDefault(); openSel(back); };
   if($("#tlink")) $("#tlink").onclick=e=>{ e.preventDefault(); openSel({27:58,23:59,58:27,59:23}[s]); };
   wireShift(g);

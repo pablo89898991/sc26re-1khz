@@ -77,6 +77,7 @@ static uint8_t last_kbd[8];
 static bool kbd_valid;
 static uint8_t mouse_buttons;
 static uint32_t xbox_buttons;
+static uint8_t move_dirs; /* mouse move actions held: up, down, left, right */
 static float mouse_acc[4]; /* x, y, wheel, hwheel */
 static int16_t pad_prev[2][2];
 static bool pad_prev_valid[2];
@@ -325,6 +326,14 @@ static void out_action(uint8_t a, uint8_t keys[6], size_t *nk, uint8_t *mods, ui
 	else if(a == REMAP_ACT_MOUSE_R)
 	{
 		mouse_buttons |= BIT(1);
+	}
+	else if(a >= REMAP_ACT_MOUSE_M && a <= REMAP_ACT_MOUSE_5)
+	{
+		mouse_buttons |= BIT(2 + a - REMAP_ACT_MOUSE_M);
+	}
+	else if(a >= REMAP_ACT_MOVE_UP && a <= REMAP_ACT_MOVE_RIGHT)
+	{
+		move_dirs |= BIT(a - REMAP_ACT_MOVE_UP);
 	}
 	else if(a >= REMAP_ACT_PAD && a < REMAP_ACT_PAD + 30U)
 	{
@@ -1043,6 +1052,7 @@ void remap_process(struct controller_report *r, float dt)
 
 	mouse_buttons = 0U;
 	xbox_buttons = 0U;
+	move_dirs = 0U;
 	for(int s = 0; s < REMAP_SRC_COUNT; ++s)
 	{
 		const struct remap_binding *b = binding(p, s);
@@ -1131,6 +1141,13 @@ void remap_process(struct controller_report *r, float dt)
 		}
 	}
 	flick_step(dt);
+	if(move_dirs)
+	{
+		float k = (float)(p->move_speed ? p->move_speed : 1000U) * dt;
+
+		mouse_acc[0] += k * (float)(((move_dirs >> 3) & 1) - ((move_dirs >> 2) & 1));
+		mouse_acc[1] += k * (float)(((move_dirs >> 1) & 1) - (move_dirs & 1));
+	}
 	if(p->flags & REMAP_PF_BLOCK_UNBOUND)
 	{
 		/* only what is mapped reaches Steam: unbound buttons and touch sensors

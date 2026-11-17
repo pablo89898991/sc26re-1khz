@@ -41,6 +41,13 @@ enum
 #define REMAP_ACT_WHEEL_DOWN 0x73
 #define REMAP_ACT_WHEEL_LEFT 0x74
 #define REMAP_ACT_WHEEL_RIGHT 0x75
+#define REMAP_ACT_MOVE_UP 0x76    /* mouse moves while held: up, down, left, right */
+#define REMAP_ACT_MOVE_DOWN 0x77
+#define REMAP_ACT_MOVE_LEFT 0x78
+#define REMAP_ACT_MOVE_RIGHT 0x79
+#define REMAP_ACT_MOUSE_M 0x7A    /* middle, back (4), forward (5): USB cable only */
+#define REMAP_ACT_MOUSE_4 0x7B
+#define REMAP_ACT_MOUSE_5 0x7C
 #define REMAP_ACT_PAD 0x80     /* + Steam pad button bit 0..29 */
 #define REMAP_ACT_XBOX 0xA0    /* + Steam button bit 0..29: Xbox pad only */
 #define REMAP_ACT_PROFILE 0xC0 /* + profile 0..3 */
@@ -119,7 +126,8 @@ struct remap_profile
 	uint8_t flags;         /* REMAP_PF_* */
 	uint16_t trig_soft[2]; /* soft pull point, 0.01 % of travel */
 	int16_t grid[2][4];    /* per pad, 9-zone grid lines: left, right, top, bottom, 0.01 % (-10000..10000) */
-	uint8_t reserved[26];
+	uint16_t move_speed;   /* "mouse move" actions: counts per second (0 = 1000) */
+	uint8_t reserved[24];
 	struct remap_analog an[4]; /* left stick, right stick, left pad, right pad */
 	struct remap_shift shift[REMAP_SHIFT_GROUPS];
 	struct remap_binding bind[REMAP_SRC_COUNT];
