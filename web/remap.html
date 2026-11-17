@@ -53,6 +53,7 @@
   .item.on .k{color:#9ff0c4}
   .sect{font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--accent2);margin:12px 6px 2px;font-weight:700}
   .col.l .sect{text-align:right}
+  .live-dot{fill:#4fc98a;stroke:#0d1320;stroke-width:1.5;pointer-events:none} .live-dot.pad{fill:#5fb3ff}
   svg .hit{cursor:pointer} svg .hit:hover .sh,svg .hit.sel .sh{stroke:var(--accent);stroke-width:3}
   svg .hit.on .sh{fill:rgba(79,201,138,.28)} svg .hit.sel .sh,svg .hit:hover .sh{fill:rgba(77,163,255,.12)}
   .bottom{display:grid;grid-template-columns:repeat(4,1fr);gap:6px 18px;margin-top:8px}
@@ -344,8 +345,8 @@ function picture(){
   const T=(x,y,t,fs,col)=>`<text x="${x}" y="${y}" text-anchor="middle" font-size="${fs}" font-weight="700" fill="${col||COL}" pointer-events="none">${t}</text>`;
   const face=(s,x,y)=>H(s,`<circle class="sh" cx="${x}" cy="${y}" r="15.5" ${F} ${ST}/>`);
   const pill=(s,x,y,w,h)=>H(s,`<rect class="sh" x="${x-w/2}" y="${y-h/2}" width="${w}" height="${h}" rx="${h/2}" ${F} ${ST}/>`);
-  const stick=(an,x,y)=>H(an,`<circle class="sh" cx="${x}" cy="${y}" r="32" ${F} ${SD}/><circle cx="${x}" cy="${y}" r="19" fill="none" ${ST}/>`);
-  const pad=(an,x,y,rot)=>H(an,`<rect class="sh" x="${x-53}" y="${y-53}" width="106" height="106" rx="14" transform="rotate(${rot} ${x} ${y})" ${F} ${ST}/>`);
+  const stick=(an,x,y)=>H(an,`<circle class="sh" cx="${x}" cy="${y}" r="32" ${F} ${SD}/><circle id="cap_${an}" cx="${x}" cy="${y}" r="32" fill="none" stroke="#4fc98a" stroke-width="3" opacity="0"/><circle cx="${x}" cy="${y}" r="19" fill="none" ${ST}/><circle id="dot_${an}" class="live-dot" cx="${x}" cy="${y}" r="7" data-x="${x}" data-y="${y}"/>`);
+  const pad=(an,x,y,rot)=>H(an,`<rect class="sh" x="${x-53}" y="${y-53}" width="106" height="106" rx="14" transform="rotate(${rot} ${x} ${y})" ${F} ${ST}/><g transform="rotate(${rot} ${x} ${y})"><circle id="dot_${an}" class="live-dot pad" cx="${x}" cy="${y}" r="7" data-x="${x}" data-y="${y}" opacity="0"/></g>`);
   const dx=245.5, dy=109.5, w=12.5, L=36.5, r=6;
   const armD=`M${dx-w} ${dy-w} V${dy-L+r} Q${dx-w} ${dy-L} ${dx-w+r} ${dy-L} H${dx+w-r} Q${dx+w} ${dy-L} ${dx+w} ${dy-L+r} V${dy-w}`;
   const arm=(s,rot)=>H(s,`<path class="sh" d="${armD} L${dx} ${dy} Z" transform="rotate(${rot} ${dx} ${dy})" ${F} stroke="none"/><path d="${armD}" transform="rotate(${rot} ${dx} ${dy})" fill="none" ${ST}/>`);
@@ -357,6 +358,8 @@ function picture(){
   const gripR=gripL.replace(/(-?\d+(\.\d+)?) (-?\d+(\.\d+)?)/g,(m,x,_a,y)=>`${2*CX-x} ${y}`);
   return `<svg viewBox="140 18 528 402" width="100%">
     ${trig(27,SC_TRIG_L,"LT",256)}${trig(23,MIR(SC_TRIG_L),"RT",552)}
+    <rect x="228" y="32" width="56" height="4" rx="2" fill="#26324a"/><rect id="lvl_lt" x="228" y="32" width="0" height="4" rx="2" fill="#4fc98a"/>
+    <rect x="524" y="32" width="56" height="4" rx="2" fill="#26324a"/><rect id="lvl_rt" x="524" y="32" width="0" height="4" rx="2" fill="#4fc98a"/>
     ${bump(19)(SC_BUMP_L)}${bump(9)(MIR(SC_BUMP_L))}
     <path d="${smoothPath(SC_OUT,true)}" fill="none" ${ST}/>
     <path d="${smoothPath(SC_INNER_L,false)} ${smoothPath(MIR(SC_INNER_L),false)} M361 157 H447" fill="none" ${SD}/>
@@ -587,7 +590,20 @@ $("#connect").onclick=async()=>{
 };
 navigator.hid&&navigator.hid.addEventListener("disconnect",e=>{ devs=devs.filter(d=>d!==e.device); if(ctlDev===e.device) ctlDev=null; $("#status").textContent=devs.length?"":"disconnected"; $("#status").className="chip"; });
 let lastBtn=0;
-function onReport(e){ if(e.reportId!==0x42) return; rate.set(e.device,1); if(!ctlDev) ctlDev=e.device; if(e.device!==ctlDev||e.data.byteLength<5) return; lastBtn=e.data.getUint32(1,true); }
+let lastRep=null;
+function onReport(e){ if(e.reportId!==0x42) return; rate.set(e.device,1); if(!ctlDev) ctlDev=e.device; if(e.device!==ctlDev||e.data.byteLength<5) return; lastBtn=e.data.getUint32(1,true); if(e.data.byteLength>=29) lastRep=e.data; }
+/* live picture: sticks, finger on the trackpads (size = pressure), stick touch (capsense), trigger pull */
+setInterval(()=>{
+  const d=lastRep; if(!d) return;
+  const g=o=>d.getInt16(o,true), el=id=>document.getElementById(id);
+  for(const [an,ox,oy] of [["ls",9,11],["rs",13,15]]){ const e=el("dot_"+an); if(!e) continue;
+    e.setAttribute("cx",+e.dataset.x+g(ox)/32767*14); e.setAttribute("cy",+e.dataset.y-g(oy)/32767*14); }
+  for(const [an,ox,oy,op,bit] of [["lp",17,19,21,25],["rp",23,25,27,21]]){ const e=el("dot_"+an); if(!e) continue;
+    const on=(lastBtn&(1<<bit))!==0||g(ox)!==0||g(oy)!==0; e.setAttribute("opacity",on?"1":"0");
+    if(on){ e.setAttribute("cx",+e.dataset.x+g(ox)/32767*48); e.setAttribute("cy",+e.dataset.y-g(oy)/32767*48); e.setAttribute("r",6+Math.min(1,d.getUint16(op,true)/32767)*8); } }
+  for(const [an,bit] of [["ls",24],["rs",20]]){ const e=el("cap_"+an); if(e) e.setAttribute("opacity",(lastBtn&(1<<bit))?"0.9":"0"); }
+  for(const [id,o] of [["lvl_lt",5],["lvl_rt",7]]){ const e=el(id); if(e) e.setAttribute("width",Math.max(0,Math.min(1,g(o)/32767))*56); }
+},33);
 setInterval(()=>{
   document.querySelectorAll("[data-s]").forEach(e=>{ const v=+e.dataset.s; if(!isNaN(v)&&v<30) e.classList.toggle("on",(lastBtn&(1<<v))!==0); });
   const l=document.getElementById("lvsel"); if(l&&typeof sel==="number"&&sel<30) l.classList.toggle("on",(lastBtn&(1<<sel))!==0);
