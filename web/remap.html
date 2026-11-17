@@ -81,6 +81,20 @@
     <div class="bottom" id="colB"></div>
     <div id="editor"></div>
   </div>
+  <div class="panel" id="gyroPanel">
+    <h2>Gyro and gyro as mouse</h2>
+    <p class="note">The same settings as in the report meter (they are controller-wide, not per profile). <b>Apply</b> = until power-off, <b>Save</b> = kept. Gyro as mouse on/off on the controller: <b>LB + RB + View</b> (off after every power-on). While it is on, no program gets the gyro.</p>
+    <div class="bar"><button id="gyRead">Read</button><button class="primary" id="gyApply">Apply</button><button id="gySave">Save</button>
+      <button id="gmOn">Gyro as mouse: ?</button><span id="gyStatus" class="note"></span></div>
+    <table id="gyTbl" style="margin-top:8px"></table>
+    <div class="sect" style="margin-left:0">Gyro tools</div>
+    <div class="bar">
+      <button id="tCal">Calibrate gyro (drift)</button><button id="tFull">Full gyro calibration (+ dead bands)</button><button id="tReset">Reset gyro calibration</button>
+      <button id="tCalStart">360° calibration: start</button><button id="tCalTurn">start turn</button><button id="tCalStop">stop at 360° &amp; save</button><button id="tCalCancel">cancel</button>
+      <span id="tStatus" class="note"></span>
+    </div>
+    <p class="note">360° calibration (per game): in the game look at something you can find again, press <i>start</i> (or LB + RB + View + A), then the calibration button (or <i>start turn</i>) — the camera turns slowly — and press it again when it has done exactly 360°.</p>
+  </div>
 </div>
 <script>
 const $=s=>document.querySelector(s);
@@ -231,7 +245,7 @@ $("#connect").onclick=async()=>{
       if(!devs.includes(d)){ devs.push(d); d.addEventListener("inputreport",onReport); } }
     $("#status").innerHTML=devs.length?'<span class="ok">connected — waiting for the controller…</span>':"no device selected";
     for(let i=0;i<40&&devs.length>1&&!ctlDev;i++) await new Promise(r=>setTimeout(r,50));
-    await refreshState(); await readAll();
+    await refreshState(); await readAll(); await gyRead();
   }catch(e){ $("#status").innerHTML=`<span class="err">${e.message}</span>`; }
 };
 navigator.hid&&navigator.hid.addEventListener("disconnect",e=>{ devs=devs.filter(d=>d!==e.device); if(ctlDev===e.device) ctlDev=null; $("#status").textContent=devs.length?"":"disconnected"; });
@@ -272,6 +286,107 @@ $("#write").onclick=async()=>{
 $("#clear").onclick=()=>{ if(confirm(`Clear profile ${cur+1}? (Save to controller afterwards.)`)){ prof[cur]=emptyProfile(); sel=null; render(); } };
 $("#export").onclick=()=>{ collect(); const j=JSON.stringify({sc2remap:1,name:nameOf(prof[cur]),data:Array.from(prof[cur])}); const a=document.createElement("a"); a.href=URL.createObjectURL(new Blob([j],{type:"application/json"})); a.download=`sc2-remap-${(nameOf(prof[cur])||"profile"+(cur+1)).replace(/\W+/g,"_")}.json`; a.click(); };
 $("#import").onchange=async e=>{ const f=e.target.files[0]; if(!f) return; try{ const j=JSON.parse(await f.text()); if(!j.data||j.data.length!==PROF_SIZE) throw new Error("not a profile file for this version"); prof[cur]=new Uint8Array(j.data); render(); $("#pstatus").innerHTML='<span class="ok">imported — press Save to controller</span>'; }catch(err){ $("#pstatus").innerHTML=`<span class="err">${err.message}</span>`; } e.target.value=""; };
+
+/* ---- gyro + gyro as mouse settings (sc26re cfg values, same as the report meter) ---- */
+const BTNOPTS=[[-1,"— none —"],[0,"A"],[1,"B"],[2,"X"],[3,"Y"],[19,"LB"],[9,"RB"],[27,"LT click"],[23,"RT click"],[17,"L4"],[18,"L5"],[7,"R4"],[8,"R5"],[15,"L3"],[5,"R3"],[6,"View"],[14,"Menu"],[13,"D-pad up"],[10,"D-pad down"],[12,"D-pad left"],[11,"D-pad right"],[26,"Left pad click"],[22,"Right pad click"],[25,"Left pad touch"],[21,"Right pad touch"],[24,"Left stick touch"],[20,"Right stick touch"],[29,"Left grip touch"],[28,"Right grip touch"]];
+const AXOPTS=[[0,"off"],[1,"horizontal"],[-1,"horizontal inverted"],[2,"vertical"],[-2,"vertical inverted"]];
+const DEGOPTS=[90,180,270,360].flatMap(d=>[[d,d+"° right"],[-d,d+"° left"]]);
+/* [cfg name, label, kind, options|[min,max,step], scale, hint]; kind: sel / num / auto (num with "Steam") */
+const GY=[
+ ["#","Gyro"],
+ ["gyro_hw_lpf","Hardware filter (in the sensor)","num",[0,8,1],1,"0 off … 8 strongest (default 1)"],
+ ["gyro_filter","Smoothing","num",[0,4,1],1,"0 off … 4 strong"],
+ ["gyro_deadzone","Dead zone","auto",[0,2000,1],1,"raw units; Steam = follow Steam"],
+ ["gyro_fsr","Range (full scale)","sel",[[250,"250 °/s"],[500,"500 °/s"],[1000,"1000 °/s"],[2000,"2000 °/s (default)"]],1,""],
+ ["gyro_odr","Sample rate in the sensor","sel",[[2000,"2000 Hz (default)"],[4000,"4000 Hz"],[8000,"8000 Hz"]],1,""],
+ ["gyro_auto_cal","Auto calibration","num",[0,30,1],1,"seconds lying untouched before it recalibrates; 0 off"],
+ ["gyro_chord_mode","LB + RB + X + Y does","sel",[[1,"drift only (default)"],[0,"full calibration (+ dead bands)"]],1,""],
+ ["gyro_band_soft","Dead bands","sel",[[0,"hard"],[1,"soft"]],1,""],
+ ["band:x","Dead band pitch","band",null,0,"°/s from … to; 0 and 0 = off"],
+ ["band:z","Dead band yaw","band",null,0,""],
+ ["band:y","Dead band roll","band",null,0,""],
+ ["#","Gyro as mouse"],
+ ["gm_act_button","Gyro moves the mouse with","sel",BTNOPTS,1,""],
+ ["gm_act_mode","… mode","sel",[[1,"hold to turn on"],[2,"hold to turn off"],[3,"press to toggle"],[0,"always on"]],1,""],
+ ["gm_axis_pitch","Pitch moves","sel",AXOPTS,1,""],
+ ["gm_axis_yaw","Yaw moves","sel",AXOPTS,1,""],
+ ["gm_axis_roll","Roll moves","sel",AXOPTS,1,""],
+ ["gm_sens","Sensitivity (real world)","num",[0.01,50,0.05],100,"1.00 = 90° of controller = 90° in game"],
+ ["gm_scale_p","Pitch sensitivity %","num",[0,400,1],1,""],
+ ["gm_scale_y","Yaw sensitivity %","num",[0,400,1],1,""],
+ ["gm_scale_r","Roll sensitivity %","num",[0,400,1],1,""],
+ ["cal360","Counts per 360° (= Steam Dots per 360°)","num",[10,1e9,1],1,"from the 360° calibration or Steam"],
+ ["gm_cal_button","360° calibration button","sel",BTNOPTS.slice(1),1,""],
+ ["gm_cal_speed","360° calibration turn speed","num",[100,20000,100],1,"counts/s"],
+ ["gm_rate","Mouse rate (cable)","sel",[[1000,"1000 (mouse priority)"],[500,"500 / 500"]],1,""],
+ ["gm_rate_wl","Mouse rate (Puck / Bluetooth)","sel",[[500,"500 (default)"],[333,"333"],[250,"250"],[125,"125"]],1,""],
+ ["gm_band_soft","Mouse dead bands","sel",[[1,"soft"],[0,"hard"]],1,""],
+ ["gmb:p","Mouse dead band pitch","gband",null,0,"°/s; 0 and 0 = off (default)"],
+ ["gmb:y","Mouse dead band yaw","gband",null,0,""],
+ ["gmb:r","Mouse dead band roll","gband",null,0,""],
+ ...[1,2,3,4].flatMap(q=>[[`gm_qt${q}_btn`,`Quick turn ${q}`,"sel",BTNOPTS,1,""],[`gm_qt${q}_deg`,`… angle`,"sel",DEGOPTS,1,""]]),
+ ["gm_qt_ms","Quick turn time","num",[0,500,10],1,"ms, 0 = instant"],
+];
+function gyBuild(){
+  let h="";
+  for(const [n,label,kind,o,,hint] of GY){
+    if(n==="#"){ h+=`<tr><td colspan="2"><div class="sect" style="margin-left:0">${label}</div></td></tr>`; continue; }
+    let ctl="";
+    if(kind==="sel") ctl=`<select id="g_${n}">${o.map(([v,t])=>`<option value="${v}">${t}</option>`).join("")}</select>`;
+    else if(kind==="num"||kind==="auto") ctl=`<input type="number" id="g_${n}" min="${o[0]}" max="${o[1]}" step="${o[2]}" style="width:110px">`+(kind==="auto"?` <label class="note"><input type="checkbox" id="ga_${n}"> Steam</label>`:"");
+    else ctl=`<input type="number" step="0.01" id="g_${n}_lo" style="width:80px"> … <input type="number" step="0.01" id="g_${n}_hi" style="width:80px">`;
+    h+=`<tr><td class="n">${label}${hint?`<small>${hint}</small>`:""}</td><td>${ctl}</td></tr>`;
+  }
+  $("#gyTbl").innerHTML=h;
+}
+const gyEl=id=>document.getElementById(id);
+async function gyRead(){
+  try{
+    if(await cfgGet("gm_enabled")===null){ $("#gyStatus").innerHTML='<span class="err">needs sc26re v49+</span>'; return; }
+    for(const [n,,kind,,scale] of GY){
+      if(n==="#") continue;
+      if(kind==="band"){ const a=n.slice(5), lo=await cfgGet(`gyro_band_${a}_lo`), hi=await cfgGet(`gyro_band_${a}_hi`);
+        if(a==="y"){ gyEl(`g_${n}_lo`).value=(-hi/100).toFixed(2); gyEl(`g_${n}_hi`).value=(-lo/100).toFixed(2); }
+        else{ gyEl(`g_${n}_lo`).value=(lo/100).toFixed(2); gyEl(`g_${n}_hi`).value=(hi/100).toFixed(2); } continue; }
+      if(kind==="gband"){ const a=n.slice(4); gyEl(`g_${n}_lo`).value=((await cfgGet(`gm_band_${a}_lo`))/100).toFixed(2); gyEl(`g_${n}_hi`).value=((await cfgGet(`gm_band_${a}_hi`))/100).toFixed(2); continue; }
+      if(n==="cal360"){ const hi=await cfgGet("gm_cal_hi"), lo=await cfgGet("gm_cal_lo"); gyEl("g_cal360").value=hi*32768+lo; continue; }
+      const v=await cfgGet(n); if(v===null) continue;
+      if(kind==="auto"){ const au=v===-32768; gyEl("ga_"+n).checked=au; gyEl("g_"+n).disabled=au; gyEl("g_"+n).value=au?"":v; gyEl("ga_"+n).onchange=e=>{ gyEl("g_"+n).disabled=e.target.checked; }; continue; }
+      gyEl("g_"+n).value=scale!==1?(v/scale).toFixed(2):String(v);
+    }
+    await gmOnRefresh();
+    $("#gyStatus").innerHTML='<span class="ok">read</span>';
+  }catch(e){ $("#gyStatus").innerHTML=`<span class="err">${e.message}</span>`; }
+}
+async function put(n,v,save){ await send("sc26re/"+n,0xEE,[v&255,(v>>8)&255]); if(save) await send("sc26re/"+n,0xEF); }
+async function gyWrite(save){
+  try{
+    for(const [n,,kind,o,scale] of GY){
+      if(n==="#") continue;
+      if(kind==="band"){ const a=n.slice(5); let lo=Math.round((+gyEl(`g_${n}_lo`).value||0)*100), hi=Math.round((+gyEl(`g_${n}_hi`).value||0)*100);
+        if(a==="y"){ const t=lo; lo=-hi; hi=-t; } await put(`gyro_band_${a}_lo`,Math.max(-2000,Math.min(0,lo)),save); await put(`gyro_band_${a}_hi`,Math.max(0,Math.min(2000,hi)),save); continue; }
+      if(kind==="gband"){ const a=n.slice(4); await put(`gm_band_${a}_lo`,Math.max(-2000,Math.min(0,Math.round((+gyEl(`g_${n}_lo`).value||0)*100))),save); await put(`gm_band_${a}_hi`,Math.max(0,Math.min(2000,Math.round((+gyEl(`g_${n}_hi`).value||0)*100))),save); continue; }
+      if(n==="cal360"){ const c=Math.max(10,Math.round(+gyEl("g_cal360").value||16364)); await put("gm_cal_hi",Math.floor(c/32768),save); await put("gm_cal_lo",c%32768,save); continue; }
+      let v;
+      if(kind==="auto"&&gyEl("ga_"+n).checked) v=-32768;
+      else{ const raw=+gyEl("g_"+n).value; if(gyEl("g_"+n).value==="") continue; v=Math.round(raw*(scale||1)); }
+      await put(n,v,save);
+    }
+    $("#gyStatus").innerHTML=`<span class="ok">${save?"saved":"applied until power-off"}</span>`;
+  }catch(e){ $("#gyStatus").innerHTML=`<span class="err">${e.message}</span>`; }
+}
+async function gmOnRefresh(){ const on=await cfgGet("gm_enabled"); $("#gmOn").textContent="Gyro as mouse: "+(on?"ON — turn off":"off — turn on"); $("#gmOn").className=on?"primary":""; }
+$("#gyRead").onclick=gyRead; $("#gyApply").onclick=()=>gyWrite(false); $("#gySave").onclick=()=>gyWrite(true);
+$("#gmOn").onclick=async()=>{ try{ const on=await cfgGet("gm_enabled"); await send("sc26re/gm_enabled",0xEE,[on?0:1,0]); await gmOnRefresh(); }catch(e){ $("#gyStatus").innerHTML=`<span class="err">${e.message}</span>`; } };
+async function tool(op,path,msg){ try{ if(op===0xB5){ const b=new Uint8Array(63); b[0]=0xB5; await serial(()=>ctl().sendFeatureReport(1,b)); } else await send(path,op); $("#tStatus").innerHTML=`<span class="ok">${msg}</span>`; }catch(e){ $("#tStatus").innerHTML=`<span class="err">${e.message}</span>`; } }
+$("#tCal").onclick=()=>tool(0xB5,"","measuring — don't touch the controller for 2 s");
+$("#tFull").onclick=()=>tool(0xF0,"sc26re/gyro_full_cal","full calibration started — put the controller down and let go (about 15 s, chime when done)");
+$("#tReset").onclick=()=>{ if(confirm("Reset the gyro calibration to factory (dead bands off)?")) tool(0xF0,"sc26re/gyro_reset","gyro calibration reset"); };
+$("#tCalStart").onclick=async()=>{ await gyWrite(false); tool(0xF0,"sc26re/gm_cal_start","360° calibration armed — press the calibration button (or start turn)"); };
+$("#tCalTurn").onclick=()=>tool(0xF0,"sc26re/gm_cal_turn","turning…");
+$("#tCalStop").onclick=async()=>{ await tool(0xF0,"sc26re/gm_cal_stop","saved"); setTimeout(gyRead,500); };
+$("#tCalCancel").onclick=()=>tool(0xF0,"sc26re/gm_cal_cancel","cancelled");
+gyBuild();
 render();
 </script>
 </body>
