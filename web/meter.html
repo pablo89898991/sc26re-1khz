@@ -126,7 +126,7 @@
       <tr><td style="padding:6px 4px">Mouse report rate (cable)<div class="note">the mouse shares USB frames with the pad: 1000 = mouse in 3 of 4 frames while moving (pad in the 4th), 500 = they alternate</div></td>
         <td><select id="gmRate"><option value="1000">1000 (mouse priority)</option><option value="500">500 / 500</option></select></td></tr>
       <tr><td style="padding:6px 4px">Mouse report rate (Puck / Bluetooth)<div class="note">a steady rate the wireless link can pass on; movement in between is added up, nothing is lost. If the sensitivity “breathes” or skips, try a lower value</div></td>
-        <td><select id="gmRateWl"><option value="500">500 (pad gets the other half)</option><option value="333">333</option><option value="250">250 (default)</option><option value="125">125</option></select></td></tr>
+        <td><select id="gmRateWl"><option value="500">500 (default; pad gets the other half)</option><option value="333">333</option><option value="250">250</option><option value="125">125</option></select></td></tr>
       <tr><td style="padding:6px 4px">Mouse dead bands (optional)<div class="note">°/s per axis; 0 and 0 = off (default). Soft = starts from 0 at the edge, no jump</div></td>
         <td style="white-space:nowrap">P <input type="number" step="0.01" id="gmBPlo" style="width:60px">…<input type="number" step="0.01" id="gmBPhi" style="width:60px">
           Y <input type="number" step="0.01" id="gmBYlo" style="width:60px">…<input type="number" step="0.01" id="gmBYhi" style="width:60px">
