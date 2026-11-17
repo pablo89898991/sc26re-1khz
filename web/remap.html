@@ -38,7 +38,7 @@
   .sect{font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--accent2);margin:12px 6px 2px;font-weight:700}
   .col.l .sect{text-align:right}
   svg .hit{cursor:pointer} svg .hit:hover .sh,svg .hit.sel .sh{stroke:var(--accent);stroke-width:3}
-  svg .hit.on .sh{fill:rgba(79,201,138,.25)}
+  svg .hit.on .sh{fill:rgba(79,201,138,.28)} svg .hit.sel .sh,svg .hit:hover .sh{fill:rgba(77,163,255,.12)}
   .bottom{display:grid;grid-template-columns:repeat(3,1fr);gap:6px 18px;margin-top:8px}
   #editor{margin-top:2px}
   .bottom .item{display:flex;gap:8px;align-items:baseline;padding:3px 6px;border-radius:8px;cursor:pointer} .bottom .item:hover,.bottom .item.sel{background:var(--panel2)}
@@ -200,50 +200,38 @@ function bindText(s){
 function item(s,label){ return `<div class="item${sel===s?" sel":""}" data-s="${s}"><span class="k">${label}</span><span class="b${grpText(prof[cur],s,0)?"":" none"}">${bindText(s)}</span></div>`; }
 function anItem(an,label){ const m=prof[cur][AOFF[an]]; return `<div class="item${sel===an?" sel":""}" data-s="${an}"><span class="k">${label}</span><span class="b">${AMNAME[m]||"?"}</span></div>`; }
 function dirItems(an,base,names){ return prof[cur][AOFF[an]]===1?names.map((n,i)=>item(base+i,n)).join(""):""; }
-/* drawing of the Steam Controller (2026) front, made for this page */
+/* line drawing of the Steam Controller (2026) front, made for this page */
 function picture(){
+  const ST='stroke="#aab2c3" stroke-width="2.6" stroke-linejoin="round" stroke-linecap="round"', F='fill="rgba(0,0,0,0)"';
   const H=(s,inner)=>`<g class="hit${sel===s?" sel":""}" data-s="${s}">${inner}</g>`;
-  const T=(x,y,t,fs=11,col="#cfe0ff")=>`<text x="${x}" y="${y}" text-anchor="middle" font-size="${fs}" fill="${col}" pointer-events="none">${t}</text>`;
-  const btn=(x,y,r,t,col)=>`<circle class="sh" cx="${x}" cy="${y}" r="${r}" fill="url(#gBtn)" stroke="#4a5875" stroke-width="1.5"/>`+T(x,y+4.5,t,13,col||"#e8eefb");
-  const rr=(x,y,w,h,rx,t,fs)=>`<rect class="sh" x="${x}" y="${y}" width="${w}" height="${h}" rx="${rx}" fill="url(#gBtn)" stroke="#4a5875" stroke-width="1.5"/>`+(t?T(x+w/2,y+h/2+(fs||10)/2.8,t,fs||10):"");
-  const stick=(x,y,an,t)=>H(an,`<circle class="sh" cx="${x}" cy="${y}" r="31" fill="#0b0f17" stroke="#3a465e" stroke-width="2"/>
-      <circle cx="${x}" cy="${y}" r="22" fill="url(#gCap)" stroke="#55627c" stroke-width="1.5"/>
-      <circle cx="${x}" cy="${y}" r="15" fill="none" stroke="#3b475f" stroke-width="1"/>`+T(x,y+4,t,11,"#9fb2d4"));
-  const pad=(x,an,t)=>H(an,`<rect class="sh" x="${x}" y="158" width="92" height="92" rx="18" fill="url(#gPad)" stroke="#3a465e" stroke-width="2"/>
-      <rect x="${x+8}" y="166" width="76" height="76" rx="13" fill="none" stroke="#222c3e" stroke-width="1" stroke-dasharray="2 4"/>`+T(x+46,208,t,11,"#8193b3"));
-  const arm=(s,d,t)=>H(s,`<path class="sh" d="${d}" fill="url(#gBtn)" stroke="#4a5875" stroke-width="1.5"/>`+t);
-  const back=(s,x,y,t)=>H(s,`<rect class="sh" x="${x}" y="${y}" width="34" height="18" rx="9" fill="#141b28" stroke="#4a5875" stroke-width="1.5" stroke-dasharray="4 2"/>`+T(x+17,y+13,t,10,"#b9c7e0"));
-  const grip=(s,d,x,y)=>H(s,`<path class="sh" d="${d}" fill="rgba(110,140,190,.06)" stroke="#3d4a63" stroke-width="1.2" stroke-dasharray="3 3"/>`+T(x,y,"grip",9.5,"#7d8db0"));
-  /* D-pad centre 92,108 */
-  const dx=92, dy=108, w=11, L=27;
-  return `<svg viewBox="0 0 520 350" width="100%">
-    <defs>
-      <linearGradient id="gBody" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#2b3344"/><stop offset=".55" stop-color="#1b2230"/><stop offset="1" stop-color="#121722"/></linearGradient>
-      <linearGradient id="gBtn" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#2a3448"/><stop offset="1" stop-color="#151c29"/></linearGradient>
-      <radialGradient id="gCap" cx=".4" cy=".35" r=".8"><stop offset="0" stop-color="#3a455c"/><stop offset="1" stop-color="#161d2a"/></radialGradient>
-      <linearGradient id="gPad" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#1a2130"/><stop offset="1" stop-color="#10151f"/></linearGradient>
-      <linearGradient id="gTrig" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#3a4458"/><stop offset="1" stop-color="#1c2331"/></linearGradient>
-    </defs>
-    ${H(27,`<path class="sh" d="M70 30 Q78 8 112 6 L150 6 Q168 8 172 30 Z" fill="url(#gTrig)" stroke="#4a5875" stroke-width="1.5"/>`+T(121,23,"LT",11))}
-    ${H(23,`<path class="sh" d="M450 30 Q442 8 408 6 L370 6 Q352 8 348 30 Z" fill="url(#gTrig)" stroke="#4a5875" stroke-width="1.5"/>`+T(399,23,"RT",11))}
-    ${H(19,`<path class="sh" d="M52 50 Q62 30 100 28 L178 28 Q186 30 186 40 L186 46 Q120 42 52 50 Z" fill="url(#gTrig)" stroke="#4a5875" stroke-width="1.5"/>`+T(126,42,"LB",10))}
-    ${H(9,`<path class="sh" d="M468 50 Q458 30 420 28 L342 28 Q334 30 334 40 L334 46 Q400 42 468 50 Z" fill="url(#gTrig)" stroke="#4a5875" stroke-width="1.5"/>`+T(394,42,"RB",10))}
-    <path d="M100 46 Q260 30 420 46 Q486 56 502 120 Q516 200 500 280 Q490 336 450 340 Q418 342 398 312 L372 270 Q362 258 344 258 L176 258 Q158 258 148 270 L122 312 Q102 342 70 340 Q30 336 20 280 Q4 200 18 120 Q34 56 100 46 Z" fill="url(#gBody)" stroke="#3b465c" stroke-width="2"/>
-    <path d="M108 54 Q260 40 412 54" fill="none" stroke="#4a5670" stroke-width="1" opacity=".6"/>
-    ${grip(29,"M30 230 Q26 290 50 322 Q74 336 104 318 L118 296 Q70 290 48 228 Z",64,312)}
-    ${grip(28,"M490 230 Q494 290 470 322 Q446 336 416 318 L402 296 Q450 290 472 228 Z",456,312)}
-    ${back(17,24,166,"L4")}${back(18,24,192,"L5")}${back(7,462,166,"R4")}${back(8,462,192,"R5")}
-    ${arm(13,`M${dx-w} ${dy-w} V${dy-L} Q${dx-w} ${dy-L-4} ${dx-w+4} ${dy-L-4} H${dx+w-4} Q${dx+w} ${dy-L-4} ${dx+w} ${dy-L} V${dy-w} L${dx} ${dy} Z`,T(dx,dy-L+9,"▲",9,"#9fb2d4"))}
-    ${arm(10,`M${dx-w} ${dy+w} V${dy+L} Q${dx-w} ${dy+L+4} ${dx-w+4} ${dy+L+4} H${dx+w-4} Q${dx+w} ${dy+L+4} ${dx+w} ${dy+L} V${dy+w} L${dx} ${dy} Z`,T(dx,dy+L-3,"▼",9,"#9fb2d4"))}
-    ${arm(12,`M${dx-w} ${dy-w} H${dx-L} Q${dx-L-4} ${dy-w} ${dx-L-4} ${dy-w+4} V${dy+w-4} Q${dx-L-4} ${dy+w} ${dx-L} ${dy+w} H${dx-w} L${dx} ${dy} Z`,T(dx-L+5,dy+3,"◀",9,"#9fb2d4"))}
-    ${arm(11,`M${dx+w} ${dy-w} H${dx+L} Q${dx+L+4} ${dy-w} ${dx+L+4} ${dy-w+4} V${dy+w-4} Q${dx+L+4} ${dy+w} ${dx+L} ${dy+w} H${dx+w} L${dx} ${dy} Z`,T(dx+L-5,dy+3,"▶",9,"#9fb2d4"))}
-    ${H(3,btn(428,80,13,"Y","#f2d36b"))}${H(2,btn(402,106,13,"X","#7fb2ff"))}${H(1,btn(454,106,13,"B","#ff8a8a"))}${H(0,btn(428,132,13,"A","#7be3a0"))}
-    ${stick(178,112,"ls","L")}${stick(342,112,"rs","R")}
-    ${H(6,rr(218,72,24,13,6.5,"⧉",9))}${H(14,rr(278,72,24,13,6.5,"≡",10))}
-    <circle cx="260" cy="104" r="14" fill="#0e131c" stroke="#3a465e" stroke-width="1.5"/>${T(260,108,"STEAM",6.5,"#6f80a0")}
-    ${H(4,rr(246,212,28,13,6.5,"•••",9))}
-    ${pad(120,"lp","Left pad")}${pad(308,"rp","Right pad")}
-    ${T(36,160,"back",8.5,"#6b7a97")}${T(484,160,"back",8.5,"#6b7a97")}
+  const T=(x,y,t,fs,col)=>`<text x="${x}" y="${y}" text-anchor="middle" font-size="${fs}" font-weight="700" fill="${col||"#aab2c3"}" pointer-events="none">${t}</text>`;
+  const face=(s,x,y,t)=>H(s,`<circle class="sh" cx="${x}" cy="${y}" r="15" ${F} ${ST}/>`+T(x,y+6,t,16));
+  const pill=(s,x,y,w,h,inner)=>H(s,`<rect class="sh" x="${x-w/2}" y="${y-h/2}" width="${w}" height="${h}" rx="${h/2}" ${F} ${ST}/>`+(inner||""));
+  const stick=(an,x,y)=>H(an,`<circle class="sh" cx="${x}" cy="${y}" r="37" ${F} ${ST}/><circle cx="${x}" cy="${y}" r="25" fill="none" ${ST}/>`);
+  const pad=(an,x,y,rot)=>H(an,`<rect class="sh" x="${x-56}" y="${y-56}" width="112" height="112" rx="13" transform="rotate(${rot} ${x} ${y})" ${F} ${ST}/>`);
+  const dx=115, dy=100, w=13, L=40, r=6;
+  const armD=`M${dx-w} ${dy-w} V${dy-L+r} Q${dx-w} ${dy-L} ${dx-w+r} ${dy-L} H${dx+w-r} Q${dx+w} ${dy-L} ${dx+w} ${dy-L+r} V${dy-w}`;
+  const arm=(s,rot)=>H(s,`<path class="sh" d="${armD} L${dx} ${dy} Z" transform="rotate(${rot} ${dx} ${dy})" ${F} stroke="none"/><path d="${armD}" transform="rotate(${rot} ${dx} ${dy})" fill="none" ${ST}/>`);
+  const back=(s,x,y,t)=>H(s,`<rect class="sh" x="${x}" y="${y}" width="30" height="16" rx="8" ${F} stroke="#6f7a90" stroke-width="1.6" stroke-dasharray="4 3"/>`+T(x+15,y+12,t,9.5,"#8a95ab"));
+  const grip=(s,d,x,y)=>H(s,`<path class="sh" d="${d}" ${F} stroke="#6f7a90" stroke-width="1.4" stroke-dasharray="4 4"/>`+T(x,y,"grip",10,"#7c879d"));
+  return `<svg viewBox="0 0 566 410" width="100%">
+    ${H(27,`<path class="sh" d="M80 35 Q84 20 104 17 L128 16 Q146 18 150 30 L151 33" ${F} ${ST}/>`+T(116,31,"LT",9.5))}
+    ${H(23,`<path class="sh" d="M486 35 Q482 20 462 17 L438 16 Q420 18 416 30 L415 33" ${F} ${ST}/>`+T(450,31,"RT",9.5))}
+    ${H(19,`<path class="sh" d="M60 62 Q66 40 100 36 L170 34 Q182 36 182 46" ${F} ${ST}/>`+T(128,50,"LB",9.5))}
+    ${H(9,`<path class="sh" d="M506 62 Q500 40 466 36 L396 34 Q384 36 384 46" ${F} ${ST}/>`+T(438,50,"RB",9.5))}
+    <path d="M100 32 Q283 26 466 32 Q518 36 534 84 Q560 170 552 292 Q548 370 520 392 Q492 406 468 384 L432 342 Q420 330 402 330 L164 330 Q146 330 134 342 L98 384 Q74 406 46 392 Q18 370 14 292 Q6 170 32 84 Q48 36 100 32 Z" fill="none" ${ST}/>
+    <path d="M181 170 Q120 178 104 214 Q90 262 86 330 M385 170 Q446 178 462 214 Q476 262 480 330 M246 158 H320" fill="none" ${ST}/>
+    ${grip(29,"M24 300 Q28 372 52 386 Q74 394 94 376 L118 348 Q66 340 38 296 Z",58,370)}
+    ${grip(28,"M542 300 Q538 372 514 386 Q492 394 472 376 L448 348 Q500 340 528 296 Z",508,370)}
+    ${back(17,28,168,"L4")}${back(18,28,192,"L5")}${back(7,508,168,"R4")}${back(8,508,192,"R5")}
+    ${arm(13,0)}${arm(11,90)}${arm(10,180)}${arm(12,270)}
+    ${pill(6,185,68,32,14,`<path d="M178 64 h9 v5 M182 69 h9 v4 h-9 z" fill="none" stroke="#aab2c3" stroke-width="1.6"/>`)}
+    ${pill(14,378,68,32,14,`<path d="M371 65 h14 M371 68 h14 M371 71 h14" stroke="#aab2c3" stroke-width="1.6"/>`)}
+    <circle cx="283" cy="104" r="15" fill="none" ${ST}/><circle cx="287" cy="100" r="5" fill="none" stroke="#aab2c3" stroke-width="2"/><path d="M276 108 L285 102" stroke="#aab2c3" stroke-width="2"/><circle cx="276" cy="109" r="2.5" fill="#aab2c3"/>
+    ${face(3,450,75,"Y")}${face(2,418,107,"X")}${face(1,482,107,"B")}${face(0,450,139,"A")}
+    ${stick("ls",213,145)}${stick("rs",353,145)}
+    ${pad("lp",180,248,8)}${pad("rp",386,248,-8)}
+    ${pill(4,283,248,40,17,`<circle cx="275" cy="248" r="1.8" fill="#aab2c3"/><circle cx="283" cy="248" r="1.8" fill="#aab2c3"/><circle cx="291" cy="248" r="1.8" fill="#aab2c3"/>`)}
   </svg>`;
 }
 function render(){
