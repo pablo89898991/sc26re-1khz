@@ -39,7 +39,7 @@ LOG_MODULE_REGISTER(remap, LOG_LEVEL_INF);
 #define PATH_PREFIX "sc26re/rmp/"
 #define CHUNK 48
 
-BUILD_ASSERT(sizeof(struct remap_profile) == 1704, "remap profile layout (web/remap.html)");
+BUILD_ASSERT(sizeof(struct remap_profile) == 1864, "remap profile layout (web/remap.html)");
 
 static struct remap_profile profiles[REMAP_PROFILES];
 
@@ -49,12 +49,12 @@ const uint8_t remap_shift_src[REMAP_SHIFT_SRC_COUNT] = {
 	13, 10, 12, 11,                               /* D-pad */
 	30, 31, 32, 33, 60,                           /* left stick */
 	34, 35, 36, 37, 61,                           /* right stick */
-	38, 39, 40, 41, 46, 47, 48, 49, 54, 55, 62,   /* left pad */
-	42, 43, 44, 45, 50, 51, 52, 53, 56, 57, 63,   /* right pad */
+	38, 39, 40, 41, 46, 47, 48, 49, 54, 55, 62, 64, /* left pad */
+	42, 43, 44, 45, 50, 51, 52, 53, 56, 57, 63, 65, /* right pad */
 	58, 27,                                       /* left trigger */
 	59, 23,                                       /* right trigger */
 };
-static const uint8_t shift_first[REMAP_SHIFT_GROUPS + 1] = { 0, 4, 8, 13, 18, 29, 40, 42, 44 };
+static const uint8_t shift_first[REMAP_SHIFT_GROUPS + 1] = { 0, 4, 8, 13, 18, 30, 42, 44, 46 };
 static int8_t src_group[REMAP_SRC_COUNT]; /* -1: not in a shift group */
 static int8_t src_sidx[REMAP_SRC_COUNT];
 static bool shifted[REMAP_SHIFT_GROUPS];
@@ -76,6 +76,7 @@ static struct src_state st[REMAP_SRC_COUNT];
 static uint8_t last_kbd[8];
 static bool kbd_valid;
 static uint8_t mouse_buttons;
+static uint32_t xbox_buttons;
 static float mouse_acc[4]; /* x, y, wheel, hwheel */
 static int16_t pad_prev[2][2];
 static bool pad_prev_valid[2];
@@ -89,6 +90,11 @@ bool remap_enabled(void)
 static struct remap_profile *active(void)
 {
 	return &profiles[CLAMP(sc26re_cfg_get(SC26RE_CFG_REMAP_PROFILE), 0, REMAP_PROFILES - 1)];
+}
+
+uint32_t remap_xbox_buttons(void)
+{
+	return remap_enabled() ? xbox_buttons : 0U;
 }
 
 uint8_t remap_mouse_buttons(void)
@@ -132,6 +138,8 @@ static float pad_hap_dist[2];
 static float scroll_notch[2];
 static uint32_t dp4_keep;
 static bool ring_on[4];
+static bool center_on[2];
+static bool swipe_done[2];
 static uint8_t swipe_fire[2]; /* per pad this report: bit 0 up, 1 down, 2 left, 3 right */
 static bool swipe_mode[2];
 static int16_t swipe_anchor[2][2];
@@ -165,7 +173,11 @@ static int src_side(int s)
 	{
 		return s - REMAP_SRC_LT_SOFT;
 	}
-	return (s - REMAP_SRC_LS_RING) % 2;
+	if(s < REMAP_SRC_LPAD_CENTER)
+	{
+		return (s - REMAP_SRC_LS_RING) % 2;
+	}
+	return s - REMAP_SRC_LPAD_CENTER;
 }
 
 static void feedback(uint8_t level, int side)
@@ -221,7 +233,7 @@ static void wheel(int j, const struct remap_analog *an, bool active, float fx, f
 	float a, step;
 
 	wheel_fire[j] = 0U;
-	if(!active || fx * fx + fy * fy < powf(MAX(an->dz_in, 5) * 0.01f, 2.0f))
+	if(!active || fx * fx + fy * fy < powf(MAX(an->dz_in, 500) * 0.0001f, 2.0f))
 	{
 		wheel_valid[j] = false;
 		return;
@@ -274,6 +286,10 @@ static bool src_pressed(int s)
 	{
 		return (gates[(s - REMAP_SRC_LPAD_GATE) / 4] & BIT((s - REMAP_SRC_LPAD_GATE) % 4)) != 0U;
 	}
+	if(s >= REMAP_SRC_LPAD_CENTER)
+	{
+		return center_on[s - REMAP_SRC_LPAD_CENTER];
+	}
 	if(s >= REMAP_SRC_LS_RING)
 	{
 		return ring_on[s - REMAP_SRC_LS_RING];
@@ -313,6 +329,10 @@ static void out_action(uint8_t a, uint8_t keys[6], size_t *nk, uint8_t *mods, ui
 	else if(a >= REMAP_ACT_PAD && a < REMAP_ACT_PAD + 30U)
 	{
 		*pad |= BIT(a - REMAP_ACT_PAD);
+	}
+	else if(a >= REMAP_ACT_XBOX && a < REMAP_ACT_XBOX + 30U)
+	{
+		xbox_buttons |= BIT(a - REMAP_ACT_XBOX);
 	}
 }
 
@@ -444,7 +464,7 @@ static void stick_analog(int i, const struct remap_analog *an, int16_t x, int16_
 	float fx = (float)x / 32767.0f;
 	float fy = (float)y / 32767.0f;
 	float m = sqrtf(fx * fx + fy * fy);
-	float dz = (float)MAX(an->dz_in, 3) * 0.01f;
+	float dz = (float)MAX(an->dz_in, 300) * 0.0001f;
 	float mm;
 
 	if(m < dz || m <= 0.0f)
@@ -457,7 +477,7 @@ static void stick_analog(int i, const struct remap_analog *an, int16_t x, int16_
 	if(an->mode == REMAP_ANALOG_MOUSE)
 	{
 		/* speed: counts per second at full deflection, squared response */
-		float k = (float)an->speed * dt * powf(mm, an->curve ? (float)an->curve * 0.1f : 2.0f);
+		float k = (float)an->speed * dt * powf(mm, an->curve ? (float)an->curve * 0.01f : 2.0f);
 
 		mouse_acc[0] += fx * k;
 		mouse_acc[1] -= fy * k;
@@ -483,10 +503,10 @@ static void stick_dead_zones(const struct remap_analog *an, int16_t *x, int16_t 
 {
 	float fx = (float)*x / 32767.0f, fy = (float)*y / 32767.0f;
 	float m = sqrtf(fx * fx + fy * fy);
-	float in = (float)an->dz_in * 0.01f, out = 1.0f - (float)an->dz_out * 0.01f;
+	float in = (float)an->dz_in * 0.0001f, out = 1.0f - (float)an->dz_out * 0.0001f;
 	float k;
 
-	if(an->dz_in == 0U && an->dz_out == 0U && an->anti_dz == 0U && (an->curve == 0U || an->curve == 10U))
+	if(an->dz_in == 0U && an->dz_out == 0U && an->anti_dz == 0U && (an->curve == 0U || an->curve == 100U))
 	{
 		return;
 	}
@@ -500,11 +520,11 @@ static void stick_dead_zones(const struct remap_analog *an, int16_t *x, int16_t 
 		return;
 	}
 	k = MIN((m - in) / (out - in), 1.0f);
-	if(an->curve != 0U && an->curve != 10U)
+	if(an->curve != 0U && an->curve != 100U)
 	{
-		k = powf(k, (float)an->curve * 0.1f);
+		k = powf(k, (float)an->curve * 0.01f);
 	}
-	k = ((float)an->anti_dz * 0.01f + (1.0f - (float)an->anti_dz * 0.01f) * k) / m;
+	k = ((float)an->anti_dz * 0.0001f + (1.0f - (float)an->anti_dz * 0.0001f) * k) / m;
 	*x = (int16_t)CLAMP(lroundf(fx * k * 32767.0f), -32767, 32767);
 	*y = (int16_t)CLAMP(lroundf(fy * k * 32767.0f), -32767, 32767);
 }
@@ -631,7 +651,7 @@ static float wrap180(float d)
  * uses the gyro mouse counts per 360 */
 static void flick(int i, const struct remap_analog *an, bool active, float fx, float fy)
 {
-	float th = (float)(an->dz_in ? an->dz_in : 80) * 0.01f;
+	float th = (float)(an->dz_in ? an->dz_in : 8000) * 0.0001f;
 	float m2 = fx * fx + fy * fy;
 	float c360 = (float)gyro_mouse_counts_per_360();
 	float a;
@@ -678,14 +698,19 @@ static void flick_step(float dt)
 /* directional swipe: each swipe of the threshold length fires one direction */
 static void swipe(int j, const struct remap_analog *an, bool active, int16_t x, int16_t y)
 {
-	int32_t th = (int32_t)MAX(an->dz_in, 5) * 32767 / 100;
+	int32_t th = (int32_t)MAX(an->dz_in, 500) * 32767 / 10000;
 	int32_t dx, dy;
 
 	swipe_fire[j] = 0U;
 	if(!active)
 	{
 		swipe_valid[j] = false;
+		swipe_done[j] = false;
 		return;
+	}
+	if(swipe_done[j])
+	{
+		return; /* one direction per touch unless repeat is on */
 	}
 	if(!swipe_valid[j])
 	{
@@ -710,6 +735,7 @@ static void swipe(int j, const struct remap_analog *an, bool active, int16_t x, 
 	}
 	swipe_anchor[j][0] = x;
 	swipe_anchor[j][1] = y;
+	swipe_done[j] = (an->flags & REMAP_AF_SWIPE_REPEAT) == 0U;
 }
 
 static const struct remap_analog *analog_cfg(const struct remap_profile *p, int i)
@@ -728,7 +754,7 @@ static const struct remap_binding *binding(const struct remap_profile *p, int s)
 
 static bool ring_test(const struct remap_analog *an, float fx, float fy)
 {
-	float r = (float)an->ring * 0.01f;
+	float r = (float)an->ring * 0.0001f;
 
 	if(an->ring == 0U)
 	{
@@ -857,7 +883,7 @@ void remap_process(struct controller_report *r, float dt)
 		ring_on[i] = ring_test(an, (float)x / 32767.0f, (float)y / 32767.0f);
 		dirs[i] = (an->mode == REMAP_ANALOG_DPAD4 || an->mode == REMAP_ANALOG_DPAD8)
 		              ? dir_mask(an->mode, (float)x / 32767.0f, (float)y / 32767.0f,
-		                         (float)MAX(an->dz_in, 5) * 0.01f)
+		                         (float)MAX(an->dz_in, 500) * 0.0001f)
 		              : 0U;
 	}
 	/* trackpads: active while touched or while clicked */
@@ -867,17 +893,43 @@ void remap_process(struct controller_report *r, float dt)
 		uint32_t act_bit = (an->flags & REMAP_AF_CLICK)
 		                       ? BIT(j ? CONTROLLER_BUTTON_RIGHT_TOUCHPAD_CLICK : CONTROLLER_BUTTON_LEFT_TOUCHPAD_CLICK)
 		                       : BIT(j ? CONTROLLER_BUTTON_RIGHT_TOUCHPAD_TOUCH : CONTROLLER_BUTTON_LEFT_TOUCHPAD_TOUCH);
-		bool act = (raw & act_bit) != 0U;
+		bool act = (an->flags & REMAP_AF_PRESSURE)
+		               ? (raw & BIT(j ? CONTROLLER_BUTTON_RIGHT_TOUCHPAD_TOUCH : CONTROLLER_BUTTON_LEFT_TOUCHPAD_TOUCH)) &&
+		                     (int32_t)(j ? r->touchpad_right_pressure : r->touchpad_left_pressure) >=
+		                         (int32_t)MAX(an->press, 100) * 32767 / 10000
+		               : (raw & act_bit) != 0U;
 		int16_t x = j ? r->touchpad_right_x : r->touchpad_left_x;
 		int16_t y = j ? r->touchpad_right_y : r->touchpad_left_y;
 		float fx = (float)x / 32767.0f, fy = (float)y / 32767.0f;
-		float dz = (float)an->dz_in * 0.01f;
+		float dz = (float)an->dz_in * 0.0001f;
 
 		ring_on[2 + j] = act && ring_test(an, fx, fy);
 		dirs[2 + j] = act && (an->mode == REMAP_ANALOG_DPAD4 || an->mode == REMAP_ANALOG_DPAD8)
 		                  ? dir_mask(an->mode, fx, fy, dz)
 		                  : 0U;
 		gates[j] = act && an->mode == REMAP_ANALOG_GATES ? gate_mask(fx, fy, dz) : 0U;
+		center_on[j] = false;
+		if(act && an->mode == REMAP_ANALOG_GRID)
+		{
+			/* 3 x 3 zones split by the grid lines: corners = gates, edges = directions */
+			static const uint8_t zone_dir[9] = { 0, 1, 0, 4, 0, 8, 0, 2, 0 };
+			static const uint8_t zone_gate[9] = { 1, 0, 2, 0, 0, 0, 4, 0, 8 };
+			int16_t gl[4];
+			float l, rr, t, bt;
+
+			memcpy(gl, (const void *)p->grid[j], sizeof(gl));
+			l = gl[0] ? gl[0] * 0.0001f : -0.3333f;
+			rr = gl[1] ? gl[1] * 0.0001f : 0.3333f;
+			t = gl[2] ? gl[2] * 0.0001f : 0.3333f;
+			bt = gl[3] ? gl[3] * 0.0001f : -0.3333f;
+			int col = fx < l ? 0 : (fx > rr ? 2 : 1);
+			int row = fy > t ? 0 : (fy < bt ? 2 : 1);
+			int z = row * 3 + col;
+
+			dirs[2 + j] = zone_dir[z];
+			gates[j] = zone_gate[z];
+			center_on[j] = z == 4;
+		}
 		if(an->mode == REMAP_ANALOG_SCROLL)
 		{
 			wheel(j, an, act, fx, fy);
@@ -949,7 +1001,7 @@ void remap_process(struct controller_report *r, float dt)
 	for(int t = 0; t < 2; ++t)
 	{
 		int16_t v = t ? r->trigger_right : r->trigger_left;
-		int32_t th = (int32_t)CLAMP(p->trig_soft[t] ? p->trig_soft[t] : 50, 1, 100) * 32767 / 100;
+		int32_t th = (int32_t)CLAMP(p->trig_soft[t] ? p->trig_soft[t] : 5000, 100, 10000) * 32767 / 10000;
 
 		soft_on[t] = soft_on[t] ? v >= th - 1000 : v >= th;
 		if(bound(binding(p, REMAP_SRC_LT_SOFT + t)))
@@ -966,6 +1018,7 @@ void remap_process(struct controller_report *r, float dt)
 	}
 
 	mouse_buttons = 0U;
+	xbox_buttons = 0U;
 	for(int s = 0; s < REMAP_SRC_COUNT; ++s)
 	{
 		const struct remap_binding *b = binding(p, s);

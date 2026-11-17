@@ -111,7 +111,7 @@ static const struct cfg_desc descs[SC26RE_CFG_COUNT] = {
 	[SC26RE_CFG_GJ_MAX] = { "gj_max", 300, 10, 2000, NO_REGISTRY, 1 },
 	[SC26RE_CFG_GJ_CURVE] = { "gj_curve", 10, 5, 40, NO_REGISTRY, 1 },
 	[SC26RE_CFG_GJ_TILT] = { "gj_tilt", 30, 5, 90, NO_REGISTRY, 1 },
-	[SC26RE_CFG_PAD_OUT] = { "pad_out", 0, 0, 1, NO_REGISTRY, 1 },
+	[SC26RE_CFG_PAD_OUT] = { "pad_out", 0, 0, 2, NO_REGISTRY, 1 },
 };
 
 static int16_t values[SC26RE_CFG_COUNT];

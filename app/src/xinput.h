@@ -2,6 +2,7 @@
 #pragma once
 
 #include <stdbool.h>
+#include <stdint.h>
 
 struct controller_report;
 struct usbd_context;
@@ -12,6 +13,6 @@ const char *xinput_class_name(void);
 /* XInput interface on and configured by the host */
 bool xinput_enabled(void);
 /* send the final pad state as an Xbox 360 report (only when it changed) */
-void xinput_send(const struct controller_report *r);
+void xinput_send(const struct controller_report *r, uint32_t extra);
 /* XInput active: leave only Steam / QAM in the Steam pad report */
 void xinput_neutral_pad(struct controller_report *r);

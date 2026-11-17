@@ -26,6 +26,7 @@
 #include <zephyr/drivers/usb/udc.h>
 
 #include "controller.h"
+#include "sc26re_cfg.h"
 #include "xinput.h"
 
 LOG_MODULE_REGISTER(xinput, LOG_LEVEL_INF);
@@ -303,7 +304,7 @@ static int16_t clamp16(int32_t v)
 	return (int16_t)CLAMP(v, -32767, 32767);
 }
 
-void xinput_send(const struct controller_report *r)
+void xinput_send(const struct controller_report *r, uint32_t extra)
 {
 	static const struct
 	{
@@ -327,21 +328,28 @@ void xinput_send(const struct controller_report *r)
 	{
 		return;
 	}
+	/* Xbox only: the whole pad; Steam + Xbox: only the Xbox actions */
+	bool mirror = sc26re_cfg_get(SC26RE_CFG_PAD_OUT) == 1;
+	uint32_t btn = (mirror ? r->buttons : 0U) | extra;
+
 	for(size_t i = 0; i < ARRAY_SIZE(map); ++i)
 	{
-		if(r->buttons & BIT(map[i].bit))
+		if(btn & BIT(map[i].bit))
 		{
 			rep[map[i].byte] |= map[i].mask;
 		}
 	}
-	rep[4] = (r->buttons & BIT(CONTROLLER_BUTTON_LEFT_TRIGGER_CLICK)) ? 255U
-	                                                                  : (uint8_t)(MAX(r->trigger_left, 0) >> 7);
-	rep[5] = (r->buttons & BIT(CONTROLLER_BUTTON_RIGHT_TRIGGER_CLICK)) ? 255U
-	                                                                   : (uint8_t)(MAX(r->trigger_right, 0) >> 7);
-	sys_put_le16((uint16_t)clamp16(r->stick_left_x), &rep[6]);
-	sys_put_le16((uint16_t)clamp16(r->stick_left_y), &rep[8]);
-	sys_put_le16((uint16_t)clamp16(r->stick_right_x), &rep[10]);
-	sys_put_le16((uint16_t)clamp16(r->stick_right_y), &rep[12]);
+	rep[4] = (btn & BIT(CONTROLLER_BUTTON_LEFT_TRIGGER_CLICK)) ? 255U
+	                                                           : (mirror ? (uint8_t)(MAX(r->trigger_left, 0) >> 7) : 0U);
+	rep[5] = (btn & BIT(CONTROLLER_BUTTON_RIGHT_TRIGGER_CLICK)) ? 255U
+	                                                            : (mirror ? (uint8_t)(MAX(r->trigger_right, 0) >> 7) : 0U);
+	if(mirror)
+	{
+		sys_put_le16((uint16_t)clamp16(r->stick_left_x), &rep[6]);
+		sys_put_le16((uint16_t)clamp16(r->stick_left_y), &rep[8]);
+		sys_put_le16((uint16_t)clamp16(r->stick_right_x), &rep[10]);
+		sys_put_le16((uint16_t)clamp16(r->stick_right_y), &rep[12]);
+	}
 
 	key = k_spin_lock(&xi_lock);
 	if((xi_last_valid && memcmp(rep, xi_last, sizeof(rep)) == 0) || atomic_get(&xi_in_busy))
@@ -372,7 +380,7 @@ void xinput_send(const struct controller_report *r)
 
 void xinput_neutral_pad(struct controller_report *r)
 {
-	if(!xinput_enabled())
+	if(!xinput_enabled() || sc26re_cfg_get(SC26RE_CFG_PAD_OUT) != 1)
 	{
 		return;
 	}

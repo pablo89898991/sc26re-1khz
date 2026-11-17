@@ -9,7 +9,7 @@
 
 #define REMAP_PROFILES 4
 #define REMAP_MAGIC 0xA7
-#define REMAP_VERSION 3
+#define REMAP_VERSION 4
 
 /* sources: 0..29 controller button bits, then derived inputs */
 enum
@@ -25,7 +25,8 @@ enum
 	REMAP_SRC_LT_SOFT = 58,   /* trigger soft pull (full pull = the click bit) */
 	REMAP_SRC_RT_SOFT = 59,
 	REMAP_SRC_LS_RING = 60,   /* outer ring: left stick, right stick, left pad, right pad */
-	REMAP_SRC_COUNT = 64,
+	REMAP_SRC_LPAD_CENTER = 64, /* 9-zone grid centre: left pad, right pad */
+	REMAP_SRC_COUNT = 66,
 };
 
 /* binding modes (bits) */
@@ -41,6 +42,7 @@ enum
 #define REMAP_ACT_WHEEL_LEFT 0x74
 #define REMAP_ACT_WHEEL_RIGHT 0x75
 #define REMAP_ACT_PAD 0x80     /* + Steam pad button bit 0..29 */
+#define REMAP_ACT_XBOX 0xA0    /* + Steam button bit 0..29: Xbox pad only */
 #define REMAP_ACT_PROFILE 0xC0 /* + profile 0..3 */
 
 /* stick / trackpad modes (struct remap_analog.mode) */
@@ -53,25 +55,29 @@ enum
 #define REMAP_ANALOG_JOYSTICK 6 /* trackpads: finger position = stick deflection */
 #define REMAP_ANALOG_FLICK 7    /* flick stick: point = turn there, rotate = keep turning */
 #define REMAP_ANALOG_SWIPE 8    /* trackpads: swipes fire the 4 directions */
+#define REMAP_ANALOG_GRID 9     /* trackpads: 3 x 3 zones (8 directions + centre), each its own binding */
 
 #define REMAP_PF_BLOCK_UNBOUND 0x01 /* inputs without a binding send nothing to Steam */
 
 #define REMAP_AF_CLICK 0x01       /* trackpads: active while clicked (else while touched) */
 #define REMAP_AF_RING_INVERT 0x02 /* outer ring fires inside the radius instead */
 #define REMAP_AF_OTHER_STICK 0x04 /* trackpad joystick: drive the other side's stick */
+#define REMAP_AF_SWIPE_REPEAT 0x08 /* directional swipe: a long swipe fires again */
+#define REMAP_AF_PRESSURE 0x10     /* trackpads: active while pressed harder than .press */
 
 struct remap_analog
 {
 	uint8_t mode;
 	uint8_t flags;
-	uint8_t dz_in;  /* inner dead zone / activation, % of the radius */
-	uint8_t dz_out; /* outer dead zone, % (sticks to Steam) */
-	uint16_t speed; /* mouse: counts/s (stick) or per swipe (pad); scroll: notches/s x100 (stick) or deg per step (wheel) */
-	uint8_t haptic;  /* feedback for mouse / scroll movement: 0 off, 1 tick, 2 click, 3 strong */
-	uint8_t curve;   /* response exponent x10 (10 linear, 20 squared); 0 = mode default */
-	uint8_t ring;    /* outer ring radius, % (0 = off) */
-	uint8_t anti_dz; /* sticks to Steam: anti dead zone, % */
-	uint8_t reserved[2];
+	uint16_t dz_in;   /* inner dead zone / activation / threshold, 0.01 % of the radius */
+	uint16_t dz_out;  /* outer dead zone, 0.01 % */
+	uint16_t speed;   /* mouse: counts/s (stick) or per swipe (pad); scroll: notches/s x100 (stick) or deg per step (wheel); flick: ms */
+	uint8_t haptic;   /* feedback for mouse / scroll movement: 0 off, 1 tick, 2 click, 3 strong */
+	uint8_t reserved;
+	uint16_t curve;   /* response exponent x100 (100 linear, 200 squared); 0 = mode default */
+	uint16_t ring;    /* outer ring radius, 0.01 % (0 = off) */
+	uint16_t anti_dz; /* anti dead zone, 0.01 % */
+	uint16_t press;   /* trackpads with REMAP_AF_PRESSURE: pressure needed, 0.01 % */
 } __packed;
 
 /* mode shift groups: while the group's shift button is held it uses its
@@ -88,7 +94,7 @@ enum
 	REMAP_SHIFT_RT,
 	REMAP_SHIFT_GROUPS,
 };
-#define REMAP_SHIFT_SRC_COUNT 44
+#define REMAP_SHIFT_SRC_COUNT 46
 
 struct remap_shift
 {
@@ -109,10 +115,11 @@ struct remap_profile
 	uint8_t magic;
 	uint8_t version;
 	char name[14];
-	uint8_t dpad_4way;    /* physical D-pad: 0 8-way, 1 4-way */
-	uint8_t trig_soft[2]; /* soft pull point, % of travel */
-	uint8_t flags;        /* REMAP_PF_* */
-	uint8_t reserved[12];
+	uint8_t dpad_4way;     /* physical D-pad: 0 8-way, 1 4-way */
+	uint8_t flags;         /* REMAP_PF_* */
+	uint16_t trig_soft[2]; /* soft pull point, 0.01 % of travel */
+	int16_t grid[2][4];    /* per pad, 9-zone grid lines: left, right, top, bottom, 0.01 % (-10000..10000) */
+	uint8_t reserved[26];
 	struct remap_analog an[4]; /* left stick, right stick, left pad, right pad */
 	struct remap_shift shift[REMAP_SHIFT_GROUPS];
 	struct remap_binding bind[REMAP_SRC_COUNT];
@@ -127,6 +134,8 @@ void remap_set_enabled(bool on);
 /* report loop: outputs keyboard/mouse, rewrites the pad report (dt in s) */
 void remap_process(struct controller_report *r, float dt);
 uint8_t remap_mouse_buttons(void);
+/* buttons the active profile sends to the Xbox pad only (Steam bit layout) */
+uint32_t remap_xbox_buttons(void);
 bool remap_path(const char *path);
 bool remap_read(const char *path, uint8_t *buf, size_t capacity, size_t *len);
 int remap_stage(const char *path, const uint8_t *value, size_t len);

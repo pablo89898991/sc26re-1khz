@@ -770,7 +770,7 @@ int main(void)
 			remap_last_ms = remap_now;
 			gyro_mouse_joystick(&current);
 			/* Xbox 360 output (USB, pad_out = 1): the game gets the pad there */
-			xinput_send(&current);
+			xinput_send(&current, remap_xbox_buttons());
 			xinput_neutral_pad(&current);
 		}
 		bool changed = first || memcmp(&current, &previous, sizeof(current)) != 0;
