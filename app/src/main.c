@@ -301,6 +301,7 @@ static bool gyro_chord_poll(const struct controller_report *r)
 			}
 			else if(st == 4U)
 			{
+				imu_full_cal_note(4U, 0U);
 				gyro_chord_finish(false, saved_led);
 				state = GYRO_CHORD_IDLE;
 			}

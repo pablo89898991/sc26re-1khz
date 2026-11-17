@@ -1992,6 +1992,8 @@ int imu_calibrate_gyro(void)
 	return 0;
 }
 
+static atomic_t gyro_bias_program_err;
+
 static int imu_save_gyro_bias(const float bias_in[3], bool persist)
 {
 	float saved_bias[ARRAY_SIZE(gyro_bias)];
@@ -2012,9 +2014,14 @@ static int imu_save_gyro_bias(const float bias_in[3], bool persist)
 	err = program_gyro_bias();
 	if(err)
 	{
-		LOG_WRN("failed to program gyro bias: %d", err);
-		k_mutex_unlock(&imu_settings_mutex);
-		return err;
+		/*
+		 * The sensor-side bias only feeds its fusion (quaternion); the reports
+		 * subtract gyro_bias in software, which is already set. A slow stream
+		 * restart (the FIFO now only carries 30 Hz fusion words) must not fail
+		 * the calibration, so keep going and save it.
+		 */
+		LOG_WRN("gyro bias not programmed into the sensor yet: %d", err);
+		atomic_set(&gyro_bias_program_err, err);
 	}
 
 	if(!IS_ENABLED(CONFIG_SETTINGS) || !persist)
