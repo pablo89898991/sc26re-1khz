@@ -627,6 +627,15 @@ bool valve_settings_read(const char *path, uint8_t *buf, size_t capacity, size_t
 		*len = 7;
 		return true;
 	}
+	if(strcmp(path, "sc26re/prs_cal") == 0 && capacity >= 8)
+	{
+		uint8_t st[10];
+
+		olympus_pressure_cal_state(st);
+		memcpy(buf, st, 8);
+		*len = 8;
+		return true;
+	}
 	if(strcmp(path, "sc26re/gyro_cal") == 0 && capacity >= 13)
 	{
 		int16_t sd[3];

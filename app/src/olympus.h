@@ -50,6 +50,10 @@ void olympus_capsense_get_user(uint8_t out[OLYMPUS_CAPSENSE_SIZE]);
 void olympus_capsense_get(uint8_t out[OLYMPUS_CAPSENSE_SIZE]);
 int olympus_capsense_set(const uint8_t *data, size_t len);
 int olympus_capsense_save(void);
+/* trackpad pressure calibration: 1 untouched, 2 pressed hard, 3 save (others cancel) */
+int olympus_pressure_cal(uint8_t stage);
+/* stage, result left / right (0 none, 1 saved, 2 range too small, 3 save failed), -, left min/max */
+void olympus_pressure_cal_state(uint8_t out[10]);
 void olympus_read_report(struct controller_report *report);
 void olympus_get_debug_snapshot(struct olympus_debug_snapshot *snapshot);
 int olympus_read_descriptor(uint8_t descriptor[OLYMPUS_DESCRIPTOR_SIZE]);

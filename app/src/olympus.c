@@ -729,6 +729,109 @@ static uint16_t scale_pad_pressure(bool right, float normalized)
 	    0, OLYMPUS_PRESSURE_MAX);
 }
 
+/* trackpad pressure calibration (remapper page): 1 = pads untouched, 2 = pressed hard, 3 = save */
+#define PRS_CAL_MIN_SPAN 100
+static volatile uint8_t prs_cal_stage;
+static int64_t prs_rest_sum[2];
+static uint32_t prs_rest_n[2];
+static int32_t prs_max[2];
+static uint8_t prs_result[2]; /* 0 none, 1 saved, 2 range too small, 3 save failed */
+static int32_t prs_last_min[2], prs_last_max[2];
+
+static void prs_cal_sample(bool right, int32_t filtered)
+{
+	int i = right ? 1 : 0;
+
+	if(prs_cal_stage == 1)
+	{
+		prs_rest_sum[i] += filtered;
+		prs_rest_n[i]++;
+	}
+	else if(prs_cal_stage == 2)
+	{
+		prs_max[i] = MAX(prs_max[i], filtered);
+	}
+}
+
+int olympus_pressure_cal(uint8_t stage)
+{
+	if(stage == 1)
+	{
+		for(int i = 0; i < 2; ++i)
+		{
+			prs_rest_sum[i] = 0;
+			prs_rest_n[i] = 0;
+			prs_max[i] = INT32_MIN;
+			prs_result[i] = 0;
+		}
+		prs_cal_stage = 1;
+		return 0;
+	}
+	if(stage == 2)
+	{
+		prs_cal_stage = 2;
+		return 0;
+	}
+	if(stage == 9)
+	{
+		/* back to the factory values (imported from Valve's storage at the next start) */
+		struct pressure_calibration none = { 0 };
+
+		prs_cal_stage = 0;
+		for(int i = 0; i < 2; ++i)
+		{
+			enum calibration_side side = i ? CALIBRATION_RIGHT : CALIBRATION_LEFT;
+
+			(void)calibration_stage_pressure(side, (const uint8_t *)&none, sizeof(none));
+			(void)calibration_commit_pressure(side);
+		}
+		return 0;
+	}
+	if(stage != 3)
+	{
+		prs_cal_stage = 0;
+		return 0;
+	}
+	prs_cal_stage = 0;
+	for(int i = 0; i < 2; ++i)
+	{
+		enum calibration_side side = i ? CALIBRATION_RIGHT : CALIBRATION_LEFT;
+		struct pressure_calibration old, cal;
+		int32_t rest = prs_rest_n[i] ? (int32_t)(prs_rest_sum[i] / prs_rest_n[i]) : 0;
+
+		prs_last_min[i] = rest;
+		prs_last_max[i] = prs_max[i];
+		if(prs_rest_n[i] == 0 || prs_max[i] - rest < PRS_CAL_MIN_SPAN)
+		{
+			prs_result[i] = 2;
+			continue;
+		}
+		cal.mode = 1U;
+		cal.min = (int16_t)CLAMP(rest, INT16_MIN, INT16_MAX);
+		cal.max = (int16_t)CLAMP(prs_max[i], INT16_MIN, INT16_MAX);
+		cal.pressure_scale = calibration_pressure_snapshot(side, &old) && old.pressure_scale ? old.pressure_scale
+		                                                                                      : 2000U;
+		prs_result[i] = (calibration_stage_pressure(side, (const uint8_t *)&cal, sizeof(cal)) == 0 &&
+		                 calibration_commit_pressure(side) == 0)
+		                    ? 1U
+		                    : 3U;
+		LOG_INF("pressure calibration %s: min %d max %d -> %u", i ? "right" : "left", cal.min, cal.max,
+		        prs_result[i]);
+	}
+	return 0;
+}
+
+void olympus_pressure_cal_state(uint8_t out[10])
+{
+	out[0] = prs_cal_stage;
+	out[1] = prs_result[0];
+	out[2] = prs_result[1];
+	out[3] = 0;
+	sys_put_le16((uint16_t)CLAMP(prs_last_min[0], INT16_MIN, INT16_MAX), &out[4]);
+	sys_put_le16((uint16_t)CLAMP(prs_last_max[0], INT16_MIN, INT16_MAX), &out[6]);
+	sys_put_le16((uint16_t)CLAMP(prs_last_min[1], INT16_MIN, INT16_MAX), &out[8]);
+}
+
 static void decode_pad(struct olympus_pad_state *state, const int16_t *x_samples,
                        const int16_t *y_samples, int16_t raw_pressure, int16_t raw_click,
                        int16_t raw_grip, bool right, int16_t *x, int16_t *y, uint16_t *pressure,
@@ -766,6 +869,7 @@ static void decode_pad(struct olympus_pad_state *state, const int16_t *x_samples
 	    ((int32_t)raw_pressure + (OLYMPUS_PRESSURE_FILTER_WEIGHT - 1) * state->filtered_pressure) /
 	    OLYMPUS_PRESSURE_FILTER_WEIGHT;
 	state->filtered_pressure = (int16_t)filtered_pressure;
+	prs_cal_sample(right, filtered_pressure);
 	normalized_pressure = pad_pressure_normalized(right, state->filtered_pressure);
 	pressure_click_enabled = pad_pressure_enabled(right, &pressure_activation);
 	pressure_click_threshold = pad_click_threshold(right, state->pad_clicked);

@@ -167,8 +167,12 @@
           <p class="note cardnote">In the game look at something you can find again → <b>Start</b> (or LB + RB + View + A) → press the calibration button (set on the gyro page, default A): the camera turns slowly → press it again exactly at 360°. Also used by flick stick and quick turns.</p>
           <div class="tools"><button class="primary" id="cCalStart">Start</button><button id="cCalTurn">Start turn</button><button id="cCalStop">Stop at 360° &amp; save</button><button id="cCalCancel" class="ghost">Cancel</button></div>
           <p class="note cardnote" id="cCalStatus"></p></div>
+        <div class="card"><h3>Trackpad pressure</h3>
+          <p class="note cardnote">Teaches the controller how hard your pads read when untouched and when pressed firmly — the pressure-based click, “pressed harder than …” activation and Steam’s pad pressure all use it. Follow the steps. <b>Factory</b> clears it; the factory values come back after the controller is turned off and on.</p>
+          <div class="tools"><button class="primary" id="cPrStart">Start</button><button id="cPrNext" disabled>Next</button><button id="cPrFactory" class="ghost">Factory</button></div>
+          <p class="note cardnote" id="cPrStatus"></p></div>
         <div class="card"><h3>Touch sensors</h3>
-          <p class="note cardnote">Stick touch (capsense) and grip touch (gripsense) have thresholds instead of a calibration: set them on <a href="#" id="cToCtl">Controller settings → Touch sensors</a> (higher = less sensitive). Trackpad click pressure is there too.</p></div>
+          <p class="note cardnote">Stick touch (capsense) and grip touch (gripsense) have thresholds instead of a calibration: set them on <a href="#" id="cToCtl">Controller settings → Touch sensors</a> (higher = less sensitive). The trackpad click point (how far into the calibrated pressure a click is) is there too.</p></div>
       </div>
     </div>
   </section>
@@ -849,6 +853,18 @@ $("#cCalStart").onclick=calTool("sc26re/gm_cal_start","armed — press the calib
 $("#cCalTurn").onclick=calTool("sc26re/gm_cal_turn","turning… press the button (or Stop) exactly at 360°");
 $("#cCalStop").onclick=async()=>{ await calTool("sc26re/gm_cal_stop","saved")(); try{ const hi=await cfgGet("gm_cal_hi"), lo=await cfgGet("gm_cal_lo"); cSet("cCalStatus",`<span class="ok">saved — ${hi*32768+lo} counts per 360°</span>`); }catch(e){} };
 $("#cCalCancel").onclick=calTool("sc26re/gm_cal_cancel","cancelled");
+let prStep=0;
+$("#cPrStart").onclick=async()=>{ try{ await send("sc26re/prs_cal/1",0xF0); prStep=1; $("#cPrNext").disabled=false;
+    cSet("cPrStatus","Step 1/2 — <b>don’t touch either trackpad</b> for 2 seconds, then press <b>Next</b>."); }catch(e){ cSet("cPrStatus",`<span class="err">${e.message}</span>`); } };
+$("#cPrNext").onclick=async()=>{ try{
+    if(prStep===1){ await send("sc26re/prs_cal/2",0xF0); prStep=2; cSet("cPrStatus","Step 2/2 — <b>press both trackpads firmly</b> (as hard as you would on a hard click) a few times, then press <b>Next</b>."); return; }
+    if(prStep===2){ await send("sc26re/prs_cal/3",0xF0); prStep=0; $("#cPrNext").disabled=true; await sleep(400);
+      let r=null; try{ r=await read("sc26re/prs_cal"); }catch(e){}
+      const R={0:"—",1:"saved",2:"range too small — press harder and repeat",3:"could not save"};
+      cSet("cPrStatus",r&&r.length>=3?`left pad: <b>${R[r[1]]}</b> · right pad: <b>${R[r[2]]}</b>`:'<span class="ok">sent</span>'); }
+  }catch(e){ cSet("cPrStatus",`<span class="err">${e.message}</span>`); } };
+$("#cPrFactory").onclick=async()=>{ if(!confirm("Clear the trackpad pressure calibration? The factory values come back after turning the controller off and on.")) return;
+  try{ await send("sc26re/prs_cal/9",0xF0); prStep=0; $("#cPrNext").disabled=true; cSet("cPrStatus",'<span class="ok">cleared — turn the controller off and on</span>'); }catch(e){ cSet("cPrStatus",`<span class="err">${e.message}</span>`); } };
 $("#cToCtl").onclick=e=>{ e.preventDefault(); showView("ctl"); };
 
 $("#lvRead").onclick=lvRead; $("#lvApply").onclick=()=>lvWrite(false); $("#lvSave").onclick=()=>lvWrite(true);

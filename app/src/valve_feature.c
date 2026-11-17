@@ -9,6 +9,7 @@
 #include <zephyr/sys/util.h>
 
 #include "analog.h"
+#include "olympus.h"
 #include "controller.h"
 #include "haptics.h"
 #include "ibex_settings_registry.h"
@@ -687,6 +688,10 @@ static int handle_feature_request(enum valve_feature_link link, const uint8_t *r
 				{
 					imu_request_full_cal();
 					return 0;
+				}
+				if(strncmp(path, "sc26re/prs_cal/", 15) == 0)
+				{
+					return olympus_pressure_cal((uint8_t)(path[15] - '0'));
 				}
 				if(strcmp(path, "sc26re/zero_sticks") == 0)
 				{
