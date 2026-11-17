@@ -40,7 +40,7 @@
   .gridwrap{display:flex;gap:14px;align-items:flex-start;flex-wrap:wrap} .gridwrap .row2{grid-template-columns:90px auto} .gridwrap .slw input[type=range]{width:150px}
   .subs.g9{display:grid;grid-template-columns:repeat(3,1fr);gap:2px 8px}
   .note.wrap{white-space:normal;max-width:560px}
-  .bands{display:flex;flex-direction:column;gap:6px} .bandrow{display:flex;align-items:center;gap:6px;flex-wrap:nowrap} .bandrow .bl{width:38px}
+  .bands{display:flex;flex-direction:column;gap:6px} .bandrow{display:flex;align-items:center;gap:6px;flex-wrap:nowrap} .bandrow .bl{width:42px} .cardnote{white-space:normal;margin:2px 0 6px;line-height:1.45}
   .modes label{font-size:12px;color:var(--muted);margin-right:8px;white-space:nowrap}
   .live{display:inline-block;width:9px;height:9px;border-radius:50%;background:#33415c;margin-left:6px;vertical-align:middle}
   .live.on{background:#4fc98a;box-shadow:0 0 8px #4fc98a}
@@ -99,7 +99,7 @@
   </div>
 </div>
 <div class="wrap">
-  <nav class="views"><button class="view on" data-v="map">Buttons &amp; profiles</button><button class="view" data-v="gyro">Gyro &amp; gyro mouse</button><button class="view" data-v="help">How it works</button></nav>
+  <nav class="views"><button class="view on" data-v="map">Buttons &amp; profiles</button><button class="view" data-v="gyro">Gyro &amp; gyro mouse</button><button class="view" data-v="ctl">Controller settings</button><button class="view" data-v="help">How it works</button></nav>
 
   <section id="v_map">
     <div class="panel">
@@ -135,6 +135,14 @@
       <p class="note" style="margin:8px 0 0">Controller-wide (not per profile) — the same settings as in the report meter. <b>Apply</b> = until power-off, <b>Save</b> = kept.</p>
       <div class="cards" id="gyCards"></div>
       <p class="note" id="tStatus"></p>
+    </div>
+  </section>
+
+  <section id="v_ctl" hidden>
+    <div class="panel">
+      <div class="bar"><button id="lvRead" class="ghost">Reload</button><button class="primary" id="lvApply">Apply</button><button id="lvSave">Save</button><span id="lvStatus" class="note"></span></div>
+      <p class="note" style="margin:8px 0 0">The report meter’s Live settings — controller-wide, not per profile. <b>Apply</b> = until power-off, <b>Save</b> = kept. “Steam” / “default” = follow Steam or the firmware default.</p>
+      <div class="cards" id="lvCards"></div>
     </div>
   </section>
 
@@ -334,7 +342,7 @@ function picture(){
 function gyroSummary(){ const e=document.getElementById("g_gm_output"), a=document.getElementById("g_gm_act_button");
   if(!e||!e.options.length||e.selectedIndex<0) return "gyro, gyro mouse / joystick →";
   return e.options[e.selectedIndex].text+(a&&a.selectedIndex>=0?" · "+a.options[a.selectedIndex].text:"")+" →"; }
-function showView(v){ document.querySelectorAll(".view").forEach(x=>x.classList.toggle("on",x.dataset.v===v)); for(const k of ["map","gyro","help"]) $("#v_"+k).hidden=k!==v; window.scrollTo(0,0); }
+function showView(v){ document.querySelectorAll(".view").forEach(x=>x.classList.toggle("on",x.dataset.v===v)); for(const k of ["map","gyro","ctl","help"]) $("#v_"+k).hidden=k!==v; window.scrollTo(0,0); }
 function render(){
   buildTabs();
   $("#pname").value=nameOf(prof[cur]); $("#block").checked=(prof[cur][17]&1)!==0;
@@ -541,7 +549,7 @@ $("#connect").onclick=async()=>{
       if(!devs.includes(d)){ devs.push(d); d.addEventListener("inputreport",onReport); } }
     $("#status").textContent=devs.length?"connected — waiting for the controller…":"no device selected";
     for(let i=0;i<40&&devs.length>1&&!ctlDev;i++) await new Promise(r=>setTimeout(r,50));
-    await refreshState(); await readAll(); await gyRead();
+    await refreshState(); await readAll(); await gyRead(); await lvRead();
   }catch(e){ $("#status").innerHTML=`<span class="err">${e.message}</span>`; }
 };
 navigator.hid&&navigator.hid.addEventListener("disconnect",e=>{ devs=devs.filter(d=>d!==e.device); if(ctlDev===e.device) ctlDev=null; $("#status").textContent=devs.length?"":"disconnected"; $("#status").className="chip"; });
@@ -644,6 +652,7 @@ function ctlHtml(n,short){
   if(kind==="num"||kind==="auto") return (short?`<span class="note">${short}</span>`:"")+`<input type="number" id="g_${n}" min="${o[0]}" max="${o[1]}" step="${o[2]}" style="width:${short?70:100}px">`+(kind==="auto"?` <label class="note"><input type="checkbox" id="ga_${n}"> Steam</label>`:"");
   return (short?`<span class="note">${short}</span>`:"")+`<input type="number" step="0.01" id="g_${n}_lo" style="width:68px"><span class="note">to</span><input type="number" step="0.01" id="g_${n}_hi" style="width:68px">`;
 }
+const labRows=l=>`<div class="bands">${l.map(([n,t])=>`<div class="bandrow"><span class="note bl">${t}</span>${ctlHtml(n)}</div>`).join("")}</div>`;
 const bandRows=l=>`<div class="bands">${l.map(([n,t])=>`<div class="bandrow"><span class="note bl">${t}</span>${ctlHtml(n)}</div>`).join("")}</div>`;
 const row=(label,hint,ctl)=>`<div class="row"><div class="lab">${label}${hint?`<small>${hint}</small>`:""}</div><div class="ctl">${ctl}</div></div>`;
 const one=(n,hint)=>row(GYI[n][1],hint===undefined?GYI[n][5]:hint,ctlHtml(n));
@@ -657,17 +666,18 @@ const CARDS=()=>[
    <div class="tools"><button id="tCal">Calibrate drift</button><button id="tFull">Full calibration (+ dead bands)</button><button id="tReset">Reset to factory</button></div></div>`,
  `<div class="card"><h3>Gyro — activation and axes</h3>
    ${row("Gyro works","button or touch sensor, and how",ctlHtml("gm_act_button")+ctlHtml("gm_act_mode"))}
-   ${row("Axes","what each gyro axis moves",ctlHtml("gm_axis_pitch","Pitch")+ctlHtml("gm_axis_yaw","Yaw")+ctlHtml("gm_axis_roll","Roll"))}
+   ${row("Axes","what each gyro axis moves",labRows([["gm_axis_pitch","Pitch"],["gm_axis_yaw","Yaw"],["gm_axis_roll","Roll"]]))}
    ${one("gm_haptic")}</div>`,
  `<div class="card"><h3>Gyro output and response</h3>
-   ${one("gm_output","mouse = real-world sensitivity; joystick camera = turn speed → stick; deflection = tilt → stick (re-centres each time the gyro turns on)")}
+   ${one("gm_output","what the gyro controls")}
+   <p class="note cardnote"><b>Mouse</b> = real-world sensitivity · <b>joystick camera</b> = turning speed → stick · <b>joystick deflection</b> = tilt → stick (re-centres each time the gyro turns on).</p>
    <div class="sect" style="margin-left:0">Mouse</div>
-   ${one("gm_curve")}${one("gm_accel")}${row("Acceleration range","°/s: from … to",ctlHtml("gm_accel_lo","from")+ctlHtml("gm_accel_hi","to"))}
+   ${one("gm_curve")}${one("gm_accel")}${row("Acceleration range","°/s",labRows([["gm_accel_lo","from"],["gm_accel_hi","to"]]))}
    <div class="sect" style="margin-left:0">Joystick</div>
    ${one("gj_max")}${one("gj_tilt")}${one("gj_dz")}${one("gj_anti")}${one("gj_curve")}</div>`,
  `<div class="card"><h3>Gyro as mouse — sensitivity</h3>
    ${one("gm_sens")}
-   ${row("Per axis","% of the sensitivity",ctlHtml("gm_scale_p","P")+ctlHtml("gm_scale_y","Y")+ctlHtml("gm_scale_r","R"))}
+   ${row("Per axis","% of the sensitivity",labRows([["gm_scale_p","Pitch"],["gm_scale_y","Yaw"],["gm_scale_r","Roll"]]))}
    ${row("Counts per 360°","= Steam Dots per 360°; set by the 360° calibration",ctlHtml("cal360"))}
    ${row("360° calibration","button and turn speed (counts/s)",ctlHtml("gm_cal_button")+ctlHtml("gm_cal_speed"))}
    <div class="tools"><button id="tCalStart">Start 360° calibration</button><button id="tCalTurn">Start turn</button><button id="tCalStop">Stop at 360° &amp; save</button><button id="tCalCancel">Cancel</button></div>
@@ -720,6 +730,59 @@ async function gmOnRefresh(){ const on=await cfgGet("gm_enabled"); $("#gmOn").in
 $("#gyRead").onclick=gyRead; $("#gyApply").onclick=()=>gyWrite(false); $("#gySave").onclick=()=>gyWrite(true);
 $("#gmOn").onclick=async()=>{ try{ const on=await cfgGet("gm_enabled"); await send("sc26re/gm_enabled",0xEE,[on?0:1,0]); await gmOnRefresh(); }catch(e){ $("#gyStatus").innerHTML=`<span class="err">${e.message}</span>`; } };
 gyBuild();
+
+/* ---- controller settings (report meter Live settings) ---- */
+const LV=[
+ ["Triggers",[["trig_click","Click point","% of travel for the digital click (full pull)"],["trig_deadzone","Released dead zone","% of travel that still reads 0"],["trig_filter","Smoothing","0 off, 1 light … 4 strong"]]],
+ ["Reports and IMU",[["report_rate","Report rate","Hz: 1000, 500 or 250 (buttons always instant)"],["gyro_avg","Gyro averaging","1 = newest sample, 2 = average of 2 (less noise, +0.25 ms)"],["imu_pace","IMU read timing (USB)","0 = USB frame start (default), 1 = after the PC fetched, 2 = 1 ms timer"],["imu_i2c_khz","IMU bus speed","kHz, 400 standard … 800 faster"]]],
+ ["Trackpads",[["tp_smoothing","Smoothing","0 off, 5 stock, 10 smoothest"],["tp_click","Click pressure","pressure needed for a pad click"],["tp_noise","Noise threshold","higher = ignores lighter touches"]]],
+ ["Touch sensors",[["cap:0","Stick touch on (capsense)","raw value for a thumb touch; higher = less sensitive (default 720)"],["cap:1","Stick touch off","must be below “on” (default 80 % of on)"],["cap:2","Grip touch on (gripsense)","raw grip value for a touch (default 900)"]]],
+ ["Haptics and sounds",[["haptic_gain","Haptics volume","dB, −24 … +6"],["chime","Power-on chime",""],["drop_scream","Drop: scream chance","% per drop"],["drop_meow","Drop: meow chance","% per drop (scream + meow ≤ 100)"]]],
+ ["Power and LED",[["led_brightness","LED brightness","%"],["auto_off","Auto power-off","minutes without input, 0 = never"],["link_lost_off","Off when the Puck / BT host is gone","minutes, 0 = never"]]],
+];
+function lvBuild(){
+  $("#lvCards").innerHTML=LV.map(([t,l])=>`<div class="card"><h3>${t}</h3>${l.map(([n,lab,h])=>row(lab,h,
+    n==="chime"?`<select id="lv_chime"><option value="0">off</option><option value="1">quiet</option><option value="2">normal</option></select>`
+    :`<input type="number" id="lv_${n}" style="width:100px"><label class="note" id="lva_${n}" style="display:none"><input type="checkbox" id="lvau_${n}"> ${n.startsWith("cap:")?"default":"Steam"}</label><span class="note" id="lvr_${n}"></span>`)).join("")}
+    ${t==="Touch sensors"?'<div class="tools"><button id="lvZero">Zero sticks (save)</button></div>':""}</div>`).join("");
+  for(const [,l] of LV) for(const [n] of l){ const cb=document.getElementById("lvau_"+n); if(cb) cb.onchange=e=>{ document.getElementById("lv_"+n).disabled=e.target.checked; }; }
+  $("#lvZero").onclick=async()=>{ try{ await send("sc26re/zero_sticks",0xF0); $("#lvStatus").innerHTML='<span class="ok">hands off the sticks — zeroed and saved</span>'; }catch(e){ $("#lvStatus").innerHTML=`<span class="err">${e.message}</span>`; } };
+}
+lvBuild();
+const lvE=id=>document.getElementById(id);
+async function lvRead(){
+  try{
+    let cap=null; try{ cap=await read("sc26re/capsense"); }catch(e){}
+    for(const [,l] of LV) for(const [n] of l){
+      if(n==="chime"){ try{ const b=await read("user/haptic_boot_level"); if(b.length) lvE("lv_chime").value=String(b[0]); }catch(e){} continue; }
+      const inp=lvE("lv_"+n), cb=lvE("lvau_"+n);
+      if(n.startsWith("cap:")){ const k=+n.slice(4); lvE("lva_"+n).style.display=""; lvE("lvr_"+n).textContent=" 0 … 16000";
+        if(!cap||cap.length<6) continue; const v=cap[k*2]|(cap[k*2+1]<<8), user=cap.length>=12?(cap[6+k*2]|(cap[7+k*2]<<8)):v, def=cap.length>=12&&user===0;
+        inp.value=v; cb.checked=def; inp.disabled=def; continue; }
+      const b=await read("sc26re/"+n); if(b.length<7) continue;
+      const v=s16(b,0), mn=s16(b,2), mx=s16(b,4), au=b[6];
+      inp.min=mn; inp.max=mx; lvE("lvr_"+n).textContent=` ${mn} … ${mx}`; lvE("lva_"+n).style.display=au?"":"none";
+      cb.checked=v===-32768; inp.disabled=v===-32768; inp.value=v===-32768?"":v;
+    }
+    $("#lvStatus").innerHTML='<span class="ok">read</span>';
+  }catch(e){ $("#lvStatus").innerHTML=`<span class="err">${e.message}</span>`; }
+}
+async function lvWrite(save){
+  try{
+    const cv=[0,1,2].map(k=>lvE("lvau_cap:"+k).checked?0:Math.max(0,Math.round(+lvE("lv_cap:"+k).value||0)));
+    if(cv[0]&&cv[1]&&cv[1]>=cv[0]) throw new Error("stick touch “off” must be below “on”");
+    if(lvE("lv_cap:0").value!==""||cv.every(x=>x===0)&&lvE("lvau_cap:0").checked){ const le=x=>[x&255,(x>>8)&255]; await send("sc26re/capsense",0xEE,[...le(cv[0]),...le(cv[1]),...le(cv[2])]); if(save) await send("sc26re/capsense",0xEF); }
+    try{ await send("user/haptic_boot_level",0xEE,[+lvE("lv_chime").value]); if(save) await send("user/haptic_boot_level",0xEF); }catch(e){}
+    for(const [,l] of LV) for(const [n] of l){
+      if(n==="chime"||n.startsWith("cap:")) continue;
+      const cb=lvE("lvau_"+n), inp=lvE("lv_"+n);
+      if(!cb.checked&&inp.value==="") continue;
+      await put(n,cb.checked?-32768:Math.round(+inp.value),save);
+    }
+    $("#lvStatus").innerHTML=`<span class="ok">${save?"saved":"applied until power-off"}</span>`;
+  }catch(e){ $("#lvStatus").innerHTML=`<span class="err">${e.message}</span>`; }
+}
+$("#lvRead").onclick=lvRead; $("#lvApply").onclick=()=>lvWrite(false); $("#lvSave").onclick=()=>lvWrite(true);
 async function tool(op,path,msg){ try{ if(op===0xB5){ const b=new Uint8Array(63); b[0]=0xB5; await serial(()=>ctl().sendFeatureReport(1,b)); } else await send(path,op); $("#tStatus").innerHTML=`<span class="ok">${msg}</span>`; }catch(e){ $("#tStatus").innerHTML=`<span class="err">${e.message}</span>`; } }
 $("#tCal").onclick=()=>tool(0xB5,"","measuring — don't touch the controller for 2 s");
 $("#tFull").onclick=()=>tool(0xF0,"sc26re/gyro_full_cal","full calibration started — put the controller down and let go (about 15 s, chime when done)");
