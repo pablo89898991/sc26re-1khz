@@ -17,6 +17,7 @@
 #include "imu.h"
 #include "gyro_mouse.h"
 #include "remap.h"
+#include "xinput.h"
 #include "lizard.h"
 #include "power.h"
 #include "puck_interface.h"
@@ -768,6 +769,9 @@ int main(void)
 			remap_process(&current, remap_last_ms ? (float)(remap_now - remap_last_ms) * 0.001f : 0.001f);
 			remap_last_ms = remap_now;
 			gyro_mouse_joystick(&current);
+			/* Xbox 360 output (USB, pad_out = 1): the game gets the pad there */
+			xinput_send(&current);
+			xinput_neutral_pad(&current);
 		}
 		bool changed = first || memcmp(&current, &previous, sizeof(current)) != 0;
 		bool refresh_due = k_uptime_get() - last_input_sent >= INPUT_REFRESH_MS;

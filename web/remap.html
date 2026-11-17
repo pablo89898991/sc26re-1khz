@@ -90,6 +90,7 @@
     <span class="grow"></span>
     <button id="onoff" class="sw" title="On the controller: LB + RB + Menu">Remapper <b>?</b></button>
     <button id="gmOn" class="sw" title="On the controller: LB + RB + View">Gyro mouse <b>?</b></button>
+    <label class="note" id="padoutL" hidden title="Xbox 360 = the game sees an Xbox controller (XInput) over the USB cable; Steam keeps the Steam button. Takes effect after the controller is turned off and on.">Pad output <select id="padout"><option value="0">Steam Controller</option><option value="1">Xbox 360 (USB)</option></select></label>
   </div>
 </div>
 <div class="wrap">
@@ -142,6 +143,8 @@
       <p>Click it on the picture or in the lists. <b>Press</b> = actions while held (up to 4 at once, e.g. Ctrl + C). <b>Hold</b> adds a second set for holding longer than 0.25 s (a short press then taps the first set). <b>Double</b> adds a set for a quick second press. <b>Toggle</b> switches the first set on/off with each press. Then press <b>Save to controller</b>.</p>
       <h3>D-pad, sticks and trackpads</h3>
       <p><b>D-pad</b>: 8-way (diagonals press both directions) or 4-way (one direction at a time). <b>Sticks</b>: analog to Steam (with inner / outer dead zones), D-pad 4-way or 8-way (each direction bound like a button, dead zone = how far before it fires), mouse or scroll. <b>Trackpads</b>: to Steam, D-pad 4-way / 8-way, mouse, scroll wheel (circle your finger; each step fires clockwise / counter-clockwise) or gates (4 corners). A trackpad mode works while the pad is <b>touched</b> or only while it is <b>clicked</b>. Click the stick or trackpad to choose; its directions / corners / wheel appear in the list.</p>
+      <h3>Xbox 360 output</h3>
+      <p><b>Pad output → Xbox 360 (USB)</b> at the top: after turning the controller off and on, Windows also sees an <b>Xbox 360 controller</b> (its own XInput driver, nothing to install) and the game gets the final pad there — buttons, sticks (incl. trackpad / gyro joystick), analog triggers, and every “Pad …” action the remapper outputs. The Steam Controller pad then only keeps the Steam and QAM buttons, so nothing arrives twice; keyboard / mouse outputs work as before. USB cable only — the Puck cannot carry it. Back buttons and trackpads have no Xbox equivalent: bind them to something. If a game sees two controllers, turn off Steam Input for it.</p>
       <h3>Mode shifts</h3>
       <p>Like Steam Input: every group (face buttons, D-pad, each stick, each trackpad, each trigger) can have a <b>mode shift button</b>. While you hold it, the group uses a second set of settings and bindings — e.g. hold LB and the right trackpad turns from mouse into a scroll wheel. Open the group (or one of its buttons), choose the button under “Mode shift”, then switch between <b>Normal</b> and <b>Shifted ⇧</b> to edit each. The shift button itself is not sent to the game.</p>
       <h3>More trackpad / stick modes</h3>
@@ -502,9 +505,11 @@ async function refreshState(){
   if(on===null){ $("#status").textContent="this firmware has no remapper (needs sc26re v51+)"; $("#status").className="chip warn"; return; }
   $("#onoff").innerHTML="Remapper <b>"+(on?"ON":"off")+"</b>"; $("#onoff").className="sw"+(on?" on":"");
   $("#activeProf").value=String(p||0);
+  { const po=await cfgGet("pad_out"); $("#padoutL").hidden=po===null; if(po!==null) $("#padout").value=String(po); }
   $("#status").textContent=`connected · ${ctl().productId===0x1302?"USB cable":"Puck"}`; $("#status").className="chip ok";
 }
 $("#onoff").onclick=async()=>{ try{ const on=await cfgGet("remap_on"); await cfgSet("remap_on",on?0:1); await refreshState(); }catch(e){ $("#pstatus").innerHTML=`<span class="err">${e.message}</span>`; } };
+$("#padout").onchange=async e=>{ try{ await cfgSet("pad_out",+e.target.value); alert("Saved. Turn the controller off and on (hold Steam, or Steam + Y) for the new pad output to take effect."); }catch(err){ $("#pstatus").innerHTML=`<span class="err">${err.message}</span>`; } };
 $("#activeProf").onchange=async e=>{ try{ await cfgSet("remap_profile",+e.target.value); }catch(err){ $("#pstatus").innerHTML=`<span class="err">${err.message}</span>`; } };
 
 async function readProfile(p){ const b=new Uint8Array(PROF_SIZE); for(let o=0;o<PROF_SIZE;o+=CH){ const d=await read(`sc26re/rmp/${p}/${o.toString(16)}`); b.set(d.slice(0,Math.min(CH,PROF_SIZE-o)),o); } return b; }

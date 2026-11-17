@@ -23,6 +23,7 @@
 #include "valve_feature.h"
 #include "valve_hid_report_map.h"
 #include "valve_identity.h"
+#include "xinput.h"
 
 #if CONFIG_IBEX_RGBW_LED
 #include "rgbw_led.h"
@@ -618,7 +619,14 @@ static int usb_device_init(void)
 	{
 		return err;
 	}
-	err = usbd_register_all_classes(&ibex_usbd, USBD_SPEED_FS, 1, NULL);
+	{
+		/* Xbox 360 output: only with sc26re/pad_out = 1 at power-on */
+		static const char *const no_xinput[] = { "xinput_0", NULL };
+		bool xi = sc26re_cfg_get(SC26RE_CFG_PAD_OUT) == 1;
+
+		xinput_setup(&ibex_usbd, xi);
+		err = usbd_register_all_classes(&ibex_usbd, USBD_SPEED_FS, 1, xi ? NULL : no_xinput);
+	}
 	if(err)
 	{
 		return err;
