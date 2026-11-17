@@ -181,6 +181,7 @@
   <section id="v_help" hidden>
     <div class="panel help">
       <h3>What it is</h3>
+      <p>While this page is connected the controller keeps its gyro on, does not switch itself off and leaves lizard mode (desktop keyboard / mouse emulation) off, so the live highlights and the gyro work without Steam; everything goes back to normal about 10 s after the page is closed.</p>
       <p>Profiles stored <b>in the controller</b> turn its inputs into keyboard keys, mouse buttons / movement / scroll and Steam pad buttons. It works without Steam and without installing anything, over the USB cable and the Puck. Needs sc26re firmware v51+ and desktop Chrome, Edge or Brave.</p>
       <h3>Turning it on</h3>
       <p><b>LB + RB + Menu</b> on the controller (high beep = on, low = off) or the <b>Remapper</b> switch at the top. While it is on, every input that has a binding belongs to the remapper: Steam and the game only see what it is mapped to. Inputs without a binding work as usual.</p>
@@ -871,6 +872,11 @@ $("#cPrFactory").onclick=async()=>{ if(!confirm("Clear the trackpad pressure cal
   try{ await send("sc26re/prs_cal/9",0xF0); prStep=0; $("#cPrNext").disabled=true; cSet("cPrStatus",'<span class="ok">cleared — turn the controller off and on</span>'); }catch(e){ cSet("cPrStatus",`<span class="err">${e.message}</span>`); } };
 $("#cToCtl").onclick=e=>{ e.preventDefault(); showView("ctl"); };
 
+/* while this page is connected: gyro on (like Steam does), no auto power-off and no lizard
+   mode (the firmware turns it off on each keep-alive and back on 10 s after the page closes) */
+async function imuMode(v){ const b=new Uint8Array(63); b[0]=0x87; b[1]=3; b[2]=48; b[3]=v&255; b[4]=(v>>8)&255; const d=ctl(); if(d) await serial(()=>d.sendFeatureReport(1,b)); }
+setInterval(()=>{ if(!devs.length) return; imuMode(0x1C).catch(()=>{}); read("sc26re/awake").catch(()=>{}); },2000);
+window.addEventListener("pagehide",()=>{ if(devs.length) imuMode(0).catch(()=>{}); });
 $("#lvRead").onclick=lvRead; $("#lvApply").onclick=()=>lvWrite(false); $("#lvSave").onclick=()=>lvWrite(true);
 async function tool(op,path,msg){ try{ if(op===0xB5){ const b=new Uint8Array(63); b[0]=0xB5; await serial(()=>ctl().sendFeatureReport(1,b)); } else await send(path,op); $("#tStatus").innerHTML=`<span class="ok">${msg}</span>`; }catch(e){ $("#tStatus").innerHTML=`<span class="err">${e.message}</span>`; } }
 $("#tCal").onclick=()=>tool(0xB5,"","measuring — don't touch the controller for 2 s");

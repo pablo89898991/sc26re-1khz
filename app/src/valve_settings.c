@@ -17,6 +17,7 @@
 #include "remap.h"
 #include "valve_nvs.h"
 #include "olympus.h"
+#include "lizard.h"
 #include "sc26re_cfg.h"
 #include "valve_feature.h"
 #include "valve_settings.h"
@@ -610,6 +611,10 @@ bool valve_settings_read(const char *path, uint8_t *buf, size_t capacity, size_t
 	{
 		/* report meter keep-alive: no auto power-off while the page is open */
 		meter_awake_ms = k_uptime_get();
+		/* like Steam: no lizard mode (keyboard / mouse emulation) while the
+		 * report meter or remapper page is open; it comes back by itself
+		 * 10 s after the page is closed */
+		lizard_clear_digital_mappings();
 		buf[0] = 1;
 		*len = 1;
 		return true;
