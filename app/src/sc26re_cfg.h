@@ -94,6 +94,7 @@ enum sc26re_cfg_id
 	SC26RE_CFG_GJ_CURVE,       /* gyro joystick response exponent x10 */
 	SC26RE_CFG_GJ_TILT,        /* gyro joystick deflection: degrees of tilt for full deflection */
 	SC26RE_CFG_PAD_OUT,        /* pad output over USB: 0 Steam Controller, 1 Xbox 360 only, 2 both; restart */
+	SC26RE_CFG_GM_RATCHET,     /* gyro ratchet: while this button is held the gyro output pauses, -1 = none */
 	SC26RE_CFG_COUNT,
 };
 

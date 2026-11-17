@@ -25,9 +25,22 @@
 #include "controller.h"
 #include "gyro_mouse.h"
 #include "haptics.h"
+#include "remap.h"
 #include "sc26re_cfg.h"
 
 LOG_MODULE_REGISTER(gyro_mouse, LOG_LEVEL_INF);
+
+/* gyro settings: the active remap profile's own values when it has them */
+static int16_t gm(enum sc26re_cfg_id id)
+{
+	int16_t v;
+
+	if(id != SC26RE_CFG_GM_ENABLED && remap_gyro_value((int)id, &v))
+	{
+		return v;
+	}
+	return sc26re_cfg_get(id);
+}
 
 #define CHORD_MASK (BIT(CONTROLLER_BUTTON_LEFT_SHOULDER) | BIT(CONTROLLER_BUTTON_RIGHT_SHOULDER) | \
                     BIT(CONTROLLER_BUTTON_VIEW))
@@ -80,13 +93,13 @@ bool gyro_mouse_active(void)
 
 bool gyro_mouse_enabled(void)
 {
-	return sc26re_cfg_get(SC26RE_CFG_GM_ENABLED) == 1 || cal != CAL_IDLE;
+	return gm(SC26RE_CFG_GM_ENABLED) == 1 || cal != CAL_IDLE;
 }
 
 int32_t gyro_mouse_counts_per_360(void)
 {
-	int32_t c = ((int32_t)sc26re_cfg_get(SC26RE_CFG_GM_CAL_HI) << 15) |
-	            (int32_t)sc26re_cfg_get(SC26RE_CFG_GM_CAL_LO);
+	int32_t c = ((int32_t)gm(SC26RE_CFG_GM_CAL_HI) << 15) |
+	            (int32_t)gm(SC26RE_CFG_GM_CAL_LO);
 
 	return c > 0 ? c : 16364;
 }
@@ -106,7 +119,7 @@ void gyro_mouse_cal_start(void)
 	cal = CAL_ARMED;
 	cal_counts = 0.0f;
 	acc_x = acc_y = 0.0f;
-	cal_button_mask = BIT(CLAMP(sc26re_cfg_get(SC26RE_CFG_GM_CAL_BUTTON), 0, 29));
+	cal_button_mask = BIT(CLAMP(gm(SC26RE_CFG_GM_CAL_BUTTON), 0, 29));
 	k_mutex_unlock(&lock);
 	(void)haptics_play_beep(900, 80);
 	LOG_INF("gyro mouse: calibration armed");
@@ -167,7 +180,7 @@ void gyro_mouse_status(struct gyro_mouse_status *st)
 {
 	k_mutex_lock(&lock, K_FOREVER);
 
-	st->enabled = sc26re_cfg_get(SC26RE_CFG_GM_ENABLED) == 1;
+	st->enabled = gm(SC26RE_CFG_GM_ENABLED) == 1;
 	st->cal_state = (uint8_t)cal;
 	st->cal_counts = (int32_t)cal_counts;
 	st->counts_per_360 = gyro_mouse_counts_per_360();
@@ -199,8 +212,8 @@ static float band(float v, int16_t lo, int16_t hi, bool soft)
 
 static bool active(uint32_t buttons, uint32_t pressed)
 {
-	int16_t b = sc26re_cfg_get(SC26RE_CFG_GM_ACT_BUTTON);
-	int16_t mode = sc26re_cfg_get(SC26RE_CFG_GM_ACT_MODE);
+	int16_t b = gm(SC26RE_CFG_GM_ACT_BUTTON);
+	int16_t mode = gm(SC26RE_CFG_GM_ACT_MODE);
 	bool held = b >= 0 && b <= 29 && (buttons & BIT(b)) != 0U;
 
 	if(b < 0 || b > 29 || mode == 0)
@@ -231,13 +244,13 @@ static float qt_rate;
 static void quick_turn_start(int16_t deg)
 {
 	float counts = (float)gyro_mouse_counts_per_360() * (float)deg / 360.0f;
-	int16_t ms = sc26re_cfg_get(SC26RE_CFG_GM_QT_MS);
+	int16_t ms = gm(SC26RE_CFG_GM_QT_MS);
 
 	k_mutex_lock(&lock, K_FOREVER);
 	qt_left += counts;
 	qt_rate = ms > 0 ? fabsf(qt_left) * 1000.0f / (float)ms : 1e9f;
 	k_mutex_unlock(&lock);
-	(void)haptics_play_feedback((uint8_t)sc26re_cfg_get(SC26RE_CFG_GM_HAPTIC), HAPTICS_CHANNELS_PRIMARY);
+	(void)haptics_play_feedback((uint8_t)gm(SC26RE_CFG_GM_HAPTIC), HAPTICS_CHANNELS_PRIMARY);
 }
 
 uint32_t gyro_mouse_filter_buttons(uint32_t raw)
@@ -266,7 +279,7 @@ uint32_t gyro_mouse_filter_buttons(uint32_t raw)
 		}
 		else
 		{
-			gyro_mouse_set_enabled(sc26re_cfg_get(SC26RE_CFG_GM_ENABLED) != 1);
+			gyro_mouse_set_enabled(gm(SC26RE_CFG_GM_ENABLED) != 1);
 		}
 	}
 	/* quick turns: a press starts one; their buttons are the gyro mouse's
@@ -277,12 +290,18 @@ uint32_t gyro_mouse_filter_buttons(uint32_t raw)
 		uint32_t own = 0U;
 
 		prev_raw = raw;
-		if(sc26re_cfg_get(SC26RE_CFG_GM_ENABLED) == 1)
+		if(gm(SC26RE_CFG_GM_ENABLED) == 1)
 		{
+			int16_t rb = gm(SC26RE_CFG_GM_RATCHET);
+
+			if(rb >= 0 && rb <= 29)
+			{
+				own |= BIT(rb); /* the ratchet button belongs to the gyro while it is on */
+			}
 			for(int q = 0; q < 4 && !suspended; ++q)
 			{
-				int16_t b = sc26re_cfg_get(SC26RE_CFG_GM_QT1_BTN + 2 * q);
-				int16_t deg = sc26re_cfg_get(SC26RE_CFG_GM_QT1_DEG + 2 * q);
+				int16_t b = gm(SC26RE_CFG_GM_QT1_BTN + 2 * q);
+				int16_t deg = gm(SC26RE_CFG_GM_QT1_DEG + 2 * q);
 
 				if(b < 0 || b > 29 || deg == 0)
 				{
@@ -353,7 +372,7 @@ void gyro_mouse_feed(const float dps[3], uint32_t buttons, float dt_s)
 	{
 		if(cal == CAL_TURNING)
 		{
-			float c = (float)sc26re_cfg_get(SC26RE_CFG_GM_CAL_SPEED) * dt_s;
+			float c = (float)gm(SC26RE_CFG_GM_CAL_SPEED) * dt_s;
 
 			acc_x += c;
 			cal_counts += c;
@@ -376,22 +395,25 @@ void gyro_mouse_feed(const float dps[3], uint32_t buttons, float dt_s)
 			qt_left = 0.0f;
 		}
 		k_mutex_unlock(&lock);
-		if(sc26re_cfg_get(SC26RE_CFG_GM_ENABLED) == 1)
+		if(gm(SC26RE_CFG_GM_ENABLED) == 1)
 		{
 			acc_x += step;
 		}
 	}
 
-	bool act_now = sc26re_cfg_get(SC26RE_CFG_GM_ENABLED) == 1 && !chord_down && active(buttons, pressed);
+	int16_t ratchet_btn = gm(SC26RE_CFG_GM_RATCHET);
+	/* ratchet: holding it pauses the gyro output, e.g. to re-centre the hands */
+	bool ratchet = ratchet_btn >= 0 && ratchet_btn <= 29 && (buttons & BIT(ratchet_btn)) != 0U;
+	bool act_now = gm(SC26RE_CFG_GM_ENABLED) == 1 && !chord_down && active(buttons, pressed) && !ratchet;
 
 	{
 		/* feedback when the activation button starts moving the cursor */
 		static bool act_prev;
-		int16_t ab = sc26re_cfg_get(SC26RE_CFG_GM_ACT_BUTTON);
+		int16_t ab = gm(SC26RE_CFG_GM_ACT_BUTTON);
 
-		if(act_now && !act_prev && ab >= 0 && ab <= 29 && sc26re_cfg_get(SC26RE_CFG_GM_ACT_MODE) != 0)
+		if(act_now && !act_prev && ab >= 0 && ab <= 29 && gm(SC26RE_CFG_GM_ACT_MODE) != 0)
 		{
-			(void)haptics_play_feedback((uint8_t)sc26re_cfg_get(SC26RE_CFG_GM_HAPTIC), HAPTICS_CHANNELS_PRIMARY);
+			(void)haptics_play_feedback((uint8_t)gm(SC26RE_CFG_GM_HAPTIC), HAPTICS_CHANNELS_PRIMARY);
 		}
 		act_prev = act_now;
 	}
@@ -408,15 +430,15 @@ void gyro_mouse_feed(const float dps[3], uint32_t buttons, float dt_s)
 	}
 
 	{
-		bool soft = sc26re_cfg_get(SC26RE_CFG_GM_BAND_SOFT) == 1;
+		bool soft = gm(SC26RE_CFG_GM_BAND_SOFT) == 1;
 		float v[3] = {
-			band(dps[0], sc26re_cfg_get(SC26RE_CFG_GM_BAND_P_LO), sc26re_cfg_get(SC26RE_CFG_GM_BAND_P_HI), soft),
-			band(dps[1], sc26re_cfg_get(SC26RE_CFG_GM_BAND_Y_LO), sc26re_cfg_get(SC26RE_CFG_GM_BAND_Y_HI), soft),
-			band(dps[2], sc26re_cfg_get(SC26RE_CFG_GM_BAND_R_LO), sc26re_cfg_get(SC26RE_CFG_GM_BAND_R_HI), soft),
+			band(dps[0], gm(SC26RE_CFG_GM_BAND_P_LO), gm(SC26RE_CFG_GM_BAND_P_HI), soft),
+			band(dps[1], gm(SC26RE_CFG_GM_BAND_Y_LO), gm(SC26RE_CFG_GM_BAND_Y_HI), soft),
+			band(dps[2], gm(SC26RE_CFG_GM_BAND_R_LO), gm(SC26RE_CFG_GM_BAND_R_HI), soft),
 		};
 		/* counts per degree of controller turn, times real world sensitivity */
 		float k = (float)gyro_mouse_counts_per_360() / 360.0f *
-		          (float)sc26re_cfg_get(SC26RE_CFG_GM_SENS) * 0.01f * dt_s;
+		          (float)gm(SC26RE_CFG_GM_SENS) * 0.01f * dt_s;
 		/* natural directions: turning left / tilting forward moves the cursor left / down */
 		static const float natural[3] = { -1.0f, -1.0f, 1.0f };
 		static const enum sc26re_cfg_id axis_cfg[3] = {
@@ -425,13 +447,13 @@ void gyro_mouse_feed(const float dps[3], uint32_t buttons, float dt_s)
 
 		/* controller turn rate on the mouse axes, deg/s (x right, y down) */
 		float wx = 0.0f, wy = 0.0f, w;
-		int16_t out = sc26re_cfg_get(SC26RE_CFG_GM_OUTPUT);
+		int16_t out = gm(SC26RE_CFG_GM_OUTPUT);
 
 		for(size_t i = 0; i < 3; ++i)
 		{
-			int16_t a = sc26re_cfg_get(axis_cfg[i]);
+			int16_t a = gm(axis_cfg[i]);
 			float d = v[i] * natural[i] * (a < 0 ? -1.0f : 1.0f) *
-			          (float)sc26re_cfg_get(SC26RE_CFG_GM_SCALE_P + i) * 0.01f;
+			          (float)gm(SC26RE_CFG_GM_SCALE_P + i) * 0.01f;
 
 			if(abs(a) == 1)
 			{
@@ -446,12 +468,12 @@ void gyro_mouse_feed(const float dps[3], uint32_t buttons, float dt_s)
 		if(out >= 1 && out <= 4)
 		{
 			/* gyro as joystick: camera = turn rate, deflection = tilt since activation */
-			float dz = (float)sc26re_cfg_get(SC26RE_CFG_GJ_DZ);
+			float dz = (float)gm(SC26RE_CFG_GJ_DZ);
 			float mx;
 
 			if(out >= 3)
 			{
-				float lim = (float)sc26re_cfg_get(SC26RE_CFG_GJ_TILT);
+				float lim = (float)gm(SC26RE_CFG_GJ_TILT);
 
 				/* tilting past the limit just drags the centre along */
 				tilt_x = CLAMP(tilt_x + wx * dt_s, -lim, lim);
@@ -464,9 +486,9 @@ void gyro_mouse_feed(const float dps[3], uint32_t buttons, float dt_s)
 			}
 			else
 			{
-				mx = MAX((float)sc26re_cfg_get(SC26RE_CFG_GJ_MAX), dz + 1.0f);
+				mx = MAX((float)gm(SC26RE_CFG_GJ_MAX), dz + 1.0f);
 			}
-			float anti = (float)sc26re_cfg_get(SC26RE_CFG_GJ_ANTI) * 0.01f;
+			float anti = (float)gm(SC26RE_CFG_GJ_ANTI) * 0.01f;
 			float n;
 
 			if(w <= dz || w <= 0.0f)
@@ -474,7 +496,7 @@ void gyro_mouse_feed(const float dps[3], uint32_t buttons, float dt_s)
 				joy_x = joy_y = 0.0f;
 				return;
 			}
-			n = powf(MIN((w - dz) / (mx - dz), 1.0f), (float)sc26re_cfg_get(SC26RE_CFG_GJ_CURVE) * 0.1f);
+			n = powf(MIN((w - dz) / (mx - dz), 1.0f), (float)gm(SC26RE_CFG_GJ_CURVE) * 0.1f);
 			n = anti + (1.0f - anti) * n;
 			joy_x = wx / w * n;
 			joy_y = -wy / w * n; /* stick up = cursor up */
@@ -484,9 +506,9 @@ void gyro_mouse_feed(const float dps[3], uint32_t buttons, float dt_s)
 		joy_x = joy_y = 0.0f;
 		{
 			/* response curve (around 100 deg/s) and acceleration */
-			float c = (float)sc26re_cfg_get(SC26RE_CFG_GM_CURVE) * 0.1f;
+			float c = (float)gm(SC26RE_CFG_GM_CURVE) * 0.1f;
 			float g = 1.0f;
-			int16_t acc = sc26re_cfg_get(SC26RE_CFG_GM_ACCEL);
+			int16_t acc = gm(SC26RE_CFG_GM_ACCEL);
 
 			if(c != 1.0f && w > 0.0f)
 			{
@@ -494,8 +516,8 @@ void gyro_mouse_feed(const float dps[3], uint32_t buttons, float dt_s)
 			}
 			if(acc > 0)
 			{
-				float lo = (float)sc26re_cfg_get(SC26RE_CFG_GM_ACCEL_LO);
-				float hi = MAX((float)sc26re_cfg_get(SC26RE_CFG_GM_ACCEL_HI), lo + 1.0f);
+				float lo = (float)gm(SC26RE_CFG_GM_ACCEL_LO);
+				float hi = MAX((float)gm(SC26RE_CFG_GM_ACCEL_HI), lo + 1.0f);
 
 				g *= 1.0f + (float)acc * 0.01f * CLAMP((w - lo) / (hi - lo), 0.0f, 1.0f);
 			}
@@ -538,7 +560,7 @@ bool gyro_mouse_take(int8_t *dx, int8_t *dy)
 
 void gyro_mouse_joystick(struct controller_report *r)
 {
-	int16_t out = sc26re_cfg_get(SC26RE_CFG_GM_OUTPUT);
+	int16_t out = gm(SC26RE_CFG_GM_OUTPUT);
 	float jx = joy_x, jy = joy_y;
 	int32_t x, y;
 

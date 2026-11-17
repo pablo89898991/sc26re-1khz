@@ -9,7 +9,7 @@
 
 #define REMAP_PROFILES 4
 #define REMAP_MAGIC 0xA7
-#define REMAP_VERSION 4
+#define REMAP_VERSION 5
 
 /* sources: 0..29 controller button bits, then derived inputs */
 enum
@@ -67,6 +67,9 @@ enum
 #define REMAP_ANALOG_GRID 9     /* trackpads: 3 x 3 zones (8 directions + centre), each its own binding */
 
 #define REMAP_PF_BLOCK_UNBOUND 0x01 /* inputs without a binding send nothing to Steam */
+#define REMAP_PF_GYRO 0x02          /* the profile's own gyro settings replace the global ones */
+#define REMAP_PF_GYRO_ON 0x04       /* gyro output on while this profile is active */
+#define REMAP_GYRO_KEYS 30
 
 #define REMAP_AF_CLICK 0x01       /* trackpads: active while clicked (else while touched) */
 #define REMAP_AF_RING_INVERT 0x02 /* outer ring fires inside the radius instead */
@@ -129,6 +132,9 @@ struct remap_profile
 	uint16_t trig_soft[2]; /* soft pull point, 0.01 % of travel */
 	int16_t grid[2][4];    /* per pad, 9-zone grid lines: left, right, top, bottom, 0.01 % (-10000..10000) */
 	uint16_t move_speed;   /* "mouse move" actions: counts per second (0 = 1000) */
+	uint8_t led[3];        /* LED colour while this profile is active (0,0,0 = leave it) */
+	uint8_t reserved1;
+	int16_t gyro[REMAP_GYRO_KEYS]; /* with REMAP_PF_GYRO: values of remap_gyro_keys[] */
 	uint8_t reserved[24];
 	struct remap_analog an[4]; /* left stick, right stick, left pad, right pad */
 	struct remap_shift shift[REMAP_SHIFT_GROUPS];
@@ -146,6 +152,11 @@ void remap_process(struct controller_report *r, float dt);
 uint8_t remap_mouse_buttons(void);
 /* buttons the active profile sends to the Xbox pad only (Steam bit layout) */
 uint32_t remap_xbox_buttons(void);
+/* the active profile's own gyro setting for this sc26re_cfg id, if it has one */
+bool remap_gyro_value(int id, int16_t *value);
+/* output monitor for the editor page (30 bytes) */
+void remap_monitor(uint8_t *out);
+extern const uint8_t remap_gyro_keys[REMAP_GYRO_KEYS];
 bool remap_path(const char *path);
 bool remap_read(const char *path, uint8_t *buf, size_t capacity, size_t *len);
 int remap_stage(const char *path, const uint8_t *value, size_t len);

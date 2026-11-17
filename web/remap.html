@@ -42,6 +42,9 @@
   .note.wrap{white-space:normal;max-width:560px}
   .bands{display:flex;flex-direction:column;gap:6px} .bandrow{display:flex;align-items:center;gap:6px;flex-wrap:nowrap} .bandrow .bl{width:42px} .cardnote{white-space:normal;margin:2px 0 6px;line-height:1.45}
   .panel a,.note a,#editor a{color:var(--accent2)}
+  .mon{margin:6px auto 0;max-width:440px;font-size:12px;color:var(--muted);background:var(--panel2);border:1px solid var(--edge);border-radius:10px;padding:6px 10px;line-height:1.6}
+  .mon b{color:#d7e3f5;font-weight:600} .mon .k{display:inline-block;padding:0 6px;margin:1px 2px;border-radius:6px;background:#2a3a58;color:#e8f1ff}
+  .row.dim{opacity:.4}
   .modes label{font-size:12px;color:var(--muted);margin-right:8px;white-space:nowrap}
   .live{display:inline-block;width:9px;height:9px;border-radius:50%;background:#33415c;margin-left:6px;vertical-align:middle}
   .live.on{background:#4fc98a;box-shadow:0 0 8px #4fc98a}
@@ -91,7 +94,7 @@
 <body>
 <div class="top">
   <div class="topin">
-    <div class="brand">SC2 <span class="hz">Remapper</span> <span class="note" id="pagever" title="page version — if it is older than expected, press Ctrl+F5">p.2026-11-17d</span></div>
+    <div class="brand">SC2 <span class="hz">Remapper</span> <span class="note" id="pagever" title="page version — if it is older than expected, press Ctrl+F5">p.2026-11-17e</span></div>
     <button class="primary" id="connect">Connect controller</button>
     <span id="status" class="chip">not connected</span>
     <span class="grow"></span>
@@ -114,6 +117,7 @@
         <input id="pname" maxlength="13" placeholder="profile name" style="width:170px">
         <button class="primary" id="write">Save to controller</button>
         <span id="dirty" class="chip warn" style="display:none">unsaved changes</span>
+        <label class="note" title="LED colour while this profile is active (untick = leave the LED as it is)"><input type="checkbox" id="pledOn"> LED <input type="color" id="pled" value="#4da3ff" style="width:34px;height:22px;padding:0;border:0;background:none;vertical-align:middle"></label>
         <label class="note" title="Inputs without a binding (buttons, touch sensors, trackpads left “to Steam”) send nothing to Steam or the game. Sticks in Analog mode and the Steam button still work."><input type="checkbox" id="block"> unbound inputs do nothing</label>
         <span class="grow"></span>
         <button id="read" class="ghost">Reload</button>
@@ -124,7 +128,7 @@
       <p id="pstatus" class="note" style="min-height:1.2em;margin:6px 0 0"></p>
       <div class="board">
         <div class="col l" id="colL"></div>
-        <div><div id="pic"></div><p class="note" style="text-align:center;margin:4px 0 0">Click an input to edit it · pressed inputs light up green · <a href="#" id="toGyro">Gyro &amp; gyro mouse settings →</a></p></div>
+        <div><div id="pic"></div><div id="mon" class="mon"></div><p class="note" style="text-align:center;margin:4px 0 0">Click an input to edit it · pressed inputs light up green · <a href="#" id="toGyro">Gyro &amp; gyro mouse settings →</a></p></div>
         <div class="col r" id="colR"></div>
       </div>
       <div class="bottom" id="colB"></div>
@@ -133,8 +137,10 @@
 
   <section id="v_gyro" hidden>
     <div class="panel" id="gyroPanel">
-      <div class="bar"><button id="gyRead" class="ghost">Reload</button><button class="primary" id="gyApply">Apply</button><button id="gySave">Save</button><span id="gyStatus" class="note"></span></div>
-      <p class="note" style="margin:8px 0 0">Controller-wide (not per profile) — the same settings as in the report meter. <b>Apply</b> = until power-off, <b>Save</b> = kept.</p>
+      <div class="bar"><label class="note">Settings for <select id="gyScope"><option value="g">all profiles (global)</option><option value="p">this profile only</option></select></label>
+        <span id="gyPflags" class="note" hidden><label><input type="checkbox" id="gyOwn"> this profile uses its own gyro settings</label> <label><input type="checkbox" id="gyAuto"> turn the gyro on with this profile</label></span>
+        <span class="grow"></span><button id="gyRead" class="ghost">Reload</button><button class="primary" id="gyApply">Apply</button><button id="gySave">Save</button><span id="gyStatus" class="note"></span></div>
+      <p class="note" id="gyScopeNote" style="margin:8px 0 0">Global: used by every profile that has no gyro settings of its own (and when the remapper is off) — the same settings as in the report meter. <b>Apply</b> = until power-off, <b>Save</b> = kept.</p>
       <div class="cards" id="gyCards"></div>
       <p class="note" id="tStatus"></p>
     </div>
@@ -200,6 +206,8 @@
       <p><b>Joystick</b> (trackpads): the finger position works as a stick for Steam, on the same or the other side, with dead zones, anti dead zone and curve. <b>Flick stick</b> (sticks and trackpads): push past the threshold and the camera turns to face that direction, then rotating keeps turning 1:1 — it uses the gyro mouse “counts per 360°”, so do the 360° calibration first. <b>Directional swipe</b> (trackpads): each swipe fires up / down / left / right — once per touch, or repeatedly along a long swipe if you tick it.</p>
       <h3>9 zones (grid)</h3>
       <p>Trackpad mode: the pad is split into 3 × 3 zones by four lines you can move (left, right, top, bottom); each zone — 4 corners, 4 edges and the centre — has its own binding, and <b>zone haptics</b> tick under your finger whenever it crosses into another zone (also for gates and the trackpad D-pad). It works on touch, on click, or only when the pad is pressed harder than the pressure you set.</p>
+      <h3>Profile extras</h3>
+      <p><b>LED</b> next to the profile name: the controller’s LED takes that colour while the profile is active (and goes back when you switch away or turn the remapper off). <b>Gyro per profile</b>: on the gyro page choose “Settings for: this profile only”, tick “uses its own gyro settings” and set mouse / joystick, activation, ratchet, sensitivity, curves and quick turns for this profile; “turn the gyro on with this profile” switches the gyro output on when the profile becomes active. <b>Ratchet</b>: while its button is held the gyro stops moving, so you can re-centre your hands. Under the picture the <b>Output</b> line shows live what the remapper sends: keys, mouse buttons and movement, wheel, pad / Xbox buttons and active mode shifts.</p>
       <h3>Unbound inputs do nothing</h3>
       <p>Per profile: when ticked, Steam and the game only get what the profile maps — every input without a binding (buttons, touch sensors, trackpads left “to Steam”) is dropped. Sticks set to Analog and the Steam button still work.</p>
       <h3>Outer ring</h3>
@@ -222,7 +230,7 @@
 <script>
 const $=s=>document.querySelector(s);
 /* ---- layout: matches struct remap_profile in app/src/remap.h ---- */
-const PROF_SIZE=1864, CH=40, PROF_VER=4;
+const PROF_SIZE=1928, CH=40, PROF_VER=5;
 const SRC=[
  ["Face buttons",[[0,"A"],[1,"B"],[2,"X"],[3,"Y"]]],
  ["Shoulders and triggers",[[19,"LB"],[9,"RB"],[27,"LT full pull"],[23,"RT full pull"],[58,"LT soft pull"],[59,"RT soft pull"]]],
@@ -260,15 +268,15 @@ const SHIFT_SRC=[[0,1,2,3],[13,10,12,11],[30,31,32,33,60],[34,35,36,37,61],[38,3
 const SHIFT_NAME=["Face buttons","D-pad","Left stick","Right stick","Left trackpad","Right trackpad","Left trigger","Right trigger"];
 const SIDX={}, SGRP={}; { let k=0; SHIFT_SRC.forEach((l,g)=>l.forEach(x=>{ SIDX[x]=k++; SGRP[x]=g; })); }
 const GRP_OF_AN={ls:2,rs:3,lp:4,rp:5};
-/* layout v4 (struct remap_profile): header 64, analog[4] x18 @64, shift[8] x20 @136, bind[66] x14 @296, sbind[46] x14 @1220 */
-const shOff=g=>136+g*20; /* button (bit+1, 0 none), dpad 4-way, analog (18) */
+/* layout v5 (struct remap_profile): header 128 (LED @40, gyro[30] @44), analog[4] x18 @128, shift[8] x20 @200, bind[66] x14 @360, sbind[46] x14 @1284 */
+const shOff=g=>200+g*20; /* button (bit+1, 0 none), dpad 4-way, analog (18) */
 const shBtn=g=>g==null?0:prof[cur][shOff(g)];
 let layer=0; /* 1 = editing the shifted settings / bindings */
 const useShift=g=>layer===1&&shBtn(g)>0;
 /* analog: +0 mode, +1 flags, +2 dz_in, +4 dz_out, +6 speed, +8 haptic, +10 curve, +12 ring, +14 anti, +16 press (u16, 0.01 %) */
-const aOffL=(an,L)=>L?shOff(GRP_OF_AN[an])+2:64+AIDX[an]*18;
+const aOffL=(an,L)=>L?shOff(GRP_OF_AN[an])+2:128+AIDX[an]*18;
 const aOff=an=>aOffL(an,useShift(GRP_OF_AN[an])?1:0);
-const bOffL=(s,L)=>L?1220+SIDX[s]*14:296+s*14;
+const bOffL=(s,L)=>L?1284+SIDX[s]*14:360+s*14;
 const bOff=s=>bOffL(s,useShift(SGRP[s])?1:0);
 const U16=(o)=>new DataView(prof[cur].buffer).getUint16(o,true), setU16=(o,v)=>new DataView(prof[cur].buffer).setUint16(o,v,true);
 const S16=(o)=>new DataView(prof[cur].buffer).getInt16(o,true), setS16=(o,v)=>new DataView(prof[cur].buffer).setInt16(o,v,true);
@@ -303,7 +311,7 @@ function emptyProfile(){ const b=new Uint8Array(PROF_SIZE); b[0]=0xA7; b[1]=PROF
 const SRCNAME={}; for(const [,list] of SRC) for(const [s,n] of list) SRCNAME[s]=n;
 const ACTNAME=v=>v===0?"":MOUSE[v]||MODS[v]||KEYS[v]||(v>=0x80&&v<0x9e?"Pad "+((PADB.find(([b])=>b===v-0x80)||[0,"#"+(v-0x80)])[1]):v>=0xA0&&v<0xBE?"Xbox "+((XBOXB.find(([b])=>b===v-0xA0)||[0,"#"+(v-0xA0)])[1]):v>=0xC0&&v<0xC4?"Profile "+(v-0xBF):"0x"+v.toString(16));
 let sel=null; /* number = source, string = analog group "ls"/"rs"/"lp"/"rp" */
-function buildTabs(){ $("#tabs").innerHTML=[0,1,2,3].map(i=>`<button class="tab${i===cur?" on":""}" data-p="${i}">Profile ${i+1}${nameOf(prof[i])?": "+nameOf(prof[i]):""}</button>`).join(""); document.querySelectorAll("#tabs .tab").forEach(b=>b.onclick=()=>{ saveName(); cur=+b.dataset.p; render(); }); }
+function buildTabs(){ if(typeof gyScopeShow==='function'&&document.getElementById('gyScope')&&$("#gyScope").value==="p") setTimeout(gyScopeShow,0); $("#tabs").innerHTML=[0,1,2,3].map(i=>`<button class="tab${i===cur?" on":""}" data-p="${i}">Profile ${i+1}${nameOf(prof[i])?": "+nameOf(prof[i]):""}</button>`).join(""); document.querySelectorAll("#tabs .tab").forEach(b=>b.onclick=()=>{ saveName(); cur=+b.dataset.p; render(); }); }
 function nameOf(b){ return new TextDecoder().decode(b.slice(2,16)).replace(/\0.*$/,""); }
 function saveName(){ const b=prof[cur]; b[0]=0xA7; b[1]=PROF_VER; const nm=new TextEncoder().encode($("#pname").value.slice(0,13)); b.fill(0,2,16); b.set(nm.slice(0,13),2); }
 function grpTextO(b,o,g){ return [0,1,2,3].map(i=>ACTNAME(b[o+1+g*4+i])).filter(x=>x).join(" + "); }
@@ -384,6 +392,7 @@ function showView(v){ document.querySelectorAll(".view").forEach(x=>x.classList.
 function render(){
   buildTabs();
   $("#pname").value=nameOf(prof[cur]); $("#block").checked=(prof[cur][17]&1)!==0;
+  { const L=prof[cur].slice(40,43), on=L[0]|L[1]|L[2]; $("#pledOn").checked=!!on; if(on) $("#pled").value="#"+[...L].map(x=>x.toString(16).padStart(2,"0")).join(""); }
   const b0=prof[cur];
   $("#colL").innerHTML=`<div class="sect">Left</div>${item(19,"LB")}${item(17,"L4")}${item(18,"L5")}${item(14,"View")}${item(15,"L3 click")}
     <div class="sect">Left trigger</div>${item(58,`soft pull ${softPct(0)}%`)}${item(27,"full pull")}
@@ -556,6 +565,8 @@ $("#dlgClear").onclick=()=>{ if(typeof sel==="number"){ prof[cur].fill(0,bOff(se
 $("#dlg").addEventListener("close",()=>{ layer=0; });
 $("#dlg").addEventListener("close",()=>{ sel=null; render(); });
 $("#pname").oninput=()=>{ saveName(); setDirty(); buildTabs(); };
+function ledStore(){ const b=prof[cur]; if(!$("#pledOn").checked){ b.fill(0,40,43); return; } const h=$("#pled").value; let r=parseInt(h.slice(1,3),16),g=parseInt(h.slice(3,5),16),bl=parseInt(h.slice(5,7),16); if(!(r|g|bl)) r=1; b[40]=r; b[41]=g; b[42]=bl; }
+$("#pledOn").onchange=()=>{ ledStore(); setDirty(); }; $("#pled").oninput=()=>{ $("#pledOn").checked=true; ledStore(); setDirty(); };
 $("#block").onchange=e=>{ prof[cur][17]=(prof[cur][17]&~1)|(e.target.checked?1:0); setDirty(); };
 document.querySelectorAll(".view").forEach(b=>b.onclick=()=>showView(b.dataset.v));
 $("#toGyro").onclick=e=>{ e.preventDefault(); showView("gyro"); };
@@ -698,6 +709,7 @@ const GY=[
  ["gj_dz","Dead zone","num",[0,200,1],1,"°/s (camera) or ° (deflection)"],
  ["gj_anti","Anti dead zone","num",[0,90,1],1,"%"],
  ["gj_curve","Response curve","num",[0.5,4,0.1],10,"1.0 = linear"],
+ ["gm_ratchet","Ratchet (pause) button","sel",BTNOPTS,1,"while held the gyro stops moving — re-centre your hands, then let go"],
  ["gm_haptic","Haptics","sel",[[0,"off"],[1,"tick (light)"],[2,"click"],[3,"strong"]],1,"when the activation button starts the mouse and on quick turns"],
 ];
 const GYI={}; for(const e of GY) if(e[0]!=="#") GYI[e[0]]=e;
@@ -721,6 +733,7 @@ const CARDS=()=>[
    <div class="tools"><button id="tCal">Calibrate drift</button><button id="tFull">Full calibration (+ dead bands)</button><button id="tReset">Reset to factory</button></div></div>`,
  `<div class="card"><h3>Gyro — activation and axes</h3>
    ${row("Gyro works","button or touch sensor, and how",ctlHtml("gm_act_button")+ctlHtml("gm_act_mode"))}
+   ${one("gm_ratchet")}
    ${row("Axes","what each gyro axis moves",labRows([["gm_axis_pitch","Pitch"],["gm_axis_yaw","Yaw"],["gm_axis_roll","Roll"]]))}
    ${one("gm_haptic")}</div>`,
  `<div class="card"><h3>Gyro output and response</h3>
@@ -899,6 +912,47 @@ $("#cToCtl").onclick=e=>{ e.preventDefault(); showView("ctl"); };
 async function imuMode(v){ const b=new Uint8Array(63); b[0]=0x87; b[1]=3; b[2]=48; b[3]=v&255; b[4]=(v>>8)&255; const d=ctl(); if(d) await serial(()=>d.sendFeatureReport(1,b)); }
 setInterval(()=>{ if(!devs.length) return; imuMode(0x1C).catch(()=>{}); read("sc26re/awake").catch(()=>{}); },2000);
 window.addEventListener("pagehide",()=>{ if(devs.length) imuMode(0).catch(()=>{}); });
+
+/* ---- per-profile gyro (scope) ---- */
+const GKEYS=["gm_output","gm_act_button","gm_act_mode","gm_axis_pitch","gm_axis_yaw","gm_axis_roll","gm_sens","gm_scale_p","gm_scale_y","gm_scale_r","gm_curve","gm_accel","gm_accel_lo","gm_accel_hi","gj_dz","gj_anti","gj_max","gj_curve","gj_tilt","gm_haptic","gm_qt1_btn","gm_qt1_deg","gm_qt2_btn","gm_qt2_deg","gm_qt3_btn","gm_qt3_deg","gm_qt4_btn","gm_qt4_deg","gm_qt_ms","gm_ratchet"];
+const gyScope=()=>$("#gyScope").value;
+function gyInputs(on){ for(const [n,,kind] of GY){ if(n==="#") continue; const prof=GKEYS.includes(n);
+    document.querySelectorAll(`#gyCards [id^="g_${n}"],#gyCards [id^="ga_${n}"]`).forEach(e=>{ e.disabled=on&&!prof; e.closest(".row")&&e.closest(".row").classList.toggle("dim",on&&!prof); }); } }
+function gyFromProfile(){ const b=prof[cur], dv=new DataView(b.buffer);
+  GKEYS.forEach((n,k)=>{ const e=document.getElementById("g_"+n); if(!e) return; const v=dv.getInt16(44+k*2,true), sc=(GYI[n]||[])[4]||1; e.value=sc!==1?(v/sc).toFixed(2):String(v); }); }
+function gyToProfile(){ const b=prof[cur], dv=new DataView(b.buffer);
+  GKEYS.forEach((n,k)=>{ const e=document.getElementById("g_"+n); if(!e||e.value==="") return; const sc=(GYI[n]||[])[4]||1; dv.setInt16(44+k*2,Math.round(+e.value*sc),true); }); }
+function gyScopeShow(){ const p=gyScope()==="p", b=prof[cur];
+  $("#gyPflags").hidden=!p; $("#gySave").hidden=p; $("#gyApply").textContent=p?"Put in profile":"Apply"; $("#gyOwn").checked=(b[17]&2)!==0; $("#gyAuto").checked=(b[17]&4)!==0;
+  $("#gyScopeNote").innerHTML=p?`Profile ${cur+1}${nameOf(b)?" “"+nameOf(b)+"”":""}: its own gyro mouse / joystick, activation, ratchet and quick turns (greyed settings are global). <b>Apply</b> puts the values in the profile — then <b>Save to controller</b> on “Buttons &amp; profiles”.`
+    :`Global: used by every profile that has no gyro settings of its own (and when the remapper is off) — the same settings as in the report meter. <b>Apply</b> = until power-off, <b>Save</b> = kept.`;
+  gyInputs(p); if(p){ if(b[17]&2) gyFromProfile(); } }
+$("#gyScope").onchange=async()=>{ if(gyScope()==="g") await gyRead(); gyScopeShow(); };
+$("#gyOwn").onchange=e=>{ const b=prof[cur]; if(e.target.checked&&!(b[17]&2)) gyToProfile(); b[17]=(b[17]&~2)|(e.target.checked?2:0); setDirty(); gyScopeShow(); };
+$("#gyAuto").onchange=e=>{ const b=prof[cur]; b[17]=(b[17]&~4)|(e.target.checked?4:0); setDirty(); };
+{ const r=$("#gyRead").onclick, a=$("#gyApply").onclick, s2=$("#gySave").onclick;
+  $("#gyRead").onclick=()=>gyScope()==="p"?(gyFromProfile(),$("#gyStatus").innerHTML='<span class="ok">profile values shown</span>'):r();
+  const toP=()=>{ const b=prof[cur]; gyToProfile(); b[17]|=2; $("#gyOwn").checked=true; setDirty(); $("#gyStatus").innerHTML='<span class="ok">in the profile — press Save to controller</span>'; };
+  $("#gyApply").onclick=()=>gyScope()==="p"?toP():a(); $("#gySave").onclick=()=>gyScope()==="p"?toP():s2(); }
+
+/* ---- output monitor: what the remapper is sending right now ---- */
+let monPrev=null;
+const KEYNAME=v=>MODS[v]||KEYS[v]||("key "+v);
+setInterval(async()=>{
+  if(!devs.length||$("#v_map").hidden) return;
+  let b; try{ b=await read("sc26re/rmp_out"); }catch(e){ return; }
+  if(!b||b.length<30) { $("#mon").innerHTML=""; return; }
+  const dv=new DataView(b.buffer,b.byteOffset,30), t=performance.now();
+  const dx=dv.getInt32(20,true), dy=dv.getInt32(24,true), wh=dv.getInt16(28,true);
+  let mv=""; if(monPrev){ const dt=(t-monPrev.t)/1000; const vx=Math.round((dx-monPrev.dx)/dt), vy=Math.round((dy-monPrev.dy)/dt), w=((wh-monPrev.wh)<<16>>16); if(vx||vy) mv=`<span class="k">mouse ${vx}, ${vy} /s</span>`; if(w) mv+=`<span class="k">wheel ${w>0?"+":""}${w}</span>`; }
+  monPrev={t,dx,dy,wh};
+  const keys=[]; for(let i=0;i<8;i++) if(b[4]&(1<<i)) keys.push(MODS[0xE0+i]); for(let i=6;i<12;i++) if(b[i]) keys.push(KEYNAME(b[i]));
+  const mb=["left","right","middle","back","forward"].filter((n,i)=>b[3]&(1<<i)).map(n=>"mouse "+n);
+  const padb=PADB.filter(([x])=>dv.getUint32(12,true)&(1<<x)).map(([,n])=>"Pad "+n), xb=XBOXB.filter(([x])=>dv.getUint32(16,true)&(1<<x)).map(([,n])=>"Xbox "+n);
+  const sh=SHIFT_NAME.filter((n,g)=>b[2]&(1<<g)).map(n=>"⇧ "+n);
+  const all=[...sh,...keys,...mb,...padb,...xb].map(x=>`<span class="k">${x}</span>`).join("")+mv;
+  $("#mon").innerHTML=`<b>Output</b> · profile ${b[0]+1} · remapper ${b[1]===1?"on":b[1]===2?"on (empty profile)":"off"}<br>${all||"<span>nothing pressed</span>"}`;
+},150);
 $("#lvRead").onclick=lvRead; $("#lvApply").onclick=()=>lvWrite(false); $("#lvSave").onclick=()=>lvWrite(true);
 async function tool(op,path,msg){ try{ if(op===0xB5){ const b=new Uint8Array(63); b[0]=0xB5; await serial(()=>ctl().sendFeatureReport(1,b)); } else await send(path,op); $("#tStatus").innerHTML=`<span class="ok">${msg}</span>`; }catch(e){ $("#tStatus").innerHTML=`<span class="err">${e.message}</span>`; } }
 $("#tCal").onclick=()=>tool(0xB5,"","measuring — don't touch the controller for 2 s");

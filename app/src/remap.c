@@ -21,12 +21,14 @@
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
 #include <zephyr/settings/settings.h>
+#include <zephyr/sys/byteorder.h>
 #include <zephyr/sys/util.h>
 
 #include "controller.h"
 #include "gyro_mouse.h"
 #include "haptics.h"
 #include "remap.h"
+#include "rgbw_led.h"
 #include "sc26re_cfg.h"
 
 LOG_MODULE_REGISTER(remap, LOG_LEVEL_INF);
@@ -39,7 +41,7 @@ LOG_MODULE_REGISTER(remap, LOG_LEVEL_INF);
 #define PATH_PREFIX "sc26re/rmp/"
 #define CHUNK 48
 
-BUILD_ASSERT(sizeof(struct remap_profile) == 1864, "remap profile layout (web/remap.html)");
+BUILD_ASSERT(sizeof(struct remap_profile) == 1928, "remap profile layout (web/remap.html)");
 
 static struct remap_profile profiles[REMAP_PROFILES];
 
@@ -58,6 +60,23 @@ static const uint8_t shift_first[REMAP_SHIFT_GROUPS + 1] = { 0, 4, 8, 13, 18, 30
 static int8_t src_group[REMAP_SRC_COUNT]; /* -1: not in a shift group */
 static int8_t src_sidx[REMAP_SRC_COUNT];
 static bool shifted[REMAP_SHIFT_GROUPS];
+
+/* settings a profile can carry for the gyro (same order on the editor page) */
+const uint8_t remap_gyro_keys[REMAP_GYRO_KEYS] = {
+	SC26RE_CFG_GM_OUTPUT, SC26RE_CFG_GM_ACT_BUTTON, SC26RE_CFG_GM_ACT_MODE, SC26RE_CFG_GM_AXIS_PITCH,
+	SC26RE_CFG_GM_AXIS_YAW, SC26RE_CFG_GM_AXIS_ROLL, SC26RE_CFG_GM_SENS, SC26RE_CFG_GM_SCALE_P,
+	SC26RE_CFG_GM_SCALE_Y, SC26RE_CFG_GM_SCALE_R, SC26RE_CFG_GM_CURVE, SC26RE_CFG_GM_ACCEL,
+	SC26RE_CFG_GM_ACCEL_LO, SC26RE_CFG_GM_ACCEL_HI, SC26RE_CFG_GJ_DZ, SC26RE_CFG_GJ_ANTI,
+	SC26RE_CFG_GJ_MAX, SC26RE_CFG_GJ_CURVE, SC26RE_CFG_GJ_TILT, SC26RE_CFG_GM_HAPTIC,
+	SC26RE_CFG_GM_QT1_BTN, SC26RE_CFG_GM_QT1_DEG, SC26RE_CFG_GM_QT2_BTN, SC26RE_CFG_GM_QT2_DEG,
+	SC26RE_CFG_GM_QT3_BTN, SC26RE_CFG_GM_QT3_DEG, SC26RE_CFG_GM_QT4_BTN, SC26RE_CFG_GM_QT4_DEG,
+	SC26RE_CFG_GM_QT_MS, SC26RE_CFG_GM_RATCHET,
+};
+BUILD_ASSERT(SC26RE_CFG_COUNT < 256, "gyro keys are bytes");
+
+/* output monitor */
+static uint32_t mon_pad;
+static int32_t mon_dx, mon_dy, mon_wheel;
 static bool profile_dirty[REMAP_PROFILES];
 
 struct src_state
@@ -624,6 +643,9 @@ static void send_mouse(void)
 	if(transport_send_input_report(0x40, m, sizeof(m)) == 0)
 	{
 		last_buttons = mouse_buttons;
+		mon_dx += v[0];
+		mon_dy += v[1];
+		mon_wheel += v[2];
 	}
 	else
 	{
@@ -778,6 +800,93 @@ static void swipe(int j, const struct remap_analog *an, bool active, int16_t x, 
 	swipe_done[j] = (an->flags & REMAP_AF_SWIPE_REPEAT) == 0U;
 }
 
+bool remap_gyro_value(int id, int16_t *value)
+{
+	const struct remap_profile *p = active();
+
+	if(!remap_enabled() || p->magic != REMAP_MAGIC || p->version != REMAP_VERSION || !(p->flags & REMAP_PF_GYRO))
+	{
+		return false;
+	}
+	for(int k = 0; k < REMAP_GYRO_KEYS; ++k)
+	{
+		if(remap_gyro_keys[k] == id)
+		{
+			int16_t v;
+
+			memcpy(&v, (const uint8_t *)p->gyro + k * sizeof(int16_t), sizeof(v));
+			*value = v;
+			return true;
+		}
+	}
+	return false;
+}
+
+void remap_monitor(uint8_t *out)
+{
+	const struct remap_profile *p = active();
+	uint8_t sh = 0;
+
+	for(int g = 0; g < REMAP_SHIFT_GROUPS; ++g)
+	{
+		sh |= shifted[g] ? (uint8_t)BIT(g) : 0U;
+	}
+	out[0] = (uint8_t)sc26re_cfg_get(SC26RE_CFG_REMAP_PROFILE);
+	out[1] = remap_enabled() ? (p->magic == REMAP_MAGIC && p->version == REMAP_VERSION ? 1U : 2U) : 0U;
+	out[2] = sh;
+	out[3] = remap_enabled() ? mouse_buttons : 0U;
+	memcpy(&out[4], last_kbd, 8);
+	sys_put_le32(remap_enabled() ? mon_pad : 0U, &out[12]);
+	sys_put_le32(remap_xbox_buttons(), &out[16]);
+	sys_put_le32((uint32_t)mon_dx, &out[20]);
+	sys_put_le32((uint32_t)mon_dy, &out[24]);
+	sys_put_le16((uint16_t)mon_wheel, &out[28]);
+}
+
+static int pc_last = -1; /* profile last applied, -2 = apply again */
+
+/* profile becomes active / inactive: LED colour and "gyro on with this profile" */
+static void profile_changed(void)
+{
+	static bool led_saved;
+	static struct rgbw_color saved;
+	const struct remap_profile *p = active();
+	bool valid = p->magic == REMAP_MAGIC && p->version == REMAP_VERSION;
+	int now = remap_enabled() && valid ? sc26re_cfg_get(SC26RE_CFG_REMAP_PROFILE) : -1;
+	bool was_gyro_on = pc_last >= 0 && (profiles[pc_last].flags & REMAP_PF_GYRO_ON);
+
+	if(now == pc_last)
+	{
+		return;
+	}
+	pc_last = now;
+	if(now >= 0 && (p->led[0] | p->led[1] | p->led[2]))
+	{
+		if(!led_saved)
+		{
+			saved = rgbw_led_get();
+			led_saved = true;
+		}
+		rgbw_led_set((struct rgbw_color){ p->led[0], p->led[1], p->led[2], 0 });
+	}
+	else if(led_saved)
+	{
+		rgbw_led_set(saved);
+		led_saved = false;
+	}
+	if(now >= 0 && (p->flags & REMAP_PF_GYRO_ON))
+	{
+		if(sc26re_cfg_get(SC26RE_CFG_GM_ENABLED) != 1)
+		{
+			gyro_mouse_set_enabled(true);
+		}
+	}
+	else if(was_gyro_on && sc26re_cfg_get(SC26RE_CFG_GM_ENABLED) == 1)
+	{
+		gyro_mouse_set_enabled(false);
+	}
+}
+
 static const struct remap_analog *analog_cfg(const struct remap_profile *p, int i)
 {
 	int g = REMAP_SHIFT_LS + i;
@@ -864,6 +973,7 @@ void remap_process(struct controller_report *r, float dt)
 		r->buttons &= ~dp_hide;
 		raw &= ~dp_hide;
 	}
+	profile_changed();
 	if(!remap_enabled())
 	{
 		return;
@@ -1234,6 +1344,7 @@ void remap_process(struct controller_report *r, float dt)
 		}
 	}
 	r->buttons = (r->buttons & ~hide) | pad;
+	mon_pad = pad;
 
 	{
 		uint8_t kbd[8] = { mods, 0 };
@@ -1333,6 +1444,7 @@ int remap_commit(const char *path)
 	}
 	snprintf(key, sizeof(key), "user/remap/%d", p);
 	profile_dirty[p] = false;
+	pc_last = -2; /* LED / gyro of the saved profile apply again */
 	if(profiles[p].magic != REMAP_MAGIC)
 	{
 		return settings_delete(key);

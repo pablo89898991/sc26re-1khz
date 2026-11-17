@@ -405,14 +405,17 @@
 		 * Valve's bootloader occupies 0x00000-0x07fff and stores
 		 * the application header at 0x7cfe0-0x7cfff.
 		 */
+		/* sc26re v51: storage doubled to 32 KiB (remapper profiles); the old
+		 * 16 KiB area (0x78000) is the upper half of the new one, so a backup
+		 * of it is restored at offset 0x4000 and NVS finds it there */
 		application_partition: partition@8000 {
 			label = "application";
-			reg = <0x00008000 0x00070000>;
+			reg = <0x00008000 0x0006c000>;
 		};
 
-		storage_partition: partition@78000 {
+		storage_partition: partition@74000 {
 			label = "storage";
-			reg = <0x00078000 0x00004000>;
+			reg = <0x00074000 0x00008000>;
 		};
 
 		valve_app_header: partition@7c000 {

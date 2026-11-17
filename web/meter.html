@@ -673,7 +673,12 @@ async function nvsBackup(d){
 async function nvsRestore(d,bk){
   const info=await featRead(d,"nvs/info");
   const dv=new DataView(info.buffer,info.byteOffset,8);
-  if(dv.getUint32(0,true)!==bk.img.length||dv.getUint32(4,true)!==bk.chunk) throw new Error("new firmware has a different settings layout — not restored (the backup file was downloaded)");
+  const size=dv.getUint32(0,true);
+  if(dv.getUint32(4,true)!==bk.chunk) throw new Error("new firmware has a different settings layout — not restored (the backup file was downloaded)");
+  if(size===0x8000&&bk.img.length===0x4000){
+    /* v51 doubled the storage downwards: the old 16 KiB area is the upper half of the new one */
+    const img=new Uint8Array(0x8000).fill(0xFF); img.set(bk.img,0x4000); bk={img,chunk:bk.chunk};
+  } else if(size!==bk.img.length) throw new Error("new firmware has a different settings layout — not restored (the backup file was downloaded)");
   await fsend(d,1,pathCmd(0xEF,"nvs/erase")); await fwSleep(150);
   for(let off=0;off<bk.img.length;off+=bk.chunk){
     await fsend(d,1,pathCmd(0xEE,"nvs/"+off.toString(16).padStart(4,"0"),Array.from(bk.img.slice(off,off+bk.chunk))));
