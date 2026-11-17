@@ -694,6 +694,35 @@ int main(void)
 		{
 			steam_button_since = 0;
 		}
+		/*
+		 * Steam + Y held for half a second: power off. While Steam is held,
+		 * Y is hidden from the host, so the combination does nothing in games.
+		 */
+		{
+			static int64_t steam_y_since;
+			const uint32_t sy = BIT(CONTROLLER_BUTTON_STEAM) | BIT(CONTROLLER_BUTTON_Y);
+
+			if((current.buttons & sy) == sy)
+			{
+				if(steam_y_since == 0)
+				{
+					steam_y_since = k_uptime_get();
+				}
+				else if(k_uptime_get() - steam_y_since >= 500)
+				{
+					LOG_INF("Steam + Y: shutting down");
+					power_off_after_buttons_released(sy);
+				}
+			}
+			else
+			{
+				steam_y_since = 0;
+			}
+			if(current.buttons & BIT(CONTROLLER_BUTTON_STEAM))
+			{
+				current.buttons &= ~BIT(CONTROLLER_BUTTON_Y);
+			}
+		}
 
 		bool changed = first || memcmp(&current, &previous, sizeof(current)) != 0;
 		bool refresh_due = k_uptime_get() - last_input_sent >= INPUT_REFRESH_MS;
