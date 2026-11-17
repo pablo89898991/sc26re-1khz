@@ -77,7 +77,7 @@
   <div class="panel">
     <h2>Live settings (SC26RE v42+)</h2>
     <p class="note">Changed here, applied immediately. <b>Apply</b> = until power-off, <b>Save</b> = kept. “Steam” = follow the value Steam sends (the normal behaviour); setting a number overrides Steam. A hard reset returns everything to defaults. With firmware v44+ this also works while Steam is running (replies meant for Steam are recognised and the request repeated); if something still fails, close Steam.</p>
-    <div class="bar"><button id="lsRead">Read all</button><button class="primary" id="lsApply">Apply changes</button><button id="lsSave">Save</button><button id="lsDef">All defaults</button><label class="note"><input type="checkbox" id="autoRefresh" checked> auto-refresh (3 s)</label><span id="lsStatus" class="note"></span></div>
+    <div class="bar"><button id="lsRead">Read all</button><button class="primary" id="lsApply">Apply changes</button><button id="lsSave">Save</button><button id="lsDef">All defaults</button><label class="note"><input type="checkbox" id="autoRefresh"> auto-refresh (10 s)</label><span id="lsStatus" class="note"></span></div>
     <table id="lsTable" style="width:100%;border-collapse:collapse;margin-top:8px"></table>
     <div class="lbl" style="margin-top:14px">Tools</div>
     <div class="bar" style="flex-wrap:wrap;gap:10px">
@@ -395,13 +395,14 @@ function editing(){
 }
 let gmDirty=false;
 document.addEventListener("input",e=>{ if(e.target.closest&&e.target.closest("#gmPanel")) gmDirty=true; });
+let refreshing=false;
 setInterval(async()=>{
-  if(!$("#autoRefresh").checked||!devs.length||busySaving||editing()) return;
-  lsQuiet=true;
+  if(refreshing||!$("#autoRefresh").checked||!devs.length||busySaving||editing()||document.hidden) return;
+  refreshing=true; lsQuiet=true;
   try{ await lsReadAll(); }catch(e){}
   if(!gmDirty){ try{ await gmRead(); }catch(e){} }
-  lsQuiet=false;
-},3000);
+  lsQuiet=false; refreshing=false;
+},10000);
 
 /* ---- mouse link test: counts sent by the controller vs counts the PC got (raw, pointer lock) ---- */
 async function gmStateRaw(){ try{ const b=await featRead(ctl(),"sc26re/gm_state"); if(b&&b.length>=22){ const dv=new DataView(b.buffer,b.byteOffset,22); return {x:dv.getUint32(10,true),y:dv.getUint32(14,true),n:dv.getUint32(18,true)}; } }catch(e){} return null; }
@@ -506,11 +507,11 @@ async function gmPoll(){
   if(gmLastCal===2&&cal===0){ $("#gmCal360").value=String(c360); }
   gmLastCal=cal;
 }
-setInterval(gmPoll,700);
+setInterval(()=>{ if(!document.hidden&&!refreshing) gmPoll(); },2000);
 /* controller-side IMU read stats (v47+) */
 let imuStPrev=null;
 setInterval(async()=>{
-  const d=ctl(); if(!d||!devs.length) return;
+  const d=ctl(); if(!d||!devs.length||document.hidden||refreshing||busySaving) return;
   let b; try{ b=await featRead(d,"sc26re/imu_stats"); }catch(e){ return; }
   if(!b||b.length<20) return;
   const dv=new DataView(b.buffer,b.byteOffset,20), st=[0,1,2,3,4].map(i=>dv.getUint32(4*i,true));
@@ -518,7 +519,7 @@ setInterval(async()=>{
     const rate=(st[0]-imuStPrev[0])/dt, err=st[1]-imuStPrev[1];
     $("#imuStats").innerHTML=`Controller reads the IMU <b>${rate.toFixed(0)}</b>×/s · one read takes <b>${st[2]}</b> µs (max ${st[3]} µs) · errors ${err}`; } }
   imuStPrev=st;
-},1000);
+},2000);
 /* why the controller last started (v47+): helps tell a crash from a normal restart */
 async function showBoot(){
   const d=ctl(); if(!d) return;
