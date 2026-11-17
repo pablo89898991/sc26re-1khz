@@ -225,6 +225,7 @@ static bool active(uint32_t buttons, uint32_t pressed)
 /* quick turn in progress: counts still to send and counts per second */
 static float qt_left;
 static volatile float joy_x, joy_y; /* gyro joystick deflection, -1..1 */
+static float tilt_x, tilt_y;        /* deflection mode: tilt since activation, deg */
 static float qt_rate;
 
 static void quick_turn_start(int16_t deg)
@@ -397,6 +398,7 @@ void gyro_mouse_feed(const float dps[3], uint32_t buttons, float dt_s)
 	if(!act_now)
 	{
 		joy_x = joy_y = 0.0f;
+		tilt_x = tilt_y = 0.0f; /* deflection: recentred at each activation */
 		/* drop gyro movement only; whole counts of a quick turn still go out */
 		if(qt_left == 0.0f)
 		{
@@ -441,11 +443,29 @@ void gyro_mouse_feed(const float dps[3], uint32_t buttons, float dt_s)
 			}
 		}
 		w = sqrtf(wx * wx + wy * wy);
-		if(out == 1 || out == 2)
+		if(out >= 1 && out <= 4)
 		{
-			/* gyro as joystick: turn rate -> stick deflection */
+			/* gyro as joystick: camera = turn rate, deflection = tilt since activation */
 			float dz = (float)sc26re_cfg_get(SC26RE_CFG_GJ_DZ);
-			float mx = MAX((float)sc26re_cfg_get(SC26RE_CFG_GJ_MAX), dz + 1.0f);
+			float mx;
+
+			if(out >= 3)
+			{
+				float lim = (float)sc26re_cfg_get(SC26RE_CFG_GJ_TILT);
+
+				/* tilting past the limit just drags the centre along */
+				tilt_x = CLAMP(tilt_x + wx * dt_s, -lim, lim);
+				tilt_y = CLAMP(tilt_y + wy * dt_s, -lim, lim);
+				wx = tilt_x;
+				wy = tilt_y;
+				w = sqrtf(wx * wx + wy * wy);
+				dz = MIN(dz, lim - 1.0f);
+				mx = lim;
+			}
+			else
+			{
+				mx = MAX((float)sc26re_cfg_get(SC26RE_CFG_GJ_MAX), dz + 1.0f);
+			}
 			float anti = (float)sc26re_cfg_get(SC26RE_CFG_GJ_ANTI) * 0.01f;
 			float n;
 
@@ -522,11 +542,11 @@ void gyro_mouse_joystick(struct controller_report *r)
 	float jx = joy_x, jy = joy_y;
 	int32_t x, y;
 
-	if((out != 1 && out != 2) || !gyro_mouse_active() || (jx == 0.0f && jy == 0.0f))
+	if(out < 1 || out > 4 || !gyro_mouse_active() || (jx == 0.0f && jy == 0.0f))
 	{
 		return;
 	}
-	if(out == 1)
+	if(out == 1 || out == 3)
 	{
 		x = r->stick_right_x + (int32_t)lroundf(jx * 32767.0f);
 		y = r->stick_right_y + (int32_t)lroundf(jy * 32767.0f);

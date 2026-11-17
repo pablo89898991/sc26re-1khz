@@ -24,6 +24,7 @@
 #include <zephyr/sys/util.h>
 
 #include "controller.h"
+#include "gyro_mouse.h"
 #include "haptics.h"
 #include "remap.h"
 #include "sc26re_cfg.h"
@@ -131,6 +132,15 @@ static float pad_hap_dist[2];
 static float scroll_notch[2];
 static uint32_t dp4_keep;
 static bool ring_on[4];
+static uint8_t swipe_fire[2]; /* per pad this report: bit 0 up, 1 down, 2 left, 3 right */
+static bool swipe_mode[2];
+static int16_t swipe_anchor[2][2];
+static bool swipe_valid[2];
+static float pad_joy[2][2]; /* trackpad joystick added to the left / right stick, -1..1 */
+/* flick stick per stick / pad */
+static bool flick_on[4];
+static float flick_last[4];
+static float flick_left, flick_rate;
 
 /* 0 left, 1 right, 2 both */
 static int src_side(int s)
@@ -576,6 +586,10 @@ static void release_all(void)
 	memset(mouse_acc, 0, sizeof(mouse_acc));
 	memset(wheel_valid, 0, sizeof(wheel_valid));
 	memset(pad_prev_valid, 0, sizeof(pad_prev_valid));
+	memset(swipe_valid, 0, sizeof(swipe_valid));
+	memset(flick_on, 0, sizeof(flick_on));
+	memset(pad_joy, 0, sizeof(pad_joy));
+	flick_left = 0.0f;
 	if(mouse_buttons != 0U)
 	{
 		mouse_buttons = 0U;
@@ -597,6 +611,105 @@ void remap_set_enabled(bool on)
 		release_all();
 	}
 	(void)haptics_play_beep(on ? 1300 : 450, on ? 120 : 200);
+}
+
+static float wrap180(float d)
+{
+	while(d > 180.0f)
+	{
+		d -= 360.0f;
+	}
+	while(d < -180.0f)
+	{
+		d += 360.0f;
+	}
+	return d;
+}
+
+/* flick stick: pushing past the threshold turns the camera to that direction
+ * (spread over speed ms), turning the stick around keeps turning 1:1;
+ * uses the gyro mouse counts per 360 */
+static void flick(int i, const struct remap_analog *an, bool active, float fx, float fy)
+{
+	float th = (float)(an->dz_in ? an->dz_in : 80) * 0.01f;
+	float m2 = fx * fx + fy * fy;
+	float c360 = (float)gyro_mouse_counts_per_360();
+	float a;
+
+	if(!active || m2 < (flick_on[i] ? (th - 0.1f) * (th - 0.1f) : th * th))
+	{
+		flick_on[i] = false;
+		return;
+	}
+	a = atan2f(fx, fy) * 57.29578f; /* 0 = forward, + = right */
+	if(!flick_on[i])
+	{
+		uint16_t ms = an->speed ? an->speed : 100U;
+
+		flick_on[i] = true;
+		flick_left += c360 * a / 360.0f;
+		flick_rate = fabsf(flick_left) * 1000.0f / (float)MAX(ms, 1U);
+	}
+	else
+	{
+		mouse_acc[0] += c360 * wrap180(a - flick_last[i]) / 360.0f;
+	}
+	flick_last[i] = a;
+}
+
+static void flick_step(float dt)
+{
+	float step;
+
+	if(flick_left == 0.0f)
+	{
+		return;
+	}
+	step = MIN(fabsf(flick_left), flick_rate * MAX(dt, 0.0005f));
+	step = flick_left > 0.0f ? step : -step;
+	mouse_acc[0] += step;
+	flick_left -= step;
+	if(fabsf(flick_left) < 0.001f)
+	{
+		flick_left = 0.0f;
+	}
+}
+
+/* directional swipe: each swipe of the threshold length fires one direction */
+static void swipe(int j, const struct remap_analog *an, bool active, int16_t x, int16_t y)
+{
+	int32_t th = (int32_t)MAX(an->dz_in, 5) * 32767 / 100;
+	int32_t dx, dy;
+
+	swipe_fire[j] = 0U;
+	if(!active)
+	{
+		swipe_valid[j] = false;
+		return;
+	}
+	if(!swipe_valid[j])
+	{
+		swipe_anchor[j][0] = x;
+		swipe_anchor[j][1] = y;
+		swipe_valid[j] = true;
+		return;
+	}
+	dx = x - swipe_anchor[j][0];
+	dy = y - swipe_anchor[j][1];
+	if(dx * dx + dy * dy < th * th)
+	{
+		return;
+	}
+	if(abs(dy) >= abs(dx))
+	{
+		swipe_fire[j] = dy > 0 ? 1U : 2U;
+	}
+	else
+	{
+		swipe_fire[j] = dx < 0 ? 4U : 8U;
+	}
+	swipe_anchor[j][0] = x;
+	swipe_anchor[j][1] = y;
 }
 
 static const struct remap_analog *analog_cfg(const struct remap_profile *p, int i)
@@ -633,6 +746,7 @@ void remap_process(struct controller_report *r, float dt)
 	uint8_t mods = 0;
 	uint32_t pad = 0;
 	uint32_t hide = 0;
+	uint32_t bound_mask = 0;
 	int64_t now = k_uptime_get();
 
 	/* LB + RB + Menu: on/off on release; hidden from the game while held */
@@ -781,6 +895,37 @@ void remap_process(struct controller_report *r, float dt)
 		{
 			pad_prev_valid[j] = false;
 		}
+		swipe_mode[j] = an->mode == REMAP_ANALOG_SWIPE;
+		if(swipe_mode[j])
+		{
+			swipe(j, an, act, x, y);
+		}
+		else
+		{
+			swipe_fire[j] = 0U;
+			swipe_valid[j] = false;
+		}
+		if(an->mode == REMAP_ANALOG_FLICK)
+		{
+			flick(2 + j, an, act, fx, fy);
+		}
+		else
+		{
+			flick_on[2 + j] = false;
+		}
+		{
+			int t = j ^ ((an->flags & REMAP_AF_OTHER_STICK) ? 1 : 0);
+
+			pad_joy[t][0] = pad_joy[t][1] = 0.0f;
+			if(an->mode == REMAP_ANALOG_JOYSTICK && act)
+			{
+				int16_t jx = x, jy = y;
+
+				stick_dead_zones(an, &jx, &jy);
+				pad_joy[t][0] = (float)jx / 32767.0f;
+				pad_joy[t][1] = (float)jy / 32767.0f;
+			}
+		}
 		if(an->mode != REMAP_ANALOG_PASS)
 		{
 			if(j)
@@ -833,12 +978,20 @@ void remap_process(struct controller_report *r, float dt)
 		if(s < 30)
 		{
 			hide |= BIT(s);
+			bound_mask |= BIT(s);
 		}
 		if(s >= REMAP_SRC_LPAD_CW && s < REMAP_SRC_LT_SOFT)
 		{
 			int j = (s - REMAP_SRC_LPAD_CW) / 2;
 
 			if(wheel_fire[j] & BIT((s - REMAP_SRC_LPAD_CW) % 2))
+			{
+				pulse(b, ss, s, now);
+			}
+		}
+		else if(s >= REMAP_SRC_LPAD_UP && s < REMAP_SRC_LPAD_GATE && swipe_mode[(s - REMAP_SRC_LPAD_UP) / 4])
+		{
+			if(swipe_fire[(s - REMAP_SRC_LPAD_UP) / 4] & BIT((s - REMAP_SRC_LPAD_UP) % 4))
 			{
 				pulse(b, ss, s, now);
 			}
@@ -876,9 +1029,19 @@ void remap_process(struct controller_report *r, float dt)
 		}
 		else
 		{
-			stick_analog(i, an, x, y, dt);
+			if(an->mode == REMAP_ANALOG_FLICK)
+			{
+				flick(i, an, true, (float)x / 32767.0f, (float)y / 32767.0f);
+			}
+			else
+			{
+				flick_on[i] = false;
+				stick_analog(i, an, x, y, dt);
+			}
 			x = y = 0;
 		}
+		x = (int16_t)CLAMP((int32_t)x + (int32_t)lroundf(pad_joy[i][0] * 32767.0f), -32767, 32767);
+		y = (int16_t)CLAMP((int32_t)y + (int32_t)lroundf(pad_joy[i][1] * 32767.0f), -32767, 32767);
 		if(i)
 		{
 			r->stick_right_x = x;
@@ -888,6 +1051,29 @@ void remap_process(struct controller_report *r, float dt)
 		{
 			r->stick_left_x = x;
 			r->stick_left_y = y;
+		}
+	}
+	flick_step(dt);
+	if(p->flags & REMAP_PF_BLOCK_UNBOUND)
+	{
+		/* only what is mapped reaches Steam: unbound buttons and touch sensors
+		 * are dropped, trackpads left "to Steam" too (Steam button stays) */
+		hide |= (BIT(30) - 1U) & ~bound_mask & ~BIT(CONTROLLER_BUTTON_STEAM);
+		for(int j = 0; j < 2; ++j)
+		{
+			if(analog_cfg(p, 2 + j)->mode == REMAP_ANALOG_PASS)
+			{
+				if(j)
+				{
+					r->touchpad_right_x = r->touchpad_right_y = 0;
+					r->touchpad_right_pressure = 0;
+				}
+				else
+				{
+					r->touchpad_left_x = r->touchpad_left_y = 0;
+					r->touchpad_left_pressure = 0;
+				}
+			}
 		}
 	}
 	r->buttons = (r->buttons & ~hide) | pad;

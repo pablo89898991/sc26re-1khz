@@ -83,7 +83,7 @@ enum sc26re_cfg_id
 	SC26RE_CFG_GM_BAND_R_LO,
 	SC26RE_CFG_GM_BAND_R_HI,
 	SC26RE_CFG_GM_HAPTIC,      /* gyro mouse feedback: 0 off, 1 tick, 2 click, 3 strong */
-	SC26RE_CFG_GM_OUTPUT,      /* gyro output: 0 mouse, 1 right stick, 2 left stick */
+	SC26RE_CFG_GM_OUTPUT,      /* gyro output: 0 mouse, 1/2 joystick camera right/left, 3/4 joystick deflection right/left */
 	SC26RE_CFG_GM_CURVE,       /* gyro mouse response exponent x10 (10 = linear) */
 	SC26RE_CFG_GM_ACCEL,       /* gyro mouse acceleration: extra % at fast turns (0 off) */
 	SC26RE_CFG_GM_ACCEL_LO,    /* deg/s where the acceleration starts */
@@ -92,6 +92,7 @@ enum sc26re_cfg_id
 	SC26RE_CFG_GJ_ANTI,        /* gyro joystick anti dead zone, % */
 	SC26RE_CFG_GJ_MAX,         /* gyro joystick: deg/s for full deflection */
 	SC26RE_CFG_GJ_CURVE,       /* gyro joystick response exponent x10 */
+	SC26RE_CFG_GJ_TILT,        /* gyro joystick deflection: degrees of tilt for full deflection */
 	SC26RE_CFG_COUNT,
 };
 

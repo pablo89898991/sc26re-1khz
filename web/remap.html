@@ -106,6 +106,7 @@
         <input id="pname" maxlength="13" placeholder="profile name" style="width:170px">
         <button class="primary" id="write">Save to controller</button>
         <span id="dirty" class="chip warn" style="display:none">unsaved changes</span>
+        <label class="note" title="Inputs without a binding (buttons, touch sensors, trackpads left “to Steam”) send nothing to Steam or the game. Sticks in Analog mode and the Steam button still work."><input type="checkbox" id="block"> unbound inputs do nothing</label>
         <span class="grow"></span>
         <button id="read" class="ghost">Reload</button>
         <button id="export" class="ghost">Export</button>
@@ -143,6 +144,10 @@
       <p><b>D-pad</b>: 8-way (diagonals press both directions) or 4-way (one direction at a time). <b>Sticks</b>: analog to Steam (with inner / outer dead zones), D-pad 4-way or 8-way (each direction bound like a button, dead zone = how far before it fires), mouse or scroll. <b>Trackpads</b>: to Steam, D-pad 4-way / 8-way, mouse, scroll wheel (circle your finger; each step fires clockwise / counter-clockwise) or gates (4 corners). A trackpad mode works while the pad is <b>touched</b> or only while it is <b>clicked</b>. Click the stick or trackpad to choose; its directions / corners / wheel appear in the list.</p>
       <h3>Mode shifts</h3>
       <p>Like Steam Input: every group (face buttons, D-pad, each stick, each trackpad, each trigger) can have a <b>mode shift button</b>. While you hold it, the group uses a second set of settings and bindings — e.g. hold LB and the right trackpad turns from mouse into a scroll wheel. Open the group (or one of its buttons), choose the button under “Mode shift”, then switch between <b>Normal</b> and <b>Shifted ⇧</b> to edit each. The shift button itself is not sent to the game.</p>
+      <h3>More trackpad / stick modes</h3>
+      <p><b>Joystick</b> (trackpads): the finger position works as a stick for Steam, on the same or the other side, with dead zones, anti dead zone and curve. <b>Flick stick</b> (sticks and trackpads): push past the threshold and the camera turns to face that direction, then rotating keeps turning 1:1 — it uses the gyro mouse “counts per 360°”, so do the 360° calibration first. <b>Directional swipe</b> (trackpads): each swipe fires up / down / left / right.</p>
+      <h3>Unbound inputs do nothing</h3>
+      <p>Per profile: when ticked, Steam and the game only get what the profile maps — every input without a binding (buttons, touch sensors, trackpads left “to Steam”) is dropped. Sticks set to Analog and the Steam button still work.</p>
       <h3>Outer ring</h3>
       <p>Sticks and trackpads have an outer ring: its binding fires while the stick / finger is beyond the radius you set (or inside it, with invert) — e.g. sprint when the stick is pushed all the way.</p>
       <h3>Triggers</h3>
@@ -210,14 +215,14 @@ const bOff=s=>bOffL(s,useShift(SGRP[s])?1:0);
 const RAWBTN=[[0,"A"],[1,"B"],[2,"X"],[3,"Y"],[19,"LB"],[9,"RB"],[27,"LT click"],[23,"RT click"],[17,"L4"],[18,"L5"],[7,"R4"],[8,"R5"],[15,"L3"],[5,"R3"],[6,"View"],[14,"Menu"],[4,"QAM"],[13,"D-pad up"],[10,"D-pad down"],[12,"D-pad left"],[11,"D-pad right"],[26,"Left pad click"],[22,"Right pad click"],[25,"Left pad touch"],[21,"Right pad touch"],[24,"Left stick touch"],[20,"Right stick touch"],[29,"Left grip touch"],[28,"Right grip touch"]];
 const SHBTN=[[0,"— none —"],...RAWBTN.map(([v,n])=>[v+1,n])];
 const shName=g=>(SHBTN.find(([v])=>v===shBtn(g))||[0,"?"])[1];
-const MODES_STICK=[[0,"Analog (to Steam)"],[1,"D-pad 4-way"],[2,"D-pad 8-way"],[3,"Mouse"],[4,"Scroll"]];
-const MODES_PAD=[[0,"To Steam (not remapped)"],[1,"D-pad 4-way"],[2,"D-pad 8-way"],[3,"Mouse"],[4,"Scroll wheel (circle)"],[5,"Gates (4 corners)"]];
+const MODES_STICK=[[0,"Analog (to Steam)"],[1,"D-pad 4-way"],[2,"D-pad 8-way"],[3,"Mouse"],[4,"Scroll"],[7,"Flick stick"]];
+const MODES_PAD=[[0,"To Steam (not remapped)"],[1,"D-pad 4-way"],[2,"D-pad 8-way"],[3,"Mouse"],[4,"Scroll wheel (circle)"],[5,"Gates (4 corners)"],[6,"Joystick"],[7,"Flick stick"],[8,"Directional swipe"]];
 const modeNameL=(an,L)=>((isPad(an)?MODES_PAD:MODES_STICK).find(([v])=>v===prof[cur][aOffL(an,L)])||[0,"?"])[1];
 const modeName=an=>modeNameL(an,0)+(shBtn(GRP_OF_AN[an])?` <em>⇧ ${shName(GRP_OF_AN[an])}:</em> ${modeNameL(an,1)}`:"");
 const HAPT=[[0,"off"],[1,"tick (light)"],[2,"click"],[3,"strong"]];
 /* sub-inputs of a stick / pad mode: [source, label] */
 function subSources(an,L){ const o=L===undefined?aOff(an):aOffL(an,L), b=prof[cur], m=b[o], base={ls:30,rs:34,lp:38,rp:42}[an], out=[];
-  if(m===1||m===2) out.push(...["Up","Down","Left","Right"].map((n,i)=>[base+i,n]));
+  if(m===1||m===2||(isPad(an)&&m===8)) out.push(...["Up","Down","Left","Right"].map((n,i)=>[base+i,m===8?"Swipe "+n.toLowerCase():n]));
   if(isPad(an)&&m===5){ const g=an==="lp"?46:50; out.push(...["Top-left","Top-right","Bottom-left","Bottom-right"].map((n,i)=>[g+i,n])); }
   if(isPad(an)&&m===4){ const w=an==="lp"?54:56; out.push([w,"Clockwise"],[w+1,"Counter-clockwise"]); }
   if(b[o+8]>0) out.push([60+AIDX[an],"Outer ring"]);
@@ -304,7 +309,7 @@ function picture(){
 }
 function render(){
   buildTabs();
-  $("#pname").value=nameOf(prof[cur]);
+  $("#pname").value=nameOf(prof[cur]); $("#block").checked=(prof[cur][19]&1)!==0;
   const b0=prof[cur];
   $("#colL").innerHTML=`<div class="sect">Left</div>${item(19,"LB")}${item(17,"L4")}${item(18,"L5")}${item(6,"View")}${item(15,"L3 click")}
     <div class="sect">Left trigger</div>${item(58,`soft pull ${b0[17]||50}%`)}${item(27,"full pull")}
@@ -370,6 +375,19 @@ function editor(){
       h+=pct("anti",b[o+10],0,90,"Anti dead zone","smallest deflection Steam sees once out of the dead zone");
       h+=slider("crv",cv||10,5,40,1,"Response curve",X,"1.0× linear · above = finer near the centre · below = faster start");
     }
+    if(pad&&m===6){
+      h+=`<div class="row2"><label>Drives</label><select id="aoth"><option value="0">the ${an==="lp"?"left":"right"} stick</option><option value="4">the ${an==="lp"?"right":"left"} stick</option></select><small>added to that stick in the pad report</small></div>`;
+      h+=pct("dzi",b[o+2],0,90,"Inner dead zone","");
+      h+=pct("dzo",b[o+3],0,50,"Outer dead zone","full deflection this much before the edge");
+      h+=pct("anti",b[o+10],0,90,"Anti dead zone","");
+      h+=slider("crv",cv||10,5,40,1,"Response curve",X,"1.0× linear");
+    }
+    if(m===7){
+      h+=pct("dzi",b[o+2]||80,20,100,"Flick threshold","how far before it flicks");
+      h+=slider("asp",sp,0,500,10,"Flick time",v=>v?v+" ms":"instant","how long the turn takes");
+      h+=`<p class="note" style="white-space:normal;max-width:560px">Push = the camera turns to face that direction, rotate = keep turning 1:1. Uses the gyro mouse “counts per 360°” (set by the 360° calibration).</p>`;
+    }
+    if(pad&&m===8) h+=pct("dzi",b[o+2],5,100,"Swipe length","% of the pad per fired direction; long swipes fire repeatedly");
     if(m===1||m===2||m===5||(m===4&&pad)||(m===3&&!pad)||(m===4&&!pad))
       h+=pct("dzi",b[o+2],0,90,pad?"Dead zone (centre)":"Dead zone",m===1||m===2?"how far before a direction fires":pad?"finger inside it = nothing":"");
     if(m===3) h+=slider("asp",sp,pad?100:100,pad?20000:10000,50,"Sensitivity",v=>v+(pad?" / swipe":" /s"),pad?"mouse counts for a swipe across the whole pad":"mouse counts per second at full tilt");
@@ -388,6 +406,9 @@ function editor(){
     $("#amode").onchange=e=>{ const nm=+e.target.value; b[o]=nm;
       if(nm===3){ dv.setUint16(o+4,pad?1200:1500,true); b[o+9]=0; }
       if(nm===4) dv.setUint16(o+4,pad?30:800,true);
+      if(nm===7){ dv.setUint16(o+4,100,true); b[o+2]=80; }
+      if(nm===8) b[o+2]=15;
+      if(nm===6){ b[o+2]=10; b[o+3]=10; }
       if(nm===0&&!pad){ b[o+2]=0; b[o+3]=0; b[o+9]=0; }
       if((nm===1||nm===2)&&b[o+2]<5) b[o+2]=pad?20:30;
       if(pad&&(nm===4||nm===5)&&b[o+2]<5) b[o+2]=20;
@@ -395,7 +416,8 @@ function editor(){
     if($("#aact")){ $("#aact").value=String(b[o+1]&1); $("#aact").onchange=e=>{ b[o+1]=(b[o+1]&~1)|+e.target.value; setDirty(); render(); }; }
     wirePct("dzi",v=>b[o+2]=v); wirePct("dzo",v=>b[o+3]=v); wirePct("anti",v=>b[o+10]=v);
     wireSl("crv",X,v=>b[o+9]=v);
-    if($("#asp")){ const f=$("#asp_o").textContent; wireSl("asp",{3:v=>v+(pad?" / swipe":" /s"),4:pad?(v=>v+"°"):(v=>(v/100).toFixed(1)+" notches/s")}[m],v=>dv.setUint16(o+4,v,true)); }
+    if($("#asp")){ wireSl("asp",{3:v=>v+(pad?" / swipe":" /s"),4:pad?(v=>v+"°"):(v=>(v/100).toFixed(1)+" notches/s"),7:v=>v?v+" ms":"instant"}[m],v=>dv.setUint16(o+4,v,true)); }
+    if($("#aoth")){ $("#aoth").value=String(b[o+1]&4); $("#aoth").onchange=e=>{ b[o+1]=(b[o+1]&~4)|+e.target.value; setDirty(); }; }
     wireSl("ring",v=>v?v+"%":"off",v=>b[o+8]=v);
     if($("#rinv")) $("#rinv").onchange=e=>{ b[o+1]=(b[o+1]&~2)|(e.target.checked?2:0); setDirty(); render(); };
     if($("#ahap")){ $("#ahap").value=String(b[o+6]); $("#ahap").onchange=e=>{ b[o+6]=+e.target.value; setDirty(); }; }
@@ -431,6 +453,7 @@ $("#dlgClear").onclick=()=>{ if(typeof sel==="number"){ prof[cur].fill(0,bOff(se
 $("#dlg").addEventListener("close",()=>{ layer=0; });
 $("#dlg").addEventListener("close",()=>{ sel=null; render(); });
 $("#pname").oninput=()=>{ saveName(); setDirty(); buildTabs(); };
+$("#block").onchange=e=>{ prof[cur][19]=(prof[cur][19]&~1)|(e.target.checked?1:0); setDirty(); };
 document.querySelectorAll(".view").forEach(b=>b.onclick=()=>{ document.querySelectorAll(".view").forEach(x=>x.classList.toggle("on",x===b)); for(const v of ["map","gyro","help"]) $("#v_"+v).hidden=v!==b.dataset.v; });
 window.addEventListener("beforeunload",e=>{ if(dirty){ e.preventDefault(); e.returnValue=""; } });
 /* ---- WebHID, same protocol as the report meter ---- */
@@ -545,13 +568,14 @@ const GY=[
  ["gmb:r","Mouse dead band roll","gband",null,0,""],
  ...[1,2,3,4].flatMap(q=>[[`gm_qt${q}_btn`,`Quick turn ${q}`,"sel",BTNOPTS,1,""],[`gm_qt${q}_deg`,`… angle`,"sel",DEGOPTS,1,""]]),
  ["gm_qt_ms","Quick turn time","num",[0,500,10],1,"ms, 0 = instant"],
- ["gm_output","Gyro drives","sel",[[0,"the mouse"],[1,"a joystick — right stick"],[2,"a joystick — left stick"]],1,""],
+ ["gm_output","Gyro drives","sel",[[0,"the mouse"],[1,"joystick camera — right stick"],[2,"joystick camera — left stick"],[3,"joystick deflection — right stick"],[4,"joystick deflection — left stick"]],1,""],
+ ["gj_tilt","Deflection: full at","num",[5,90,1],1,"° of tilt since the gyro turned on"],
  ["gm_curve","Response curve","num",[0.5,4,0.1],10,"1.0 = linear (true 1:1)"],
  ["gm_accel","Acceleration","num",[0,400,5],1,"% extra speed at fast turns; 0 = off"],
  ["gm_accel_lo","Acceleration starts at","num",[0,1000,5],1,"°/s"],
  ["gm_accel_hi","Acceleration full at","num",[1,2000,5],1,"°/s"],
- ["gj_max","Full deflection at","num",[10,2000,5],1,"°/s of turning = stick fully pushed"],
- ["gj_dz","Dead zone","num",[0,200,1],1,"°/s"],
+ ["gj_max","Camera: full deflection at","num",[10,2000,5],1,"°/s of turning = stick fully pushed"],
+ ["gj_dz","Dead zone","num",[0,200,1],1,"°/s (camera) or ° (deflection)"],
  ["gj_anti","Anti dead zone","num",[0,90,1],1,"%"],
  ["gj_curve","Response curve","num",[0.5,4,0.1],10,"1.0 = linear"],
  ["gm_haptic","Haptics","sel",[[0,"off"],[1,"tick (light)"],[2,"click"],[3,"strong"]],1,"when the activation button starts the mouse and on quick turns"],
@@ -578,11 +602,11 @@ const CARDS=()=>[
    ${row("Axes","what each gyro axis moves",ctlHtml("gm_axis_pitch","Pitch")+ctlHtml("gm_axis_yaw","Yaw")+ctlHtml("gm_axis_roll","Roll"))}
    ${one("gm_haptic")}</div>`,
  `<div class="card"><h3>Gyro output and response</h3>
-   ${one("gm_output","mouse = real-world sensitivity below; joystick = for games without mouse support")}
+   ${one("gm_output","mouse = real-world sensitivity; joystick camera = turn speed → stick; deflection = tilt → stick (re-centres each time the gyro turns on)")}
    <div class="sect" style="margin-left:0">Mouse</div>
    ${one("gm_curve")}${one("gm_accel")}${row("Acceleration range","°/s: from … to",ctlHtml("gm_accel_lo","from")+ctlHtml("gm_accel_hi","to"))}
    <div class="sect" style="margin-left:0">Joystick</div>
-   ${one("gj_max")}${one("gj_dz")}${one("gj_anti")}${one("gj_curve")}</div>`,
+   ${one("gj_max")}${one("gj_tilt")}${one("gj_dz")}${one("gj_anti")}${one("gj_curve")}</div>`,
  `<div class="card"><h3>Gyro as mouse — sensitivity</h3>
    ${one("gm_sens")}
    ${row("Per axis","% of the sensitivity",ctlHtml("gm_scale_p","P")+ctlHtml("gm_scale_y","Y")+ctlHtml("gm_scale_r","R"))}

@@ -50,9 +50,15 @@ enum
 #define REMAP_ANALOG_MOUSE 3
 #define REMAP_ANALOG_SCROLL 4 /* sticks: scroll; trackpads: circular scroll wheel */
 #define REMAP_ANALOG_GATES 5  /* trackpads: 4 corner gates */
+#define REMAP_ANALOG_JOYSTICK 6 /* trackpads: finger position = stick deflection */
+#define REMAP_ANALOG_FLICK 7    /* flick stick: point = turn there, rotate = keep turning */
+#define REMAP_ANALOG_SWIPE 8    /* trackpads: swipes fire the 4 directions */
+
+#define REMAP_PF_BLOCK_UNBOUND 0x01 /* inputs without a binding send nothing to Steam */
 
 #define REMAP_AF_CLICK 0x01       /* trackpads: active while clicked (else while touched) */
 #define REMAP_AF_RING_INVERT 0x02 /* outer ring fires inside the radius instead */
+#define REMAP_AF_OTHER_STICK 0x04 /* trackpad joystick: drive the other side's stick */
 
 struct remap_analog
 {
@@ -105,7 +111,8 @@ struct remap_profile
 	char name[14];
 	uint8_t dpad_4way;    /* physical D-pad: 0 8-way, 1 4-way */
 	uint8_t trig_soft[2]; /* soft pull point, % of travel */
-	uint8_t reserved[13];
+	uint8_t flags;        /* REMAP_PF_* */
+	uint8_t reserved[12];
 	struct remap_analog an[4]; /* left stick, right stick, left pad, right pad */
 	struct remap_shift shift[REMAP_SHIFT_GROUPS];
 	struct remap_binding bind[REMAP_SRC_COUNT];
