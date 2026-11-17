@@ -47,6 +47,7 @@ static bool chord_down, chord_saw_a;
 static enum cal_state cal;
 static float cal_counts;     /* counts sent during the calibration turn */
 static uint32_t cal_button_mask;
+static uint32_t cal_hide;
 static K_MUTEX_DEFINE(lock);
 /* counts handed to the transport (report meter link test) */
 static atomic_t sent_abs_x, sent_abs_y, sent_reports;
@@ -292,6 +293,34 @@ uint32_t gyro_mouse_filter_buttons(uint32_t raw)
 			}
 		}
 		raw &= ~own;
+
+		/* 360 calibration: its button starts/stops the turn and is hidden from
+		 * Steam and the game until the calibration ends */
+		if(cal != CAL_IDLE)
+		{
+			uint32_t m = cal_button_mask;
+
+			if(!chord_down && (pressed & m))
+			{
+				k_mutex_lock(&lock, K_FOREVER);
+				if(cal == CAL_ARMED)
+				{
+					cal_go();
+				}
+				else if(cal == CAL_TURNING)
+				{
+					cal_finish(true);
+				}
+				k_mutex_unlock(&lock);
+			}
+			cal_hide = m;
+		}
+		/* hidden until released, also right after the calibration ended */
+		if(cal_hide != 0U && (prev_raw & cal_hide) == 0U && cal == CAL_IDLE)
+		{
+			cal_hide = 0U;
+		}
+		raw &= ~cal_hide;
 	}
 	/* from the moment the chord is complete until all its buttons are up,
 	 * the game does not see them */
@@ -319,17 +348,6 @@ void gyro_mouse_feed(const float dps[3], uint32_t buttons, float dt_s)
 	k_mutex_lock(&lock, K_FOREVER);
 	if(cal != CAL_IDLE)
 	{
-		if(!chord_down && (pressed & cal_button_mask))
-		{
-			if(cal == CAL_ARMED)
-			{
-				cal_go();
-			}
-			else
-			{
-				cal_finish(true);
-			}
-		}
 		if(cal == CAL_TURNING)
 		{
 			float c = (float)sc26re_cfg_get(SC26RE_CFG_GM_CAL_SPEED) * dt_s;
