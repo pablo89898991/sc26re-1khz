@@ -645,6 +645,12 @@ bool valve_settings_read(const char *path, uint8_t *buf, size_t capacity, size_t
 		}
 		olympus_capsense_get(buf);
 		*len = OLYMPUS_CAPSENSE_SIZE;
+		if(capacity >= 2U * OLYMPUS_CAPSENSE_SIZE)
+		{
+			/* then the user's own values, 0 = default */
+			olympus_capsense_get_user(&buf[OLYMPUS_CAPSENSE_SIZE]);
+			*len = 2U * OLYMPUS_CAPSENSE_SIZE;
+		}
 		return true;
 	}
 	enum calibration_side side;

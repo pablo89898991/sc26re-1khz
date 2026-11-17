@@ -972,7 +972,11 @@ async function lsReadAll(){
         lsEl("lsa_"+n).style.display="";
         lsEl("lsr_"+n).textContent="0 … 16000";
         if(!cap||cap.length<6){ inp.value=""; inp.dataset.orig=""; continue; }
-        const v=cap[k*2]|(cap[k*2+1]<<8); inp.value=v; inp.dataset.orig=v; cb.checked=false; inp.disabled=false;
+        const v=cap[k*2]|(cap[k*2+1]<<8);
+        /* v50+: bytes 6..11 are the user's values, 0 = default (shown greyed with the value in use) */
+        const user=cap.length>=12?(cap[6+k*2]|(cap[7+k*2]<<8)):v;
+        const isDef=cap.length>=12&&user===0;
+        inp.value=v; inp.dataset.orig=isDef?0:v; cb.checked=isDef; inp.disabled=isDef;
         if(k===0) capTh.on=v; else if(k===1) capTh.off=v; else capTh.grip=v;
         continue;
       }

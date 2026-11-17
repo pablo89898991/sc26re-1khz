@@ -1258,6 +1258,14 @@ void olympus_capsense_get(uint8_t out[OLYMPUS_CAPSENSE_SIZE])
 	sys_put_le16((uint16_t)CLAMP(grip_touch_threshold(), 0, UINT16_MAX), &out[4]);
 }
 
+/* the values set by the user, 0 = default (the report meter shows "default") */
+void olympus_capsense_get_user(uint8_t out[OLYMPUS_CAPSENSE_SIZE])
+{
+	sys_put_le16(cap_user_stick_on, &out[0]);
+	sys_put_le16(cap_user_stick_off, &out[2]);
+	sys_put_le16(cap_user_grip_on, &out[4]);
+}
+
 int olympus_capsense_set(const uint8_t *data, size_t len)
 {
 	if(data == NULL || len < OLYMPUS_CAPSENSE_SIZE)

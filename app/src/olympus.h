@@ -46,6 +46,7 @@ int olympus_init(void);
  * get returns the effective values; set applies live; save persists them.
  */
 #define OLYMPUS_CAPSENSE_SIZE 6
+void olympus_capsense_get_user(uint8_t out[OLYMPUS_CAPSENSE_SIZE]);
 void olympus_capsense_get(uint8_t out[OLYMPUS_CAPSENSE_SIZE]);
 int olympus_capsense_set(const uint8_t *data, size_t len);
 int olympus_capsense_save(void);
