@@ -918,7 +918,10 @@ void remap_process(struct controller_report *r, float dt)
 		                  : 0U;
 		gates[j] = act && an->mode == REMAP_ANALOG_GATES ? gate_mask(fx, fy, dz) : 0U;
 		center_on[j] = false;
-		if(act && an->mode == REMAP_ANALOG_GRID)
+		bool touched = (raw & BIT(j ? CONTROLLER_BUTTON_RIGHT_TOUCHPAD_TOUCH : CONTROLLER_BUTTON_LEFT_TOUCHPAD_TOUCH)) != 0U;
+		int grid_zone = -1;
+
+		if(touched && an->mode == REMAP_ANALOG_GRID)
 		{
 			/* 3 x 3 zones split by the grid lines: corners = gates, edges = directions */
 			static const uint8_t zone_dir[9] = { 0, 1, 0, 4, 0, 8, 0, 2, 0 };
@@ -935,9 +938,13 @@ void remap_process(struct controller_report *r, float dt)
 			int row = fy > t ? 0 : (fy < bt ? 2 : 1);
 			int z = row * 3 + col;
 
-			dirs[2 + j] = zone_dir[z];
-			gates[j] = zone_gate[z];
-			center_on[j] = z == 4;
+			grid_zone = z;
+			if(act)
+			{
+				dirs[2 + j] = zone_dir[z];
+				gates[j] = zone_gate[z];
+				center_on[j] = z == 4;
+			}
 		}
 		{
 			/* zone feedback: a haptic tick whenever the finger crosses into
@@ -945,17 +952,19 @@ void remap_process(struct controller_report *r, float dt)
 			static int16_t last_zone[2] = { -1, -1 };
 			int16_t zone = -1;
 
-			if(act && an->mode == REMAP_ANALOG_GATES)
+			/* felt as soon as the finger touches, before any click: you find the
+			 * zone by feel, then press */
+			if(touched && an->mode == REMAP_ANALOG_GATES)
 			{
-				zone = gates[j];
+				zone = gate_mask(fx, fy, dz);
 			}
-			else if(act && an->mode == REMAP_ANALOG_GRID)
+			else if(touched && an->mode == REMAP_ANALOG_GRID)
 			{
-				zone = (int16_t)(gates[j] | (dirs[2 + j] << 4) | (center_on[j] ? 0x100 : 0));
+				zone = (int16_t)grid_zone;
 			}
-			else if(act && (an->mode == REMAP_ANALOG_DPAD4 || an->mode == REMAP_ANALOG_DPAD8))
+			else if(touched && (an->mode == REMAP_ANALOG_DPAD4 || an->mode == REMAP_ANALOG_DPAD8))
 			{
-				zone = dirs[2 + j];
+				zone = dir_mask(an->mode, fx, fy, dz);
 			}
 			if(zone >= 0 && last_zone[j] >= 0 && zone != last_zone[j])
 			{

@@ -51,7 +51,8 @@ static const struct hardware_button buttons[] = {
 	BUTTON_ENTRY(button_right_stick, RIGHT_STICK),
 #endif
 #if DT_NODE_HAS_STATUS(DT_ALIAS(button_view), okay)
-	BUTTON_ENTRY(button_view, VIEW),
+	/* the board's "button-view" alias is the right button (Menu, three lines): bit 6 */
+	BUTTON_ENTRY(button_view, MENU),
 #endif
 #if DT_NODE_HAS_STATUS(DT_ALIAS(button_right_paddle1), okay)
 	BUTTON_ENTRY(button_right_paddle1, RIGHT_PADDLE1),
@@ -75,7 +76,8 @@ static const struct hardware_button buttons[] = {
 	BUTTON_ENTRY(button_dpad_up, DPAD_UP),
 #endif
 #if DT_NODE_HAS_STATUS(DT_ALIAS(button_menu), okay)
-	BUTTON_ENTRY(button_menu, MENU),
+	/* "button-menu" is the left button (View, two squares): bit 14 */
+	BUTTON_ENTRY(button_menu, VIEW),
 #endif
 #if DT_NODE_HAS_STATUS(DT_ALIAS(button_left_stick), okay)
 	BUTTON_ENTRY(button_left_stick, LEFT_STICK),
