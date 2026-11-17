@@ -328,7 +328,13 @@ let foreignHits=[];
 function noteForeign(){ const t=performance.now(); foreignHits=foreignHits.filter(x=>t-x<10000); foreignHits.push(t); }
 function foreignRecent(){ const t=performance.now(); return foreignHits.filter(x=>t-x<10000).length>=3; }
 let featChain=Promise.resolve();
-function serial(fn){ const p=featChain.then(fn,fn); featChain=p.catch(()=>{}); return p; }
+/* one feature request at a time. A request to a controller that just vanished
+   (restart, flash) can hang forever in the browser: the queue moves on after 8 s
+   so nothing after it (restore, settings) waits behind it forever. */
+function serial(fn){
+  const run=()=>Promise.race([Promise.resolve().then(fn),new Promise((_,rej)=>setTimeout(()=>rej(new Error("no reply from the controller (timeout)")),8000))]);
+  const p=featChain.then(run,run); featChain=p.catch(()=>{}); return p;
+}
 async function fsend(d,id,buf){
   return serial(async()=>{
     for(let attempt=0;;attempt++){
