@@ -441,7 +441,7 @@ void remap_process(struct controller_report *r, float dt)
 	 * hidden from the host and from the bindings.
 	 */
 	{
-		static uint32_t dp_prev;
+		static uint32_t dp_prev, dp_hide;
 		const uint32_t dp_mask = BIT(CONTROLLER_BUTTON_DPAD_UP) | BIT(CONTROLLER_BUTTON_DPAD_RIGHT) |
 		                         BIT(CONTROLLER_BUTTON_DPAD_DOWN) | BIT(CONTROLLER_BUTTON_DPAD_LEFT);
 		static const uint8_t dp_bit[REMAP_PROFILES] = { CONTROLLER_BUTTON_DPAD_UP, CONTROLLER_BUTTON_DPAD_RIGHT,
@@ -461,11 +461,15 @@ void remap_process(struct controller_report *r, float dt)
 			}
 		}
 		dp_prev = dp;
+		/* a D-pad direction touched while Steam is held stays hidden until
+		 * it is released, even when Steam is let go first */
 		if(raw & BIT(CONTROLLER_BUTTON_STEAM))
 		{
-			r->buttons &= ~dp_mask;
-			raw &= ~dp_mask;
+			dp_hide |= raw & dp_mask;
 		}
+		dp_hide &= raw & dp_mask;
+		r->buttons &= ~dp_hide;
+		raw &= ~dp_hide;
 	}
 	if(!remap_enabled())
 	{
