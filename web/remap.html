@@ -8,6 +8,7 @@
   :root{--bg:#0e1420;--panel:#161f30;--panel2:#1d283c;--edge:#2b3850;--ink:#e6edf7;--muted:#90a0ba;--accent:#4ea1ff;--accent2:#7cc4ff;--ok:#3fd07f;--warn:#ffb347;--err:#ff6b6b;--mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;}
   *{box-sizing:border-box}
   body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.55 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;padding:28px 16px 60px;}
+  section[hidden]{display:none}
   .wrap{max-width:980px;margin:0 auto;}
   h1{font-size:23px;margin:0 0 4px;} h1 .hz{color:var(--accent2);}
   .sub{color:var(--muted);margin:0 0 20px;font-size:14px;}
@@ -54,55 +55,90 @@
   details.card summary{cursor:pointer;color:var(--accent2);font-weight:600;font-size:14px}
   @media (max-width:900px){.cards{grid-template-columns:1fr}}
   @media (max-width:900px){.board{grid-template-columns:1fr}.bottom{grid-template-columns:repeat(2,1fr)}}
+  .top{position:sticky;top:0;z-index:5;background:rgba(14,20,32,.92);backdrop-filter:blur(6px);border-bottom:1px solid var(--edge);margin:-28px -16px 18px;padding:10px 16px}
+  .topin{max-width:980px;margin:0 auto;display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+  .brand{font-weight:700;font-size:18px;margin-right:6px} .brand .hz{color:var(--accent2)}
+  .grow{flex:1}
+  .chip{font-size:12px;padding:4px 10px;border-radius:999px;background:var(--panel2);border:1px solid var(--edge);color:var(--muted)}
+  .chip.ok{color:#9ff0c4;border-color:#2f7d58} .chip.warn{color:#ffd58a;border-color:#8a6a2a}
+  .sw b{font-weight:700} .sw.on{background:#173b2c;border-color:#3fd07f;color:#c8ffe0}
+  .views{display:flex;gap:6px;margin-bottom:12px} .view{border-radius:999px} .view.on{background:var(--accent);color:#06101f;border-color:var(--accent);font-weight:700}
+  .profbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap} .profact{margin-top:10px}
+  .ghost{background:transparent} .danger{color:#ff9b9b} .btnlike{border:1px solid var(--edge);border-radius:9px;padding:8px 12px;font-size:14px;cursor:pointer}
+  dialog{background:var(--panel);color:var(--ink);border:1px solid var(--edge);border-radius:14px;padding:18px;min-width:min(620px,92vw)}
+  dialog::backdrop{background:rgba(0,0,0,.55)}
+  .help h3{font-size:15px;color:var(--accent2);margin:14px 0 4px} .help h3:first-child{margin-top:0} .help p{margin:0;color:#c9d4e6;font-size:14px}
 </style>
 </head>
 <body>
-<div class="wrap">
-  <h1>SC2 <span class="hz">Remapper</span></h1>
-  <p class="sub">Map every Steam Controller (2026) input — buttons, back buttons L4/L5/R4/R5, trigger clicks, stick / trackpad / grip touch, sticks and trackpads — to keyboard, mouse and Steam pad buttons. Profiles live <b>in the controller</b>: it works without Steam and without installing anything, over cable and the Puck. Needs sc26re firmware v51+ and desktop Chrome / Edge / Brave (WebHID).</p>
-
-  <div class="panel">
-    <h2>Controller</h2>
-    <div class="bar">
-      <button class="primary" id="connect">Connect controller…</button>
-      <span id="status" class="note">not connected</span>
-    </div>
-    <div class="bar" style="margin-top:10px">
-      <button id="onoff">Remapper: ?</button>
-      <label class="note">active profile <select id="activeProf"><option value="0">1</option><option value="1">2</option><option value="2">3</option><option value="3">4</option></select></label>
-      <span class="note">On the controller: <b>LB + RB + Menu</b> turns the remapper on/off (high beep = on). While it is on, every mapped input belongs to it: Steam and the game only see what it is mapped to. Unmapped inputs work as usual.</span>
-    </div>
-  </div>
-
-  <div class="panel">
-    <div class="bar" id="tabs"></div>
-    <div class="bar" style="margin-top:10px">
-      <label class="note">name <input id="pname" maxlength="13" style="width:150px"></label>
-      <button id="read">Read from controller</button>
-      <button class="primary" id="write">Save to controller</button>
-      <button id="clear">Clear profile</button>
-      <button id="export">Export…</button>
-      <label class="note"><input type="file" id="import" accept=".json" style="width:180px"></label>
-      <span id="pstatus" class="note"></span>
-    </div>
-    <p class="note">Click an input on the controller or in the lists to edit it. <b>Press</b>: actions while held (up to 4 at once, e.g. Ctrl + C). <b>Hold</b>: a second set when held longer than 0.25 s (a short press then taps the first set). <b>Double</b>: a set on a second quick press. <b>Toggle</b>: the first set switches on/off with each press. Inputs light up green while you press them.</p>
-    <div class="board">
-      <div class="col l" id="colL"></div>
-      <div id="pic"></div>
-      <div class="col r" id="colR"></div>
-    </div>
-    <div class="bottom" id="colB"></div>
-    <div id="editor"></div>
-  </div>
-  <div class="panel" id="gyroPanel">
-    <h2>Gyro and gyro as mouse</h2>
-    <div class="bar"><button id="gyRead">Read</button><button class="primary" id="gyApply">Apply</button><button id="gySave">Save</button>
-      <button id="gmOn">Gyro as mouse: ?</button><span id="gyStatus" class="note"></span></div>
-    <p class="note">Controller-wide settings (not per profile), the same as in the report meter. <b>Apply</b> = until power-off, <b>Save</b> = kept. Gyro as mouse on/off on the controller: <b>LB + RB + View</b> (always off after power-on); while it is on no program gets the gyro.</p>
-    <div class="cards" id="gyCards"></div>
-    <p class="note" id="tStatus"></p>
+<div class="top">
+  <div class="topin">
+    <div class="brand">SC2 <span class="hz">Remapper</span></div>
+    <button class="primary" id="connect">Connect controller</button>
+    <span id="status" class="chip">not connected</span>
+    <span class="grow"></span>
+    <button id="onoff" class="sw" title="On the controller: LB + RB + Menu">Remapper <b>?</b></button>
+    <button id="gmOn" class="sw" title="On the controller: LB + RB + View">Gyro mouse <b>?</b></button>
   </div>
 </div>
+<div class="wrap">
+  <nav class="views"><button class="view on" data-v="map">Buttons &amp; profiles</button><button class="view" data-v="gyro">Gyro &amp; gyro mouse</button><button class="view" data-v="help">How it works</button></nav>
+
+  <section id="v_map">
+    <div class="panel">
+      <div class="profbar">
+        <div class="bar" id="tabs"></div>
+        <span class="grow"></span>
+        <label class="note">active on the controller <select id="activeProf"><option value="0">Profile 1</option><option value="1">Profile 2</option><option value="2">Profile 3</option><option value="3">Profile 4</option></select></label>
+      </div>
+      <div class="bar profact">
+        <input id="pname" maxlength="13" placeholder="profile name" style="width:170px">
+        <button class="primary" id="write">Save to controller</button>
+        <span id="dirty" class="chip warn" style="display:none">unsaved changes</span>
+        <span class="grow"></span>
+        <button id="read" class="ghost">Reload</button>
+        <button id="export" class="ghost">Export</button>
+        <label class="ghost btnlike">Import<input type="file" id="import" accept=".json" hidden></label>
+        <button id="clear" class="ghost danger">Clear</button>
+      </div>
+      <p id="pstatus" class="note" style="min-height:1.2em;margin:6px 0 0"></p>
+      <div class="board">
+        <div class="col l" id="colL"></div>
+        <div><div id="pic"></div><p class="note" style="text-align:center;margin:4px 0 0">Click an input to edit it · pressed inputs light up green</p></div>
+        <div class="col r" id="colR"></div>
+      </div>
+      <div class="bottom" id="colB"></div>
+    </div>
+  </section>
+
+  <section id="v_gyro" hidden>
+    <div class="panel" id="gyroPanel">
+      <div class="bar"><button id="gyRead" class="ghost">Reload</button><button class="primary" id="gyApply">Apply</button><button id="gySave">Save</button><span id="gyStatus" class="note"></span></div>
+      <p class="note" style="margin:8px 0 0">Controller-wide (not per profile) — the same settings as in the report meter. <b>Apply</b> = until power-off, <b>Save</b> = kept.</p>
+      <div class="cards" id="gyCards"></div>
+      <p class="note" id="tStatus"></p>
+    </div>
+  </section>
+
+  <section id="v_help" hidden>
+    <div class="panel help">
+      <h3>What it is</h3>
+      <p>Profiles stored <b>in the controller</b> turn its inputs into keyboard keys, mouse buttons / movement / scroll and Steam pad buttons. It works without Steam and without installing anything, over the USB cable and the Puck. Needs sc26re firmware v51+ and desktop Chrome, Edge or Brave.</p>
+      <h3>Turning it on</h3>
+      <p><b>LB + RB + Menu</b> on the controller (high beep = on, low = off) or the <b>Remapper</b> switch at the top. While it is on, every input that has a binding belongs to the remapper: Steam and the game only see what it is mapped to. Inputs without a binding work as usual.</p>
+      <h3>Binding an input</h3>
+      <p>Click it on the picture or in the lists. <b>Press</b> = actions while held (up to 4 at once, e.g. Ctrl + C). <b>Hold</b> adds a second set for holding longer than 0.25 s (a short press then taps the first set). <b>Double</b> adds a set for a quick second press. <b>Toggle</b> switches the first set on/off with each press. Then press <b>Save to controller</b>.</p>
+      <h3>Sticks and trackpads</h3>
+      <p>Each one can stay with Steam, act as <b>4 directions</b> (each bound like a button), move the <b>mouse</b> or <b>scroll</b>. Touch sensors (stick touch = capsense, grip touch = gripsense, trackpad touch) and trackpad clicks are bindable like buttons.</p>
+      <h3>Profiles</h3>
+      <p>4 profiles. The active one is chosen at the top of “Buttons &amp; profiles” or with a “Switch to profile” action bound to any input. Export / Import saves a profile to a file.</p>
+      <h3>Gyro</h3>
+      <p>Gyro settings and gyro as mouse (on/off: <b>LB + RB + View</b>) are on the “Gyro &amp; gyro mouse” page; they are the same for every profile.</p>
+    </div>
+  </section>
+</div>
+
+<dialog id="dlg"><div id="editor"></div><div class="bar" style="margin-top:12px;justify-content:flex-end"><button id="dlgClear" class="ghost danger">Clear input</button><button class="primary" id="dlgDone">Done</button></div></dialog>
 <script>
 const $=s=>document.querySelector(s);
 /* ---- layout: matches struct remap_profile in app/src/remap.h ---- */
@@ -194,34 +230,44 @@ function render(){
     <div><div class="sect">Grip touch (gripsense)</div>${item(29,"Left")}${item(28,"Right")}</div>
     <div><div class="sect">Trackpad touch</div>${item(25,"Left")}${item(21,"Right")}</div><div></div>`;
   $("#pic").innerHTML=picture();
-  document.querySelectorAll("[data-s]").forEach(e=>e.onclick=()=>{ const v=e.dataset.s; sel=isNaN(+v)?v:+v; if(sel==="dp") sel=13; render(); });
+  document.querySelectorAll("[data-s]").forEach(e=>e.onclick=()=>{ const v=e.dataset.s; sel=isNaN(+v)?v:+v; if(sel==="dp") sel=13; render(); const d=$("#dlg"); if(d.showModal&&!d.open) d.showModal(); });
   editor();
 }
 function editor(){
-  const ed=$("#editor"); if(sel===null){ ed.innerHTML='<p class="note">Select an input above.</p>'; return; }
+  const ed=$("#editor"); if(sel===null){ ed.innerHTML=""; return; }
   const b=prof[cur], dv=new DataView(b.buffer);
   if(typeof sel==="string"){
     const isStick=AMODES[sel]==="stick", base={ls:30,rs:34,lp:38,rp:42}[sel];
     ed.innerHTML=`<b>${{ls:"Left stick",rs:"Right stick",lp:"Left trackpad",rp:"Right trackpad"}[sel]}</b>
       <div class="bar" style="margin-top:8px"><select id="amode">${AMNAME.map((n,i)=>`<option value="${i}">${i===0?"to Steam (not remapped)":i===1?"4 directions (each bound below)":n}</option>`).join("")}</select>
       <label class="note">${isStick?"speed":"sensitivity"} <input type="number" id="aspeed" min="50" max="20000" step="50" style="width:90px"> ${isStick?"counts/s at full tilt (scroll: ×0.01 notches/s)":"counts per swipe across the pad"}</label></div>
-      <p class="note">${b[AOFF[sel]]===1?"Click a direction in the list to bind it.":""}</p>`;
+      <p class="note">${b[AOFF[sel]]===1?"Close this and click a direction in the list to bind it.":""}</p>`;
+    $("#dlgClear").style.display="none";
     $("#amode").value=String(b[AOFF[sel]]); $("#aspeed").value=dv.getUint16(SOFF[sel],true);
-    $("#amode").onchange=e=>{ b[AOFF[sel]]=+e.target.value; render(); };
-    $("#aspeed").onchange=e=>{ dv.setUint16(SOFF[sel],Math.max(50,Math.min(20000,+e.target.value||1000)),true); };
+    $("#amode").onchange=e=>{ b[AOFF[sel]]=+e.target.value; setDirty(); render(); };
+    $("#aspeed").onchange=e=>{ dv.setUint16(SOFF[sel],Math.max(50,Math.min(20000,+e.target.value||1000)),true); setDirty(); };
     return;
   }
   const s=sel, m=b[bOff(s)];
+  $("#dlgClear").style.display="";
   ed.innerHTML=`<b>${SRCNAME[s]||"input "+s}</b><span class="live" id="lvsel"></span>
     <div class="modes" style="margin:6px 0">${[[1,"hold"],[2,"double"],[4,"toggle"]].map(([bit,n])=>`<label><input type="checkbox" data-bit="${bit}"${m&bit?" checked":""}> ${n}</label>`).join("")}</div>
     ${[0,1,2].filter(g=>g===0||(g===1&&(m&1))||(g===2&&(m&2))).map(g=>`<div class="grp"><span>${["press","hold","double"][g]}</span>${[0,1,2,3].map(i=>`<select data-gi="${g}:${i}">${OPTS}</select>`).join("")}</div>`).join("")}
-    <div class="bar" style="margin-top:6px"><button id="unbind">Clear this input</button></div>`;
-  ed.querySelectorAll("[data-bit]").forEach(e=>e.onchange=()=>{ b[bOff(s)]=(b[bOff(s)]&~+e.dataset.bit)|(e.checked?+e.dataset.bit:0); render(); });
+`;
+  ed.querySelectorAll("[data-bit]").forEach(e=>e.onchange=()=>{ b[bOff(s)]=(b[bOff(s)]&~+e.dataset.bit)|(e.checked?+e.dataset.bit:0); setDirty(); render(); });
   ed.querySelectorAll("[data-gi]").forEach(e=>{ const [g,i]=e.dataset.gi.split(":").map(Number); e.value=String(b[bOff(s)+1+g*4+i]); if(e.value==="") e.value="0";
-    e.onchange=()=>{ b[bOff(s)+1+g*4+i]=+e.value; const keep=sel; render(); sel=keep; }; });
-  $("#unbind").onclick=()=>{ b.fill(0,bOff(s),bOff(s)+13); render(); };
+    e.onchange=()=>{ b[bOff(s)+1+g*4+i]=+e.value; setDirty(); render(); }; });
+
 }
 function collect(){ saveName(); }
+let dirty=false;
+function setDirty(v=true){ dirty=v; $("#dirty").style.display=v?"":"none"; }
+$("#dlgDone").onclick=()=>$("#dlg").close();
+$("#dlgClear").onclick=()=>{ if(typeof sel==="number"){ prof[cur].fill(0,bOff(sel),bOff(sel)+13); setDirty(); render(); } };
+$("#dlg").addEventListener("close",()=>{ sel=null; render(); });
+$("#pname").oninput=()=>{ saveName(); setDirty(); buildTabs(); };
+document.querySelectorAll(".view").forEach(b=>b.onclick=()=>{ document.querySelectorAll(".view").forEach(x=>x.classList.toggle("on",x===b)); for(const v of ["map","gyro","help"]) $("#v_"+v).hidden=v!==b.dataset.v; });
+window.addEventListener("beforeunload",e=>{ if(dirty){ e.preventDefault(); e.returnValue=""; } });
 /* ---- WebHID, same protocol as the report meter ---- */
 let devs=[], ctlDev=null; const rate=new Map();
 const pathTag=p=>{ let t=0xA5; for(const c of p) t=((t<<1)^(t>>7)^c.charCodeAt(0))&255; return t; };
@@ -250,12 +296,12 @@ $("#connect").onclick=async()=>{
     const sel=await navigator.hid.requestDevice({filters:[{vendorId:0x28de}]});
     for(const d of sel){ if(!d.collections.some(c=>c.featureReports&&c.featureReports.length)) continue; if(!d.opened) await d.open();
       if(!devs.includes(d)){ devs.push(d); d.addEventListener("inputreport",onReport); } }
-    $("#status").innerHTML=devs.length?'<span class="ok">connected — waiting for the controller…</span>':"no device selected";
+    $("#status").textContent=devs.length?"connected — waiting for the controller…":"no device selected";
     for(let i=0;i<40&&devs.length>1&&!ctlDev;i++) await new Promise(r=>setTimeout(r,50));
     await refreshState(); await readAll(); await gyRead();
   }catch(e){ $("#status").innerHTML=`<span class="err">${e.message}</span>`; }
 };
-navigator.hid&&navigator.hid.addEventListener("disconnect",e=>{ devs=devs.filter(d=>d!==e.device); if(ctlDev===e.device) ctlDev=null; $("#status").textContent=devs.length?"":"disconnected"; });
+navigator.hid&&navigator.hid.addEventListener("disconnect",e=>{ devs=devs.filter(d=>d!==e.device); if(ctlDev===e.device) ctlDev=null; $("#status").textContent=devs.length?"":"disconnected"; $("#status").className="chip"; });
 let lastBtn=0;
 function onReport(e){ if(e.reportId!==0x42) return; rate.set(e.device,1); if(!ctlDev) ctlDev=e.device; if(e.device!==ctlDev||e.data.byteLength<5) return; lastBtn=e.data.getUint32(1,true); }
 setInterval(()=>{
@@ -265,10 +311,10 @@ setInterval(()=>{
 
 async function refreshState(){
   const on=await cfgGet("remap_on"), p=await cfgGet("remap_profile");
-  if(on===null){ $("#status").innerHTML='<span class="err">this firmware has no remapper (needs sc26re v51+)</span>'; return; }
-  $("#onoff").textContent="Remapper: "+(on?"ON — turn off":"off — turn on"); $("#onoff").className=on?"primary":"";
+  if(on===null){ $("#status").textContent="this firmware has no remapper (needs sc26re v51+)"; $("#status").className="chip warn"; return; }
+  $("#onoff").innerHTML="Remapper <b>"+(on?"ON":"off")+"</b>"; $("#onoff").className="sw"+(on?" on":"");
   $("#activeProf").value=String(p||0);
-  $("#status").innerHTML=`<span class="ok">connected (${ctl().productId===0x1302?"USB cable":"Puck"})</span>`;
+  $("#status").textContent=`connected · ${ctl().productId===0x1302?"USB cable":"Puck"}`; $("#status").className="chip ok";
 }
 $("#onoff").onclick=async()=>{ try{ const on=await cfgGet("remap_on"); await cfgSet("remap_on",on?0:1); await refreshState(); }catch(e){ $("#pstatus").innerHTML=`<span class="err">${e.message}</span>`; } };
 $("#activeProf").onchange=async e=>{ try{ await cfgSet("remap_profile",+e.target.value); }catch(err){ $("#pstatus").innerHTML=`<span class="err">${err.message}</span>`; } };
@@ -277,7 +323,7 @@ async function readProfile(p){ const b=new Uint8Array(PROF_SIZE); for(let o=0;o<
 async function readAll(){
   try{ $("#pstatus").textContent="reading…";
     for(let p=0;p<4;p++){ const b=await readProfile(p); prof[p]=b[0]===0xA7?b:emptyProfile(); }
-    render(); $("#pstatus").innerHTML='<span class="ok">read</span>';
+    setDirty(false); render(); $("#pstatus").innerHTML='<span class="ok">profiles loaded from the controller</span>';
   }catch(e){ $("#pstatus").innerHTML=`<span class="err">${e.message}</span>`; }
 }
 $("#read").onclick=readAll;
@@ -286,13 +332,14 @@ $("#write").onclick=async()=>{
     for(let o=0;o<PROF_SIZE;o+=CH) await send(`sc26re/rmp/${cur}/${o.toString(16)}`,0xEE,Array.from(b.slice(o,Math.min(o+CH,PROF_SIZE))));
     await send(`sc26re/rmp/${cur}`,0xEF);
     const back=await readProfile(cur);
-    $("#pstatus").innerHTML=back.every((v,i)=>v===b[i])?`<span class="ok">profile ${cur+1} saved</span>`:'<span class="err">saved, but reading it back differs — try again</span>';
+    const okb=back.every((v,i)=>v===b[i]); if(okb) setDirty(false);
+    $("#pstatus").innerHTML=okb?`<span class="ok">profile ${cur+1} saved to the controller</span>`:'<span class="err">saved, but reading it back differs — try again</span>';
     buildTabs();
   }catch(e){ $("#pstatus").innerHTML=`<span class="err">${e.message}</span>`; }
 };
-$("#clear").onclick=()=>{ if(confirm(`Clear profile ${cur+1}? (Save to controller afterwards.)`)){ prof[cur]=emptyProfile(); sel=null; render(); } };
+$("#clear").onclick=()=>{ if(confirm(`Clear profile ${cur+1}? (Save to controller afterwards.)`)){ prof[cur]=emptyProfile(); sel=null; setDirty(); render(); } };
 $("#export").onclick=()=>{ collect(); const j=JSON.stringify({sc2remap:1,name:nameOf(prof[cur]),data:Array.from(prof[cur])}); const a=document.createElement("a"); a.href=URL.createObjectURL(new Blob([j],{type:"application/json"})); a.download=`sc2-remap-${(nameOf(prof[cur])||"profile"+(cur+1)).replace(/\W+/g,"_")}.json`; a.click(); };
-$("#import").onchange=async e=>{ const f=e.target.files[0]; if(!f) return; try{ const j=JSON.parse(await f.text()); if(!j.data||j.data.length!==PROF_SIZE) throw new Error("not a profile file for this version"); prof[cur]=new Uint8Array(j.data); render(); $("#pstatus").innerHTML='<span class="ok">imported — press Save to controller</span>'; }catch(err){ $("#pstatus").innerHTML=`<span class="err">${err.message}</span>`; } e.target.value=""; };
+$("#import").onchange=async e=>{ const f=e.target.files[0]; if(!f) return; try{ const j=JSON.parse(await f.text()); if(!j.data||j.data.length!==PROF_SIZE) throw new Error("not a profile file for this version"); prof[cur]=new Uint8Array(j.data); setDirty(); render(); $("#pstatus").innerHTML='<span class="ok">imported — press Save to controller</span>'; }catch(err){ $("#pstatus").innerHTML=`<span class="err">${err.message}</span>`; } e.target.value=""; };
 
 /* ---- gyro + gyro as mouse settings (sc26re cfg values, same as the report meter) ---- */
 const BTNOPTS=[[-1,"— none —"],[0,"A"],[1,"B"],[2,"X"],[3,"Y"],[19,"LB"],[9,"RB"],[27,"LT click"],[23,"RT click"],[17,"L4"],[18,"L5"],[7,"R4"],[8,"R5"],[15,"L3"],[5,"R3"],[6,"View"],[14,"Menu"],[13,"D-pad up"],[10,"D-pad down"],[12,"D-pad left"],[11,"D-pad right"],[26,"Left pad click"],[22,"Right pad click"],[25,"Left pad touch"],[21,"Right pad touch"],[24,"Left stick touch"],[20,"Right stick touch"],[29,"Left grip touch"],[28,"Right grip touch"]];
@@ -405,7 +452,7 @@ async function gyWrite(save){
     $("#gyStatus").innerHTML=`<span class="ok">${save?"saved":"applied until power-off"}</span>`;
   }catch(e){ $("#gyStatus").innerHTML=`<span class="err">${e.message}</span>`; }
 }
-async function gmOnRefresh(){ const on=await cfgGet("gm_enabled"); $("#gmOn").textContent="Gyro as mouse: "+(on?"ON — turn off":"off — turn on"); $("#gmOn").className=on?"primary":""; }
+async function gmOnRefresh(){ const on=await cfgGet("gm_enabled"); $("#gmOn").innerHTML="Gyro mouse <b>"+(on?"ON":"off")+"</b>"; $("#gmOn").className="sw"+(on?" on":""); }
 $("#gyRead").onclick=gyRead; $("#gyApply").onclick=()=>gyWrite(false); $("#gySave").onclick=()=>gyWrite(true);
 $("#gmOn").onclick=async()=>{ try{ const on=await cfgGet("gm_enabled"); await send("sc26re/gm_enabled",0xEE,[on?0:1,0]); await gmOnRefresh(); }catch(e){ $("#gyStatus").innerHTML=`<span class="err">${e.message}</span>`; } };
 gyBuild();
