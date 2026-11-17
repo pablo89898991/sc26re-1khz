@@ -21,7 +21,6 @@ target_sources(app PRIVATE
 	src/power.c
 	src/puck_interface.c
 	src/radio_personality.c
-	src/shell.c
 	src/transport.c
 	src/valve_feature.c
 	src/valve_hid_report_map.c
@@ -29,6 +28,7 @@ target_sources(app PRIVATE
 	src/valve_settings.c
 	src/sc26re_cfg.c
 	src/gyro_mouse.c
+	src/remap.c
 )
 
 target_sources_ifdef(CONFIG_HAPTICS_PWM_NRF app PRIVATE src/haptics_pwm_nrf.c)
@@ -60,6 +60,7 @@ if(CONFIG_IBEX_HAPTICS_PWM)
 endif()
 target_sources_ifdef(CONFIG_IBEX_ANALOG_INPUTS app PRIVATE src/analog.c)
 target_sources_ifdef(CONFIG_IBEX_OLYMPUS app PRIVATE src/olympus.c)
+target_sources_ifdef(CONFIG_SHELL app PRIVATE src/shell.c)
 target_sources_ifdef(CONFIG_IBEX_SHELL_ZMODEM app PRIVATE src/zmodem.c src/shell_zmodem.c)
 target_sources_ifdef(CONFIG_IBEX_BLE app PRIVATE src/transport_ble.c)
 target_sources_ifdef(CONFIG_IBEX_USB_HID app PRIVATE src/transport_usb.c)

@@ -73,6 +73,8 @@ enum sc26re_cfg_id
 	SC26RE_CFG_GM_QT4_BTN,
 	SC26RE_CFG_GM_QT4_DEG,
 	SC26RE_CFG_GM_QT_MS,       /* how long a quick turn takes, ms (0 = one report) */
+	SC26RE_CFG_REMAP_ON,       /* on-controller remapper on (LB+RB+Menu) */
+	SC26RE_CFG_REMAP_PROFILE,  /* active remap profile 0..3 */
 	SC26RE_CFG_GM_BAND_SOFT,   /* mouse dead bands: 0 hard, 1 soft */
 	SC26RE_CFG_GM_BAND_P_LO,   /* mouse dead bands, 0.01 deg/s, pitch/yaw/roll */
 	SC26RE_CFG_GM_BAND_P_HI,

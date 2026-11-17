@@ -14,6 +14,7 @@
 #include "ibex_settings_registry.h"
 #include "imu.h"
 #include "gyro_mouse.h"
+#include "remap.h"
 #include "valve_nvs.h"
 #include "olympus.h"
 #include "sc26re_cfg.h"
@@ -545,6 +546,10 @@ static bool nvs_read_path(const char *path, uint8_t *buf, size_t capacity, size_
 
 bool valve_settings_read(const char *path, uint8_t *buf, size_t capacity, size_t *len)
 {
+	if(remap_path(path))
+	{
+		return remap_read(path, buf, capacity, len);
+	}
 	if(sc26re_cfg_path(path))
 	{
 		return sc26re_cfg_read(path, buf, capacity, len);
@@ -791,6 +796,10 @@ int valve_settings_stage(const char *path, const uint8_t *value, size_t len)
 	int slot = esb_bond_slot(path);
 	int err;
 
+	if(remap_path(path))
+	{
+		return remap_stage(path, value, len);
+	}
 	if(sc26re_cfg_path(path))
 	{
 		return sc26re_cfg_stage(path, value, len);
@@ -938,6 +947,10 @@ static int commit_setting_path(const char *path)
 	int slot = esb_bond_slot(path);
 	int err;
 
+	if(remap_path(path))
+	{
+		return remap_commit(path);
+	}
 	if(sc26re_cfg_path(path))
 	{
 		return sc26re_cfg_commit(path);

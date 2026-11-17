@@ -29,6 +29,7 @@
 #include "calibration.h"
 #include "imu_bias.h"
 #include "gyro_mouse.h"
+#include "remap.h"
 #include "sdl/controller_constants.h"
 
 LOG_MODULE_REGISTER(imu);
@@ -1532,6 +1533,7 @@ static bool imu_send_mouse(void)
 	{
 		return false;
 	}
+	m[0] = remap_mouse_buttons(); /* keep the remapper's held mouse buttons */
 	m[1] = (uint8_t)dx;
 	m[2] = (uint8_t)dy;
 	if(transport_send_input_report(0x40, m, sizeof(m)) != 0)

@@ -16,6 +16,7 @@
 #include "analog.h"
 #include "imu.h"
 #include "gyro_mouse.h"
+#include "remap.h"
 #include "lizard.h"
 #include "power.h"
 #include "puck_interface.h"
@@ -530,6 +531,7 @@ int main(void)
 	}
 	radio_personality_init();
 	sc26re_cfg_load();
+	remap_init();
 	/* the gyro mouse always starts off */
 	(void)sc26re_cfg_set(SC26RE_CFG_GM_ENABLED, 0, false);
 	valve_settings_load_feature_state();
@@ -733,6 +735,14 @@ int main(void)
 			}
 		}
 
+		{
+			/* on-controller remapper: keyboard/mouse out, mapped inputs leave the pad report */
+			static int64_t remap_last_ms;
+			int64_t remap_now = k_uptime_get();
+
+			remap_process(&current, remap_last_ms ? (float)(remap_now - remap_last_ms) * 0.001f : 0.001f);
+			remap_last_ms = remap_now;
+		}
 		bool changed = first || memcmp(&current, &previous, sizeof(current)) != 0;
 		bool refresh_due = k_uptime_get() - last_input_sent >= INPUT_REFRESH_MS;
 		/* OFW uses each full-state ESB report as the container boundary for lizard
@@ -782,7 +792,10 @@ int main(void)
 			first = false;
 		}
 		/* OFW sends the full state before waking lizard input processing. */
-		lizard_update(&current);
+		if(!remap_enabled())
+		{
+			lizard_update(&current);
+		}
 
 		hardware_wait_for_change();
 		watchdog_feed();

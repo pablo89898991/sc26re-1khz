@@ -1,0 +1,223 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SC2 Remapper</title>
+<style>
+  :root{--bg:#0e1420;--panel:#161f30;--panel2:#1d283c;--edge:#2b3850;--ink:#e6edf7;--muted:#90a0ba;--accent:#4ea1ff;--accent2:#7cc4ff;--ok:#3fd07f;--warn:#ffb347;--err:#ff6b6b;--mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.55 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;padding:28px 16px 60px;}
+  .wrap{max-width:980px;margin:0 auto;}
+  h1{font-size:23px;margin:0 0 4px;} h1 .hz{color:var(--accent2);}
+  .sub{color:var(--muted);margin:0 0 20px;font-size:14px;}
+  .panel{background:var(--panel);border:1px solid var(--edge);border-radius:14px;padding:18px;margin-bottom:16px;}
+  .panel h2{font-size:13px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin:0 0 12px;font-weight:600;}
+  .bar{display:flex;gap:10px;flex-wrap:wrap;align-items:center;}
+  button,select,input{background:var(--panel2);border:1px solid var(--edge);color:var(--ink);border-radius:9px;padding:8px 12px;font-size:14px;font-family:inherit;}
+  button{cursor:pointer} button.primary{background:linear-gradient(180deg,var(--accent),#3a86e8);color:#06101f;border:0;font-weight:700;}
+  button:hover,select:hover{border-color:var(--accent);}
+  button.tab{border-radius:9px 9px 0 0} button.tab.on{background:var(--accent);color:#06101f;font-weight:700;border-color:var(--accent)}
+  .ok{color:var(--ok)} .warn{color:var(--warn)} .err{color:var(--err)}
+  .note{font-size:12.5px;color:var(--muted);line-height:1.6;} .note b{color:#b9c6dc;}
+  table{width:100%;border-collapse:collapse} td{padding:6px 4px;border-top:1px solid var(--edge);vertical-align:top}
+  td.n{width:150px;font-size:14px} td.n small{display:block;color:var(--muted);font-size:11.5px}
+  .grp{display:flex;gap:4px;flex-wrap:wrap;align-items:center;margin:2px 0}
+  .grp span{font-size:11px;color:var(--muted);width:58px}
+  .grp select{padding:5px 6px;font-size:12.5px;max-width:150px}
+  .modes label{font-size:12px;color:var(--muted);margin-right:8px;white-space:nowrap}
+  .live{display:inline-block;width:9px;height:9px;border-radius:50%;background:#33415c;margin-left:6px;vertical-align:middle}
+  .live.on{background:#4fc98a;box-shadow:0 0 8px #4fc98a}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>SC2 <span class="hz">Remapper</span></h1>
+  <p class="sub">Map every Steam Controller (2026) input — buttons, back buttons L4/L5/R4/R5, trigger clicks, stick / trackpad / grip touch, sticks and trackpads — to keyboard, mouse and Steam pad buttons. Profiles live <b>in the controller</b>: it works without Steam and without installing anything, over cable and the Puck. Needs sc26re firmware v51+ and desktop Chrome / Edge / Brave (WebHID).</p>
+
+  <div class="panel">
+    <h2>Controller</h2>
+    <div class="bar">
+      <button class="primary" id="connect">Connect controller…</button>
+      <span id="status" class="note">not connected</span>
+    </div>
+    <div class="bar" style="margin-top:10px">
+      <button id="onoff">Remapper: ?</button>
+      <label class="note">active profile <select id="activeProf"><option value="0">1</option><option value="1">2</option><option value="2">3</option><option value="3">4</option></select></label>
+      <span class="note">On the controller: <b>LB + RB + Menu</b> turns the remapper on/off (high beep = on). While it is on, every mapped input belongs to it: Steam and the game only see what it is mapped to. Unmapped inputs work as usual.</span>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="bar" id="tabs"></div>
+    <div class="bar" style="margin-top:10px">
+      <label class="note">name <input id="pname" maxlength="13" style="width:150px"></label>
+      <button id="read">Read from controller</button>
+      <button class="primary" id="write">Save to controller</button>
+      <button id="clear">Clear profile</button>
+      <button id="export">Export…</button>
+      <label class="note"><input type="file" id="import" accept=".json" style="width:180px"></label>
+      <span id="pstatus" class="note"></span>
+    </div>
+    <p class="note">Each input: <b>press</b> actions while held (up to 4 at once, e.g. Ctrl + C). Tick <b>hold</b> for a second set when held longer than 0.25 s (then a short press taps the first set), <b>double</b> for a set on a second quick press, or <b>toggle</b> to switch the first set on/off with each press. The dot lights while the input is active.</p>
+    <table id="tbl"></table>
+  </div>
+</div>
+<script>
+const $=s=>document.querySelector(s);
+/* ---- layout: matches struct remap_profile in app/src/remap.h ---- */
+const PROF_SIZE=36+46*13, CH=40;
+const SRC=[
+ ["Face buttons",[[0,"A"],[1,"B"],[2,"X"],[3,"Y"]]],
+ ["Shoulders and triggers",[[19,"LB"],[9,"RB"],[27,"LT click"],[23,"RT click"]]],
+ ["Back buttons",[[17,"L4"],[18,"L5"],[7,"R4"],[8,"R5"]]],
+ ["D-pad",[[13,"D-pad up"],[10,"D-pad down"],[12,"D-pad left"],[11,"D-pad right"]]],
+ ["Middle and stick clicks",[[6,"View"],[14,"Menu"],[4,"QAM"],[15,"L3 (left stick click)"],[5,"R3 (right stick click)"]]],
+ ["Touch sensors",[[24,"Left stick touch","capsense"],[20,"Right stick touch","capsense"],[29,"Left grip touch","gripsense"],[28,"Right grip touch","gripsense"],[25,"Left pad touch"],[21,"Right pad touch"],[26,"Left pad click"],[22,"Right pad click"]]],
+ ["Left stick",[[30,"Up"],[31,"Down"],[32,"Left"],[33,"Right"]],"ls"],
+ ["Right stick",[[34,"Up"],[35,"Down"],[36,"Left"],[37,"Right"]],"rs"],
+ ["Left trackpad",[[38,"Up region"],[39,"Down region"],[40,"Left region"],[41,"Right region"]],"lp"],
+ ["Right trackpad",[[42,"Up region"],[43,"Down region"],[44,"Left region"],[45,"Right region"]],"rp"],
+];
+/* ---- action list ---- */
+const KEYS={4:"A",5:"B",6:"C",7:"D",8:"E",9:"F",10:"G",11:"H",12:"I",13:"J",14:"K",15:"L",16:"M",17:"N",18:"O",19:"P",20:"Q",21:"R",22:"S",23:"T",24:"U",25:"V",26:"W",27:"X",28:"Y",29:"Z",
+ 30:"1",31:"2",32:"3",33:"4",34:"5",35:"6",36:"7",37:"8",38:"9",39:"0",40:"Enter",41:"Esc",42:"Backspace",43:"Tab",44:"Space",45:"- _",46:"= +",47:"[ {",48:"] }",49:"\\ |",51:"; :",52:"' \"",53:"` ~",54:", <",55:". >",56:"/ ?",57:"Caps Lock",
+ 58:"F1",59:"F2",60:"F3",61:"F4",62:"F5",63:"F6",64:"F7",65:"F8",66:"F9",67:"F10",68:"F11",69:"F12",70:"Print Screen",71:"Scroll Lock",72:"Pause",73:"Insert",74:"Home",75:"Page Up",76:"Delete",77:"End",78:"Page Down",79:"Right arrow",80:"Left arrow",81:"Down arrow",82:"Up arrow",
+ 83:"Num Lock",84:"Num /",85:"Num *",86:"Num -",87:"Num +",88:"Num Enter",89:"Num 1",90:"Num 2",91:"Num 3",92:"Num 4",93:"Num 5",94:"Num 6",95:"Num 7",96:"Num 8",97:"Num 9",98:"Num 0",99:"Num .",101:"Menu key"};
+const MODS={0xE0:"Left Ctrl",0xE1:"Left Shift",0xE2:"Left Alt",0xE3:"Left Win",0xE4:"Right Ctrl",0xE5:"Right Shift",0xE6:"Right Alt",0xE7:"Right Win"};
+const MOUSE={0x70:"Mouse left",0x71:"Mouse right",0x72:"Wheel up",0x73:"Wheel down",0x74:"Wheel left",0x75:"Wheel right"};
+const PADB=[[0,"A"],[1,"B"],[2,"X"],[3,"Y"],[19,"LB"],[9,"RB"],[27,"LT click"],[23,"RT click"],[17,"L4"],[18,"L5"],[7,"R4"],[8,"R5"],[13,"D-pad up"],[10,"D-pad down"],[12,"D-pad left"],[11,"D-pad right"],[6,"View"],[14,"Menu"],[4,"QAM"],[15,"L3"],[5,"R3"],[26,"Left pad click"],[22,"Right pad click"]];
+const OPTS=(()=>{
+  let h='<option value="0">—</option><optgroup label="Mouse">'+Object.entries(MOUSE).map(([v,n])=>`<option value="${v}">${n}</option>`).join("")+'</optgroup>';
+  h+='<optgroup label="Modifiers">'+Object.entries(MODS).map(([v,n])=>`<option value="${v}">${n}</option>`).join("")+'</optgroup>';
+  h+='<optgroup label="Keyboard">'+Object.entries(KEYS).map(([v,n])=>`<option value="${v}">${n}</option>`).join("")+'</optgroup>';
+  h+='<optgroup label="Steam pad button">'+PADB.map(([b,n])=>`<option value="${0x80+b}">Pad ${n}</option>`).join("")+'</optgroup>';
+  h+='<optgroup label="Profile">'+[0,1,2,3].map(p=>`<option value="${0xC0+p}">Switch to profile ${p+1}</option>`).join("")+'</optgroup>';
+  return h;
+})();
+const AMODES={ls:"stick",rs:"stick",lp:"pad",rp:"pad"};
+const AOFF={ls:16,rs:17,lp:18,rp:19}, SOFF={ls:20,rs:22,lp:24,rp:26};
+
+/* ---- profile model ---- */
+let prof=[0,1,2,3].map(()=>emptyProfile()), cur=0;
+function emptyProfile(){ const b=new Uint8Array(PROF_SIZE); b[0]=0xA7; b[1]=1; const dv=new DataView(b.buffer); dv.setUint16(20,1500,true); dv.setUint16(22,1500,true); dv.setUint16(24,1200,true); dv.setUint16(26,1200,true); return b; }
+const bOff=s=>36+s*13;
+
+/* ---- UI ---- */
+function buildTabs(){ $("#tabs").innerHTML=[0,1,2,3].map(i=>`<button class="tab${i===cur?" on":""}" data-p="${i}">Profile ${i+1}${nameOf(prof[i])?": "+nameOf(prof[i]):""}</button>`).join(""); document.querySelectorAll("#tabs .tab").forEach(b=>b.onclick=()=>{ collect(); cur=+b.dataset.p; render(); }); }
+function nameOf(b){ return new TextDecoder().decode(b.slice(2,16)).replace(/\0.*$/,""); }
+function render(){
+  buildTabs();
+  const b=prof[cur], dv=new DataView(b.buffer);
+  $("#pname").value=nameOf(b);
+  let h="";
+  for(const [title,list,an] of SRC){
+    h+=`<tr><td colspan="2" style="padding-top:14px"><b>${title}</b>`;
+    if(an){
+      const isStick=AMODES[an]==="stick";
+      h+=` &nbsp; <select data-am="${an}"><option value="0">to Steam (not remapped)</option><option value="1">4 directions (below)</option><option value="2">mouse</option><option value="3">scroll wheel</option></select>
+        <label class="note"> ${isStick?"speed":"sensitivity"} <input type="number" data-as="${an}" min="50" max="20000" step="50" style="width:90px"> ${isStick?"counts/s at full tilt (scroll: ×0.01 notches/s)":"counts per swipe across the pad"}</label>`;
+    }
+    h+=`</td></tr>`;
+    for(const [s,name,hint] of list){
+      h+=`<tr><td class="n">${name}<span class="live" id="lv${s}"></span>${hint?`<small>${hint}</small>`:""}</td><td>
+        <div class="modes"><label><input type="checkbox" data-m="${s}" data-bit="1"> hold</label><label><input type="checkbox" data-m="${s}" data-bit="2"> double</label><label><input type="checkbox" data-m="${s}" data-bit="4"> toggle</label></div>
+        ${[0,1,2].map(g=>`<div class="grp" data-g="${s}:${g}"><span>${["press","hold","double"][g]}</span>${[0,1,2,3].map(i=>`<select data-a="${s}:${g}:${i}">${OPTS}</select>`).join("")}</div>`).join("")}
+      </td></tr>`;
+    }
+  }
+  $("#tbl").innerHTML=h;
+  for(const an in AOFF){ const e=document.querySelector(`[data-am="${an}"]`); e.value=String(b[AOFF[an]]); document.querySelector(`[data-as="${an}"]`).value=dv.getUint16(SOFF[an],true); }
+  document.querySelectorAll("[data-a]").forEach(e=>{ const [s,g,i]=e.dataset.a.split(":").map(Number); e.value=String(b[bOff(s)+1+g*4+i]); if(e.value==="") e.value="0"; });
+  document.querySelectorAll("[data-m]").forEach(e=>{ const s=+e.dataset.m; e.checked=(b[bOff(s)]&+e.dataset.bit)!==0; e.onchange=showGroups; });
+  showGroups();
+}
+function showGroups(){
+  document.querySelectorAll("[data-g]").forEach(d=>{
+    const [s,g]=d.dataset.g.split(":").map(Number);
+    const m=[...document.querySelectorAll(`[data-m="${s}"]`)].reduce((a,e)=>a|(e.checked?+e.dataset.bit:0),0);
+    d.style.display=g===0||(g===1&&(m&1))||(g===2&&(m&2))?"":"none";
+  });
+}
+function collect(){
+  const b=prof[cur], dv=new DataView(b.buffer);
+  b[0]=0xA7; b[1]=1;
+  const nm=new TextEncoder().encode($("#pname").value.slice(0,13)); b.fill(0,2,16); b.set(nm.slice(0,13),2);
+  for(const an in AOFF){ b[AOFF[an]]=+document.querySelector(`[data-am="${an}"]`).value; dv.setUint16(SOFF[an],Math.max(50,Math.min(20000,+document.querySelector(`[data-as="${an}"]`).value||1000)),true); }
+  for(let s=0;s<46;s++) b[bOff(s)]=0;
+  document.querySelectorAll("[data-m]").forEach(e=>{ if(e.checked) b[bOff(+e.dataset.m)]|=+e.dataset.bit; });
+  document.querySelectorAll("[data-a]").forEach(e=>{ const [s,g,i]=e.dataset.a.split(":").map(Number); b[bOff(s)+1+g*4+i]=+e.value; });
+}
+
+/* ---- WebHID, same protocol as the report meter ---- */
+let devs=[], ctlDev=null; const rate=new Map();
+const pathTag=p=>{ let t=0xA5; for(const c of p) t=((t<<1)^(t>>7)^c.charCodeAt(0))&255; return t; };
+function pathCmd(op,path,data=[]){ const p=new TextEncoder().encode(path), buf=new Uint8Array(63); buf[0]=op; buf[1]=p.length+1+data.length; buf.set(p,2); buf.set(data,2+p.length+1); return buf; }
+let chain=Promise.resolve();
+function serial(fn){ const run=()=>Promise.race([Promise.resolve().then(fn),new Promise((_,r)=>setTimeout(()=>r(new Error("no reply from the controller")),8000))]); const p=chain.then(run,run); chain=p.catch(()=>{}); return p; }
+const ctl=()=>ctlDev&&devs.includes(ctlDev)?ctlDev:devs[0];
+async function send(path,op,data){ const d=ctl(); if(!d) throw new Error("connect first");
+  return serial(async()=>{ for(let a=0;;a++){ try{ return await d.sendFeatureReport(1,pathCmd(op,path,data)); }catch(e){ if(a>=5) throw e; await new Promise(r=>setTimeout(r,40+a*30)); } } }); }
+async function read(path){ const d=ctl(); if(!d) throw new Error("connect first"); const tag=pathTag(path);
+  return serial(async()=>{ let last=null;
+    for(let a=0;a<8;a++){ try{
+      await d.sendFeatureReport(1,pathCmd(0xED,path));
+      let r=null,o=-1; for(let k=0;k<10;k++){ try{ r=new Uint8Array((await d.receiveFeatureReport(1)).buffer); o=r[0]===0xED?0:(r[1]===0xED?1:-1); if(o>=0) break; }catch(e){} await new Promise(s=>setTimeout(s,15+k*10)); }
+      if(o<0) throw new Error("no reply");
+      const data=r.slice(o+2,o+2+r[o+1]); if(!data.length||data[0]!==tag) throw new Error("reply for another request (Steam?)");
+      return data.slice(1);
+    }catch(e){ last=e; await new Promise(s=>setTimeout(s,40+a*30)); } }
+    throw last; }); }
+const s16=(b,i)=>{ const v=b[i]|(b[i+1]<<8); return v>32767?v-65536:v; };
+async function cfgGet(n){ const b=await read("sc26re/"+n); return b.length>=2?s16(b,0):null; }
+async function cfgSet(n,v){ await send("sc26re/"+n,0xEE,[v&255,(v>>8)&255]); await send("sc26re/"+n,0xEF); }
+
+$("#connect").onclick=async()=>{
+  try{
+    const sel=await navigator.hid.requestDevice({filters:[{vendorId:0x28de}]});
+    for(const d of sel){ if(!d.collections.some(c=>c.featureReports&&c.featureReports.length)) continue; if(!d.opened) await d.open();
+      if(!devs.includes(d)){ devs.push(d); d.addEventListener("inputreport",onReport); } }
+    $("#status").innerHTML=devs.length?'<span class="ok">connected — waiting for the controller…</span>':"no device selected";
+    for(let i=0;i<40&&devs.length>1&&!ctlDev;i++) await new Promise(r=>setTimeout(r,50));
+    await refreshState(); await readAll();
+  }catch(e){ $("#status").innerHTML=`<span class="err">${e.message}</span>`; }
+};
+navigator.hid&&navigator.hid.addEventListener("disconnect",e=>{ devs=devs.filter(d=>d!==e.device); if(ctlDev===e.device) ctlDev=null; $("#status").textContent=devs.length?"":"disconnected"; });
+let lastBtn=0;
+function onReport(e){ if(e.reportId!==0x42) return; rate.set(e.device,1); if(!ctlDev) ctlDev=e.device; if(e.device!==ctlDev||e.data.byteLength<5) return; lastBtn=e.data.getUint32(1,true); }
+setInterval(()=>{ for(let s=0;s<30;s++){ const el=document.getElementById("lv"+s); if(el) el.classList.toggle("on",(lastBtn&(1<<s))!==0); } },100);
+
+async function refreshState(){
+  const on=await cfgGet("remap_on"), p=await cfgGet("remap_profile");
+  if(on===null){ $("#status").innerHTML='<span class="err">this firmware has no remapper (needs sc26re v51+)</span>'; return; }
+  $("#onoff").textContent="Remapper: "+(on?"ON — turn off":"off — turn on"); $("#onoff").className=on?"primary":"";
+  $("#activeProf").value=String(p||0);
+  $("#status").innerHTML=`<span class="ok">connected (${ctl().productId===0x1302?"USB cable":"Puck"})</span>`;
+}
+$("#onoff").onclick=async()=>{ try{ const on=await cfgGet("remap_on"); await cfgSet("remap_on",on?0:1); await refreshState(); }catch(e){ $("#pstatus").innerHTML=`<span class="err">${e.message}</span>`; } };
+$("#activeProf").onchange=async e=>{ try{ await cfgSet("remap_profile",+e.target.value); }catch(err){ $("#pstatus").innerHTML=`<span class="err">${err.message}</span>`; } };
+
+async function readProfile(p){ const b=new Uint8Array(PROF_SIZE); for(let o=0;o<PROF_SIZE;o+=CH){ const d=await read(`sc26re/rmp/${p}/${o.toString(16)}`); b.set(d.slice(0,Math.min(CH,PROF_SIZE-o)),o); } return b; }
+async function readAll(){
+  try{ $("#pstatus").textContent="reading…";
+    for(let p=0;p<4;p++){ const b=await readProfile(p); prof[p]=b[0]===0xA7?b:emptyProfile(); }
+    render(); $("#pstatus").innerHTML='<span class="ok">read</span>';
+  }catch(e){ $("#pstatus").innerHTML=`<span class="err">${e.message}</span>`; }
+}
+$("#read").onclick=readAll;
+$("#write").onclick=async()=>{
+  try{ collect(); const b=prof[cur]; $("#pstatus").textContent="saving…";
+    for(let o=0;o<PROF_SIZE;o+=CH) await send(`sc26re/rmp/${cur}/${o.toString(16)}`,0xEE,Array.from(b.slice(o,Math.min(o+CH,PROF_SIZE))));
+    await send(`sc26re/rmp/${cur}`,0xEF);
+    const back=await readProfile(cur);
+    $("#pstatus").innerHTML=back.every((v,i)=>v===b[i])?`<span class="ok">profile ${cur+1} saved</span>`:'<span class="err">saved, but reading it back differs — try again</span>';
+    buildTabs();
+  }catch(e){ $("#pstatus").innerHTML=`<span class="err">${e.message}</span>`; }
+};
+$("#clear").onclick=()=>{ if(confirm(`Clear profile ${cur+1}? (Save to controller afterwards.)`)){ prof[cur]=emptyProfile(); render(); } };
+$("#export").onclick=()=>{ collect(); const j=JSON.stringify({sc2remap:1,name:nameOf(prof[cur]),data:Array.from(prof[cur])}); const a=document.createElement("a"); a.href=URL.createObjectURL(new Blob([j],{type:"application/json"})); a.download=`sc2-remap-${(nameOf(prof[cur])||"profile"+(cur+1)).replace(/\W+/g,"_")}.json`; a.click(); };
+$("#import").onchange=async e=>{ const f=e.target.files[0]; if(!f) return; try{ const j=JSON.parse(await f.text()); if(!j.data||j.data.length!==PROF_SIZE) throw new Error("not a profile file for this version"); prof[cur]=new Uint8Array(j.data); render(); $("#pstatus").innerHTML='<span class="ok">imported — press Save to controller</span>'; }catch(err){ $("#pstatus").innerHTML=`<span class="err">${err.message}</span>`; } e.target.value=""; };
+render();
+</script>
+</body>
+</html>
