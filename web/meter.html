@@ -919,13 +919,14 @@ async function lsSend(save,all,forceDefault){
   let sent=0,last="";
   /* capsense rows travel together as one 6-byte setting; "default" = 0 */
   const capRows=LS.filter(([n])=>n.startsWith("cap:")).map(([n])=>n);
-  const capChanged=forceDefault||capRows.some(n=>String(lsEl("lsauto_"+n).checked?0:Math.round(+lsEl("ls_"+n).value))!==lsEl("ls_"+n).dataset.orig);
+  const capChanged=forceDefault||all||capRows.some(n=>String(lsEl("lsauto_"+n).checked?0:Math.round(+lsEl("ls_"+n).value))!==lsEl("ls_"+n).dataset.orig);
   if(capChanged){
     const cv=capRows.map(n=>forceDefault||lsEl("lsauto_"+n).checked?0:Math.max(0,Math.round(+lsEl("ls_"+n).value)||0));
     if(cv[0]&&cv[1]&&cv[1]>=cv[0]){ $("#lsStatus").innerHTML='<span class="err">stick touch “off” must be below “on”</span>'; return; }
     const le=x=>[x&255,(x>>8)&255], data=[...le(cv[0]),...le(cv[1]),...le(cv[2])];
-    for(const d of targets()){ try{ await fsend(d,1,pathCmd(0xEE,"sc26re/capsense",data));
-      if(save) await fsend(d,1,pathCmd(0xEF,"sc26re/capsense")); }catch(e){ last=e.message; } }
+    if(cv.every(x=>x===0)&&!forceDefault&&capRows.some(n=>lsEl("ls_"+n).dataset.orig===""&&!lsEl("lsauto_"+n).checked)){ /* not read: leave it */ }
+    else for(const d of targets()){ try{ await fsend(d,1,pathCmd(0xEE,"sc26re/capsense",data));
+      if(save) await fsend(d,1,pathCmd(0xEF,"sc26re/capsense")); sent++; }catch(e){ last=e.message; } }
   }
   for(const [n] of LS){
     if(!n.startsWith("band:")) continue;
