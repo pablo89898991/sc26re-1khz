@@ -148,6 +148,12 @@
       <label class="note">turn speed <input type="number" id="gmCalSpeed" min="100" max="20000" step="100" style="width:80px"> counts/s</label>
       <label class="note">counts per 360° <input type="number" id="gmCal360" min="10" step="1" style="width:100px"></label>
     </div>
+    <div class="bar" style="flex-wrap:wrap;gap:10px;margin-top:6px;border:1px solid #2a3550;border-radius:8px;padding:8px">
+      <span class="note"><b>From / to Steam Input</b> (Gyro To Mouse): Steam's “Angles to Mouse Pixels (Dots per 360°)” is the same number as counts per 360° here, and Steam's gyro multiplier (“Natural sensitivity”) is the same as the real world sensitivity here. Both use raw mouse counts, so the values carry over 1:1.</span>
+      <label class="note">Steam Dots per 360° <input type="number" id="gmSteamDots" min="10" step="1" style="width:100px"></label>
+      <label class="note">Steam multiplier <input type="number" id="gmSteamMul" min="0.01" step="0.05" style="width:80px"> ×</label>
+      <button id="gmFromSteam">Use Steam values</button><button id="gmToSteam">Show current as Steam values</button>
+    </div>
     <div class="bar" style="flex-wrap:wrap;gap:10px;margin-top:6px">
       <button class="primary" id="gmCalStart">Start calibration</button><button id="gmCalTurn">Start turn</button><button id="gmCalStop">Stop at 360° &amp; save</button><button id="gmCalCancel">Cancel</button>
     </div>
@@ -347,6 +353,16 @@ async function connect(){
   }catch(e){ $("#status").innerHTML=`<span class="err">${e.message}</span>`; }
 }
 $("#connect").onclick=connect;
+
+/* Steam Input Gyro To Mouse <-> gyro mouse (same units: raw mouse counts per 360 deg, RWS multiplier) */
+$("#gmFromSteam").onclick=()=>{
+  const d=Math.round(+$("#gmSteamDots").value||0), m=+$("#gmSteamMul").value||0;
+  if(d>=10) $("#gmCal360").value=String(d);
+  if(m>0) $("#gmSens").value=m.toFixed(2);
+  gmDirty=true;
+  gmSay(d>=10||m>0?"copied — press Apply or Save":"enter Steam's values first",d>=10||m>0?"ok":"err");
+};
+$("#gmToSteam").onclick=()=>{ $("#gmSteamDots").value=$("#gmCal360").value; $("#gmSteamMul").value=$("#gmSens").value; };
 
 /* per-axis sliders mirror their number boxes */
 for(const a of ["P","Y","R"]){
