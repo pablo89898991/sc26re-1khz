@@ -930,6 +930,30 @@ void remap_process(struct controller_report *r, float dt)
 			gates[j] = zone_gate[z];
 			center_on[j] = z == 4;
 		}
+		{
+			/* zone feedback: a haptic tick whenever the finger crosses into
+			 * another zone (gates, grid, D-pad on the pad) */
+			static int16_t last_zone[2] = { -1, -1 };
+			int16_t zone = -1;
+
+			if(act && an->mode == REMAP_ANALOG_GATES)
+			{
+				zone = gates[j];
+			}
+			else if(act && an->mode == REMAP_ANALOG_GRID)
+			{
+				zone = (int16_t)(gates[j] | (dirs[2 + j] << 4) | (center_on[j] ? 0x100 : 0));
+			}
+			else if(act && (an->mode == REMAP_ANALOG_DPAD4 || an->mode == REMAP_ANALOG_DPAD8))
+			{
+				zone = dirs[2 + j];
+			}
+			if(zone >= 0 && last_zone[j] >= 0 && zone != last_zone[j])
+			{
+				feedback(an->haptic, j);
+			}
+			last_zone[j] = zone;
+		}
 		if(an->mode == REMAP_ANALOG_SCROLL)
 		{
 			wheel(j, an, act, fx, fy);

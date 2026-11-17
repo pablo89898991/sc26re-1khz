@@ -156,7 +156,7 @@
       <h3>More trackpad / stick modes</h3>
       <p><b>Joystick</b> (trackpads): the finger position works as a stick for Steam, on the same or the other side, with dead zones, anti dead zone and curve. <b>Flick stick</b> (sticks and trackpads): push past the threshold and the camera turns to face that direction, then rotating keeps turning 1:1 — it uses the gyro mouse “counts per 360°”, so do the 360° calibration first. <b>Directional swipe</b> (trackpads): each swipe fires up / down / left / right — once per touch, or repeatedly along a long swipe if you tick it.</p>
       <h3>9 zones (grid)</h3>
-      <p>Trackpad mode: the pad is split into 3 × 3 zones by four lines you can move (left, right, top, bottom); each zone — 4 corners, 4 edges and the centre — has its own binding. It works on touch, on click, or only when the pad is pressed harder than the pressure you set.</p>
+      <p>Trackpad mode: the pad is split into 3 × 3 zones by four lines you can move (left, right, top, bottom); each zone — 4 corners, 4 edges and the centre — has its own binding, and <b>zone haptics</b> tick under your finger whenever it crosses into another zone (also for gates and the trackpad D-pad). It works on touch, on click, or only when the pad is pressed harder than the pressure you set.</p>
       <h3>Unbound inputs do nothing</h3>
       <p>Per profile: when ticked, Steam and the game only get what the profile maps — every input without a binding (buttons, touch sensors, trackpads left “to Steam”) is dropped. Sticks set to Analog and the Steam button still work.</p>
       <h3>Outer ring</h3>
@@ -442,6 +442,7 @@ function editor(){
     if(m===3&&!pad) h+=slider("crv",cv||2,0.5,4,0.05,"Response curve","×","2.0 default · 1.0 linear");
     if(m===4&&!pad) h+=slider("asp",sp/100,0.1,50,0.1,"Speed","notches / s","at full tilt");
     if(m===4&&pad) h+=slider("asp",sp,5,180,1,"Step","°","degrees of circle per scroll step");
+    if(pad&&[1,2,5,9].includes(m)) h+=`<div class="row2"><label>Zone haptics</label><select id="ahap">${HAPT.map(([v,n])=>`<option value="${v}">${n}</option>`).join("")}</select><small>felt every time the finger moves into another ${m===9?"zone":m===5?"gate":"direction"} — so you know where you are without looking</small></div>`;
     if(m===3||(m===4&&!pad)) h+=`<div class="row2"><label>Haptics</label><select id="ahap">${HAPT.map(([v,n])=>`<option value="${v}">${n}</option>`).join("")}</select><small>${m===3?"ticks while moving":"tick per scroll notch"}</small></div>`;
     if(!(pad&&m===0)) h+=pct("ring",P(12),0,100,"Outer ring",`its binding (“Outer ring” below) fires ${b[o+1]&2?"inside":"beyond"} this radius; 0 = off`)+
       `<div class="row2"><label></label><label class="note"><input type="checkbox" id="rinv"${b[o+1]&2?" checked":""}> invert — fire inside the radius (inner ring, e.g. walk)</label></div>`;
@@ -459,6 +460,7 @@ function editor(){
       if(pad&&(nm===4||nm===5)&&U16(o+2)<500) setU16(o+2,2000);
       if(nm===7){ setU16(o+6,100); setU16(o+2,8000); }
       if(nm===8) setU16(o+2,1500);
+      if(pad&&(nm===5||nm===9)&&!b[o+8]) b[o+8]=1;
       if(nm===6){ setU16(o+2,1000); setU16(o+4,1000); }
       setDirty(); render(); };
     if($("#aact")){ $("#aact").value=String(b[o+1]&0x10?16:b[o+1]&1); $("#aact").onchange=e=>{ b[o+1]=(b[o+1]&~0x11)|+e.target.value; if(+e.target.value===16&&!U16(o+16)) setU16(o+16,3000); setDirty(); render(); }; }
