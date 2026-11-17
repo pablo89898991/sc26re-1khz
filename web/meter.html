@@ -1016,6 +1016,7 @@ $("#gyFull").onclick=async()=>{
       const names=GM_BTNS.filter(([b])=>btn&(1<<b)).map(([,n])=>n).concat(btn&(1<<4)?["QAM"]:[]).concat(btn&(1<<16)?["Steam"]:[]);
       if(reason===1) why=` — last wait: touched / pressed: ${names.join(", ")||"?"}`;
       else if(reason===2) why=` — last wait: the gyro moved (${moves}×)`;
+      else if(reason===3) why=" — the gyro sends no data (is the IMU on? tick “Gyro on (standalone)” at the top)";
     }
     if(st===7){ $("#toolStatus").innerHTML=`<span class="err">failed — it kept being touched or moving for 60 s; old calibration kept${why}</span>`; return; }
     if(steps[st]) $("#toolStatus").textContent=steps[st]+" don't touch the controller"+why;

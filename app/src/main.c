@@ -234,6 +234,7 @@ static bool gyro_chord_poll(const struct controller_report *r)
 	static bool drift_only;
 	static struct rgbw_color saved_led;
 	static int64_t last_beep;
+	static int64_t step_started;
 	const uint32_t chord = BIT(CONTROLLER_BUTTON_LEFT_SHOULDER) |
 	                       BIT(CONTROLLER_BUTTON_RIGHT_SHOULDER) | BIT(CONTROLLER_BUTTON_X) |
 	                       BIT(CONTROLLER_BUTTON_Y);
@@ -278,6 +279,7 @@ static bool gyro_chord_poll(const struct controller_report *r)
 			{
 				gyro_step_start(step);
 				state = GYRO_CHORD_RUNNING;
+				step_started = now;
 			}
 			break;
 		case GYRO_CHORD_RUNNING:
@@ -285,6 +287,11 @@ static bool gyro_chord_poll(const struct controller_report *r)
 			bool measuring = step == 1 || step == 3;
 			uint8_t st = measuring ? imu_band_measure_state() : imu_gyro_cal_state();
 
+			if(hands_off && st == 1U && now - step_started > 9000)
+			{
+				/* no gyro samples are arriving: say so instead of a silent timeout */
+				imu_full_cal_note(3U, 0U);
+			}
 			if(!hands_off || st == 3U)
 			{
 				imu_full_cal_note(hands_off ? 2U : 1U, r->buttons);

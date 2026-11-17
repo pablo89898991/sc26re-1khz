@@ -101,7 +101,10 @@ static int32_t band_meas_min[3];
 static int32_t band_meas_max[3];
 static uint32_t band_meas_frames;
 static uint32_t band_meas_target;
-#define BAND_MEAS_MAX_SPREAD 82 /* report units, ~5 deg/s: more means it was moved */
+/* report units, ~8 deg/s: more means it was moved. At 2 kHz with the sensor
+ * filter off a resting controller already spans ~4 deg/s on yaw with spikes,
+ * so 5 deg/s kept failing. */
+#define BAND_MEAS_MAX_SPREAD 131
 
 static void band_meas_sample(size_t i, int16_t v)
 {
