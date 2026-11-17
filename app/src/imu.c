@@ -377,7 +377,7 @@ static void load_cached_imu_report(struct controller_report *report)
  */
 static void hide_motion_if_mouse(struct controller_report *report)
 {
-	if(!gyro_mouse_enabled())
+	if(!gyro_mouse_active())
 	{
 		return;
 	}

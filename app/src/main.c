@@ -530,6 +530,8 @@ int main(void)
 	}
 	radio_personality_init();
 	sc26re_cfg_load();
+	/* the gyro mouse always starts off */
+	(void)sc26re_cfg_set(SC26RE_CFG_GM_ENABLED, 0, false);
 	valve_settings_load_feature_state();
 	ibex_settings_registry_init();
 	err = lizard_init();
@@ -630,7 +632,13 @@ int main(void)
 		int64_t now_ms;
 
 		hardware_read_report(&current);
-		gyro_auto_poll(&current, gyro_chord_poll(&current));
+		{
+			bool cal_busy = gyro_chord_poll(&current);
+
+			gyro_auto_poll(&current, cal_busy);
+			/* any gyro calibration (combination, meter, automatic) pauses the gyro mouse */
+			gyro_mouse_suspend(cal_busy || imu_gyro_cal_state() == 1U || imu_band_measure_state() == 1U);
+		}
 		now_ms = k_uptime_get();
 #if CONFIG_IBEX_RGBW_LED
 		rgbw_led_poll_settings();

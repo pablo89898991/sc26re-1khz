@@ -25,6 +25,9 @@ void gyro_mouse_give_back(int8_t dx, int8_t dy);
 bool gyro_mouse_has_counts(void);
 bool gyro_mouse_take(int8_t *dx, int8_t *dy);
 bool gyro_mouse_enabled(void);
+/* enabled and not paused for a gyro calibration */
+bool gyro_mouse_active(void);
+void gyro_mouse_suspend(bool on);
 void gyro_mouse_set_enabled(bool on);
 int32_t gyro_mouse_counts_per_360(void);
 void gyro_mouse_cal_start(void);

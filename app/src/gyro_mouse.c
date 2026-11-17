@@ -51,19 +51,7 @@ static K_MUTEX_DEFINE(lock);
 /* counts handed to the transport (report meter link test) */
 static atomic_t sent_abs_x, sent_abs_y, sent_reports;
 
-/* saving takes a flash write: done from the system work queue */
 static int16_t pending_enabled = -1;
-static void save_work_fn(struct k_work *work)
-{
-	ARG_UNUSED(work);
-	int16_t v = pending_enabled;
-
-	if(v >= 0)
-	{
-		(void)sc26re_cfg_set(SC26RE_CFG_GM_ENABLED, v, true);
-	}
-}
-static K_WORK_DEFINE(save_work, save_work_fn);
 
 static int32_t cal_saved_counts;
 static void cal_save_work_fn(struct k_work *work)
@@ -75,6 +63,19 @@ static void cal_save_work_fn(struct k_work *work)
 	(void)sc26re_cfg_set(SC26RE_CFG_GM_CAL_LO, (int16_t)(c & 0x7FFF), true);
 }
 static K_WORK_DEFINE(cal_save_work, cal_save_work_fn);
+
+/* gyro calibration running: the gyro mouse pauses (no movement, no quick turns) */
+static volatile bool suspended;
+
+void gyro_mouse_suspend(bool on)
+{
+	suspended = on;
+}
+
+bool gyro_mouse_active(void)
+{
+	return gyro_mouse_enabled() && !suspended;
+}
 
 bool gyro_mouse_enabled(void)
 {
@@ -91,9 +92,9 @@ int32_t gyro_mouse_counts_per_360(void)
 
 void gyro_mouse_set_enabled(bool on)
 {
+	/* not saved: the gyro mouse is off after every power-on */
 	pending_enabled = on ? 1 : 0;
 	(void)sc26re_cfg_set(SC26RE_CFG_GM_ENABLED, pending_enabled, false);
-	k_work_submit(&save_work);
 	(void)haptics_play_beep(on ? 1200 : 500, on ? 120 : 200);
 }
 
@@ -274,7 +275,7 @@ uint32_t gyro_mouse_filter_buttons(uint32_t raw)
 		prev_raw = raw;
 		if(sc26re_cfg_get(SC26RE_CFG_GM_ENABLED) == 1)
 		{
-			for(int q = 0; q < 4; ++q)
+			for(int q = 0; q < 4 && !suspended; ++q)
 			{
 				int16_t b = sc26re_cfg_get(SC26RE_CFG_GM_QT1_BTN + 2 * q);
 				int16_t deg = sc26re_cfg_get(SC26RE_CFG_GM_QT1_DEG + 2 * q);
@@ -303,6 +304,12 @@ void gyro_mouse_feed(const float dps[3], uint32_t buttons, float dt_s)
 
 	prev_buttons = buttons;
 	dt_s = CLAMP(dt_s, 0.0f, 0.005f);
+	if(suspended)
+	{
+		acc_x = acc_y = 0.0f;
+		qt_left = 0.0f;
+		return;
+	}
 
 	if(chord_down)
 	{

@@ -111,7 +111,7 @@
 
   <div class="panel" id="gmPanel">
     <h2>Gyro as mouse (SC26RE v49+)</h2>
-    <p class="note">The controller turns the gyro into mouse movement itself, like Alpakka, with no built-in dead zone and with fractions of a count carried over (sub-pixel accumulation). Everything else stays a normal Steam controller. Works over cable, Puck and Bluetooth. <b>On/off on the controller: press LB + RB + View together</b> (high beep = on, low = off). While it is on, no program (Steam included) gets the gyro: the pad report carries no motion data, so the camera is never moved twice (the IMU panel and “Measure at rest” read 0 until you turn it off).</p>
+    <p class="note">The controller turns the gyro into mouse movement itself, like Alpakka, with no built-in dead zone and with fractions of a count carried over (sub-pixel accumulation). Everything else stays a normal Steam controller. Works over cable, Puck and Bluetooth. <b>On/off on the controller: press LB + RB + View together</b> (high beep = on, low = off). It is <b>off after every power-on</b>, and it pauses by itself while a gyro calibration runs. While it is on, no program (Steam included) gets the gyro: the pad report carries no motion data, so the camera is never moved twice (the IMU panel and “Measure at rest” read 0 until you turn it off).</p>
     <div class="bar" style="flex-wrap:wrap;gap:10px">
       <button class="primary" id="gmToggle">Turn on</button>
       <span id="gmState" class="note">connect the controller</span>
@@ -486,7 +486,6 @@ $("#gmSave").onclick=()=>saveEverything();
 $("#gmToggle").onclick=async()=>{
   const en=await readS16("sc26re/gm_enabled"); if(en===null){ gmSay("needs v49+","err"); return; }
   await stageS16("sc26re/gm_enabled",en===1?0:1);
-  for(const d of targets()){ try{ await fsend(d,1,pathCmd(0xEF,"sc26re/gm_enabled")); }catch(e){} }
   gmPoll();
 };
 $("#gmBandsFromRest").onclick=()=>{
