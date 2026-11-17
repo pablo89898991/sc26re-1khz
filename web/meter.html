@@ -128,6 +128,9 @@
           <label class="note">Roll &nbsp;<input type="range" id="gmScR" min="0" max="200" step="1" style="width:110px"> <input type="number" id="gmScRn" min="0" max="400" style="width:55px">%</label></td></tr>
       <tr><td style="padding:6px 4px">Sensitivity (real world)<div class="note">1.00 = turning the controller 90° turns the camera 90° (needs the calibration below for that game); 2.00 = twice as much</div></td>
         <td><input type="number" id="gmSens" min="0.01" max="50" step="0.05" style="width:90px"> ×</td></tr>
+      <tr><td style="padding:6px 4px">Quick turns (flick)<div class="note">a press turns the camera horizontally by the set angle almost at once (uses counts per 360°, so calibrate first). Works while the gyro mouse is on; the assigned buttons then belong to it and the game does not see them</div></td>
+        <td style="white-space:nowrap"><div style="margin:2px 0"><select id="gmQt1b" class="gmQtB"></select> <select id="gmQt1d" class="gmQtD"></select></div><div style="margin:2px 0"><select id="gmQt2b" class="gmQtB"></select> <select id="gmQt2d" class="gmQtD"></select></div><div style="margin:2px 0"><select id="gmQt3b" class="gmQtB"></select> <select id="gmQt3d" class="gmQtD"></select></div><div style="margin:2px 0"><select id="gmQt4b" class="gmQtB"></select> <select id="gmQt4d" class="gmQtD"></select></div>
+          <label class="note">turn time <input type="number" id="gmQtMs" min="0" max="500" step="10" style="width:60px"> ms (0 = instant)</label></td></tr>
       <tr><td style="padding:6px 4px">Mouse report rate (cable)<div class="note">the mouse shares USB frames with the pad: 1000 = mouse in 3 of 4 frames while moving (pad in the 4th), 500 = they alternate</div></td>
         <td><select id="gmRate"><option value="1000">1000 (mouse priority)</option><option value="500">500 / 500</option></select></td></tr>
       <tr><td style="padding:6px 4px">Mouse report rate (Puck / Bluetooth)<div class="note">a steady rate the wireless link can pass on; movement in between is added up, nothing is lost. If the sensitivity “breathes” or skips, try a lower value</div></td>
@@ -433,8 +436,11 @@ const GM_BTNS=[[0,"A"],[1,"B"],[2,"X"],[3,"Y"],[9,"RB"],[19,"LB"],[23,"RT click"
   $("#gmCalBtn").innerHTML=opts;
   const ax='<option value="0">off</option><option value="1">horizontal</option><option value="-1">horizontal inverted</option><option value="2">vertical</option><option value="-2">vertical inverted</option>';
   document.querySelectorAll(".gmAx").forEach(e=>e.innerHTML=ax);
+  document.querySelectorAll(".gmQtB").forEach(e=>e.innerHTML='<option value="-1">— not used —</option>'+opts);
+  const deg=[90,180,270,360].flatMap(d=>[`<option value="${d}">${d}° right</option>`,`<option value="${-d}">${d}° left</option>`]).join("");
+  document.querySelectorAll(".gmQtD").forEach(e=>e.innerHTML=deg);
 })();
-const GM={act_button:"#gmActBtn",act_mode:"#gmActMode",axis_pitch:"#gmAxP",axis_yaw:"#gmAxY",axis_roll:"#gmAxR",rate:"#gmRate",rate_wl:"#gmRateWl",scale_p:"#gmScPn",scale_y:"#gmScYn",scale_r:"#gmScRn",cal_button:"#gmCalBtn",cal_speed:"#gmCalSpeed"};
+const GM={act_button:"#gmActBtn",act_mode:"#gmActMode",axis_pitch:"#gmAxP",axis_yaw:"#gmAxY",axis_roll:"#gmAxR",rate:"#gmRate",rate_wl:"#gmRateWl",qt1_btn:"#gmQt1b",qt1_deg:"#gmQt1d",qt2_btn:"#gmQt2b",qt2_deg:"#gmQt2d",qt3_btn:"#gmQt3b",qt3_deg:"#gmQt3d",qt4_btn:"#gmQt4b",qt4_deg:"#gmQt4d",qt_ms:"#gmQtMs",scale_p:"#gmScPn",scale_y:"#gmScYn",scale_r:"#gmScRn",cal_button:"#gmCalBtn",cal_speed:"#gmCalSpeed"};
 const GM_BANDS={band_p_lo:"#gmBPlo",band_p_hi:"#gmBPhi",band_y_lo:"#gmBYlo",band_y_hi:"#gmBYhi",band_r_lo:"#gmBRlo",band_r_hi:"#gmBRhi"};
 let gmLoaded=false;
 function gmSay(t,c){ $("#gmStatus").innerHTML=c?`<span class="${c}">${t}</span>`:t; }

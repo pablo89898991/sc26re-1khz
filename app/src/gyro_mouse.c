@@ -220,6 +220,21 @@ static bool active(uint32_t buttons, uint32_t pressed)
 	}
 }
 
+/* quick turn in progress: counts still to send and counts per second */
+static float qt_left;
+static float qt_rate;
+
+static void quick_turn_start(int16_t deg)
+{
+	float counts = (float)gyro_mouse_counts_per_360() * (float)deg / 360.0f;
+	int16_t ms = sc26re_cfg_get(SC26RE_CFG_GM_QT_MS);
+
+	k_mutex_lock(&lock, K_FOREVER);
+	qt_left += counts;
+	qt_rate = ms > 0 ? fabsf(qt_left) * 1000.0f / (float)ms : 1e9f;
+	k_mutex_unlock(&lock);
+}
+
 uint32_t gyro_mouse_filter_buttons(uint32_t raw)
 {
 	bool chord = (raw & CHORD_MASK) == CHORD_MASK;
@@ -248,6 +263,34 @@ uint32_t gyro_mouse_filter_buttons(uint32_t raw)
 		{
 			gyro_mouse_set_enabled(sc26re_cfg_get(SC26RE_CFG_GM_ENABLED) != 1);
 		}
+	}
+	/* quick turns: a press starts one; their buttons are the gyro mouse's
+	 * while it is on, so the game does not see them */
+	{
+		static uint32_t prev_raw;
+		uint32_t pressed = raw & ~prev_raw;
+		uint32_t own = 0U;
+
+		prev_raw = raw;
+		if(sc26re_cfg_get(SC26RE_CFG_GM_ENABLED) == 1)
+		{
+			for(int q = 0; q < 4; ++q)
+			{
+				int16_t b = sc26re_cfg_get(SC26RE_CFG_GM_QT1_BTN + 2 * q);
+				int16_t deg = sc26re_cfg_get(SC26RE_CFG_GM_QT1_DEG + 2 * q);
+
+				if(b < 0 || b > 29 || deg == 0)
+				{
+					continue;
+				}
+				own |= BIT(b);
+				if(!chord_down && (pressed & BIT(b)))
+				{
+					quick_turn_start(deg);
+				}
+			}
+		}
+		raw &= ~own;
 	}
 	/* from the moment the chord is complete until all its buttons are up,
 	 * the game does not see them */
@@ -292,9 +335,32 @@ void gyro_mouse_feed(const float dps[3], uint32_t buttons, float dt_s)
 	}
 	k_mutex_unlock(&lock);
 
+	/* quick turn: spread over gm_qt_ms, independent of the activation button */
+	if(qt_left != 0.0f)
+	{
+		k_mutex_lock(&lock, K_FOREVER);
+		float step = MIN(fabsf(qt_left), qt_rate * MAX(dt_s, 0.0005f));
+
+		step = qt_left > 0.0f ? step : -step;
+		qt_left -= step;
+		if(fabsf(qt_left) < 0.001f)
+		{
+			qt_left = 0.0f;
+		}
+		k_mutex_unlock(&lock);
+		if(sc26re_cfg_get(SC26RE_CFG_GM_ENABLED) == 1)
+		{
+			acc_x += step;
+		}
+	}
+
 	if(sc26re_cfg_get(SC26RE_CFG_GM_ENABLED) != 1 || chord_down || !active(buttons, pressed))
 	{
-		acc_x = acc_y = 0.0f;
+		/* drop gyro movement only; whole counts of a quick turn still go out */
+		if(qt_left == 0.0f)
+		{
+			acc_x = acc_y = 0.0f;
+		}
 		return;
 	}
 

@@ -64,6 +64,15 @@ enum sc26re_cfg_id
 	SC26RE_CFG_GM_SCALE_P,     /* per-axis sensitivity, % (100 = as the real world sensitivity) */
 	SC26RE_CFG_GM_SCALE_Y,
 	SC26RE_CFG_GM_SCALE_R,
+	SC26RE_CFG_GM_QT1_BTN,     /* quick turns ("flick"): button bit, -1 = none */
+	SC26RE_CFG_GM_QT1_DEG,     /* degrees, + = right, - = left */
+	SC26RE_CFG_GM_QT2_BTN,
+	SC26RE_CFG_GM_QT2_DEG,
+	SC26RE_CFG_GM_QT3_BTN,
+	SC26RE_CFG_GM_QT3_DEG,
+	SC26RE_CFG_GM_QT4_BTN,
+	SC26RE_CFG_GM_QT4_DEG,
+	SC26RE_CFG_GM_QT_MS,       /* how long a quick turn takes, ms (0 = one report) */
 	SC26RE_CFG_GM_BAND_SOFT,   /* mouse dead bands: 0 hard, 1 soft */
 	SC26RE_CFG_GM_BAND_P_LO,   /* mouse dead bands, 0.01 deg/s, pitch/yaw/roll */
 	SC26RE_CFG_GM_BAND_P_HI,
