@@ -33,6 +33,8 @@ enum
 #define REMAP_MODE_HOLD 0x01   /* group 1 when held longer */
 #define REMAP_MODE_DOUBLE 0x02 /* group 2 on a second press */
 #define REMAP_MODE_TOGGLE 0x04 /* group 0 toggles on each press */
+#define REMAP_MODE_START 0x08  /* group 0 tapped the moment it is pressed */
+#define REMAP_MODE_RELEASE 0x10 /* group 2 tapped when released (instead of double) */
 
 /* action codes: 0x01..0x65 keyboard usages, 0xE0..0xE7 modifiers */
 #define REMAP_ACT_MOUSE_L 0x70

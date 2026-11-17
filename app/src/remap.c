@@ -70,6 +70,7 @@ struct src_state
 	int64_t t_up;
 	int64_t pulse_until; /* group 0 pulsed (tap) until */
 	int8_t pulse_group;
+	int64_t release_until; /* release press: group 2 tapped until */
 };
 static struct src_state st[REMAP_SRC_COUNT];
 
@@ -140,6 +141,7 @@ static float scroll_notch[2];
 static uint32_t dp4_keep;
 static bool ring_on[4];
 static bool center_on[2];
+static bool pad_act[2]; /* trackpad active (touched / clicked / pressed) this report */
 static bool swipe_done[2];
 static uint8_t swipe_fire[2]; /* per pad this report: bit 0 up, 1 down, 2 left, 3 right */
 static bool swipe_mode[2];
@@ -389,10 +391,39 @@ static void pulse(const struct remap_binding *b, struct src_state *ss, int s, in
 	fire(b, 0, s);
 }
 
-static void run_source(const struct remap_binding *b, struct src_state *s, bool down, int64_t now, int src)
+static void run_source(const struct remap_binding *b, struct src_state *s, bool down, int64_t now, int src,
+                       bool release_ok)
 {
 	bool hold = (b->mode & REMAP_MODE_HOLD) != 0U;
-	bool dbl = (b->mode & REMAP_MODE_DOUBLE) != 0U;
+	bool rel = (b->mode & REMAP_MODE_RELEASE) != 0U;
+	bool dbl = (b->mode & REMAP_MODE_DOUBLE) != 0U && !rel; /* release uses the double slot */
+
+	/* release press: group 2 tapped when let go (trackpads: only when the finger
+	 * leaves / the click ends, not when it slides into another zone) */
+	if(rel && !down && s->down && release_ok)
+	{
+		s->release_until = now + TAP_MS;
+		fire(b, 2, src);
+	}
+	/* start press: group 0 tapped the moment it is pressed (hold still works) */
+	if(b->mode & REMAP_MODE_START)
+	{
+		if(down && !s->down)
+		{
+			s->t_down = now;
+			pulse(b, s, src, now);
+		}
+		if(!down)
+		{
+			s->held_group = -1;
+		}
+		else if(hold && s->held_group < 0 && now - s->t_down >= HOLD_MS)
+		{
+			activate(b, 1, &s->held_group, src);
+		}
+		s->down = down;
+		return;
+	}
 
 	if(b->mode & REMAP_MODE_TOGGLE)
 	{
@@ -919,6 +950,8 @@ void remap_process(struct controller_report *r, float dt)
 		gates[j] = act && an->mode == REMAP_ANALOG_GATES ? gate_mask(fx, fy, dz) : 0U;
 		center_on[j] = false;
 		bool touched = (raw & BIT(j ? CONTROLLER_BUTTON_RIGHT_TOUCHPAD_TOUCH : CONTROLLER_BUTTON_LEFT_TOUCHPAD_TOUCH)) != 0U;
+
+		pad_act[j] = act;
 		int grid_zone = -1;
 
 		if(touched && an->mode == REMAP_ANALOG_GRID)
@@ -1094,7 +1127,21 @@ void remap_process(struct controller_report *r, float dt)
 		}
 		else
 		{
-			run_source(b, ss, src_pressed(s), now, s);
+			int pj = -1;
+
+			if((s >= REMAP_SRC_LPAD_UP && s < REMAP_SRC_LPAD_CW))
+			{
+				pj = s < REMAP_SRC_LPAD_GATE ? (s - REMAP_SRC_LPAD_UP) / 4 : (s - REMAP_SRC_LPAD_GATE) / 4;
+			}
+			else if(s == REMAP_SRC_LS_RING + 2 || s == REMAP_SRC_LS_RING + 3)
+			{
+				pj = s - REMAP_SRC_LS_RING - 2;
+			}
+			else if(s >= REMAP_SRC_LPAD_CENTER)
+			{
+				pj = s - REMAP_SRC_LPAD_CENTER;
+			}
+			run_source(b, ss, src_pressed(s), now, s, pj < 0 || !pad_act[pj]);
 		}
 		if(ss->held_group >= 0)
 		{
@@ -1108,6 +1155,13 @@ void remap_process(struct controller_report *r, float dt)
 			for(size_t i = 0; i < 4; ++i)
 			{
 				out_action(b->act[ss->pulse_group][i], keys, &nk, &mods, &pad);
+			}
+		}
+		if(now < ss->release_until)
+		{
+			for(size_t i = 0; i < 4; ++i)
+			{
+				out_action(b->act[2][i], keys, &nk, &mods, &pad);
 			}
 		}
 	}

@@ -91,7 +91,7 @@
 <body>
 <div class="top">
   <div class="topin">
-    <div class="brand">SC2 <span class="hz">Remapper</span> <span class="note" id="pagever" title="page version — if it is older than expected, press Ctrl+F5">p.2026-11-17c</span></div>
+    <div class="brand">SC2 <span class="hz">Remapper</span> <span class="note" id="pagever" title="page version — if it is older than expected, press Ctrl+F5">p.2026-11-17d</span></div>
     <button class="primary" id="connect">Connect controller</button>
     <span id="status" class="chip">not connected</span>
     <span class="grow"></span>
@@ -187,7 +187,7 @@
       <h3>Turning it on</h3>
       <p><b>LB + RB + Menu</b> on the controller (high beep = on, low = off) or the <b>Remapper</b> switch at the top. While it is on, every input that has a binding belongs to the remapper: Steam and the game only see what it is mapped to. Inputs without a binding work as usual.</p>
       <h3>Binding an input</h3>
-      <p>Click it on the picture or in the lists. <b>Press</b> = actions while held (up to 4 at once, e.g. Ctrl + C). <b>Hold</b> adds a second set for holding longer than 0.25 s (a short press then taps the first set). <b>Double</b> adds a set for a quick second press. <b>Toggle</b> switches the first set on/off with each press. Then press <b>Save to controller</b>.</p>
+      <p>Click it on the picture or in the lists. <b>Press</b> = actions while held (up to 4 at once, e.g. Ctrl + C). <b>Hold</b> adds a second set for holding longer than 0.25 s (a short press then taps the first set). <b>Double</b> adds a set for a quick second press. <b>Start press</b> taps the first set the moment you press. <b>Release press</b> taps a set when you let go — on trackpads only when the finger leaves (or the click ends), so you can slide over the zones and pick one by lifting. <b>Toggle</b> switches the first set on/off with each press. Then press <b>Save to controller</b>.</p>
       <h3>D-pad, sticks and trackpads</h3>
       <p><b>D-pad</b>: 8-way (diagonals press both directions) or 4-way (one direction at a time). <b>Sticks</b>: analog to Steam (with inner / outer dead zones), D-pad 4-way or 8-way (each direction bound like a button, dead zone = how far before it fires), mouse or scroll. <b>Trackpads</b>: to Steam, D-pad 4-way / 8-way, mouse, scroll wheel (circle your finger; each step fires clockwise / counter-clockwise) or gates (4 corners). A trackpad mode works while the pad is <b>touched</b> or only while it is <b>clicked</b>. Click the stick or trackpad to choose; its directions / corners / wheel appear in the list.</p>
       <h3>Xbox 360 output</h3>
@@ -312,7 +312,9 @@ function bindTextO(o){
   const b=prof[cur], m=b[o], main=grpTextO(b,o,0);
   let t=main||'<span class="none">—</span>';
   if(m&1){ const h=grpTextO(b,o,1); if(h) t+=` <em>hold:</em> ${h}`; }
-  if(m&2){ const d=grpTextO(b,o,2); if(d) t+=` <em>double:</em> ${d}`; }
+  if(m&2&&!(m&16)){ const d=grpTextO(b,o,2); if(d) t+=` <em>double:</em> ${d}`; }
+  if(m&16){ const d=grpTextO(b,o,2); if(d) t+=` <em>release:</em> ${d}`; }
+  if(m&8) t+=" <em>(start)</em>";
   if(m&4) t+=" <em>(toggle)</em>";
   return t;
 }
@@ -528,12 +530,15 @@ function editor(){
   ed.innerHTML=`${back?`<a href="#" id="back" class="note">← ${back==="dp"?"D-pad":ANAME[back]}</a>`:""}<h4>${SRCNAME[s]||"input "+s}${useShift(g)?" <em>⇧ shifted</em>":""}<span class="live" id="lvsel"></span></h4>
     ${par||back==="dp"?"":shiftBar(g)}
     ${trig}
-    <div class="modes" style="margin:6px 0">${[[1,"hold"],[2,"double"],[4,"toggle"]].map(([bit,n])=>`<label><input type="checkbox" data-bit="${bit}"${m&bit?" checked":""}> ${n}</label>`).join("")}</div>
-    ${[0,1,2].filter(x=>x===0||(x===1&&(m&1))||(x===2&&(m&2))).map(x=>`<div class="grp"><span>${["press","hold","double"][x]}</span>${[0,1,2,3].map(i=>`<select data-gi="${x}:${i}">${OPTS}</select>`).join("")}</div>`).join("")}
+    <div class="modes" style="margin:6px 0">${[[1,"long press (hold)","second set after 0.25 s held"],[2,"double press","second set on a quick second press"],[8,"start press","the first set is tapped the moment you press, not held"],[16,"release press",(par?"tapped when the finger leaves / the click ends (not when sliding to another zone)":"tapped when you let go")],[4,"toggle","each press switches the first set on / off"]].map(([bit,n,t])=>`<label title="${t}"><input type="checkbox" data-bit="${bit}"${m&bit?" checked":""}> ${n}</label>`).join("")}</div>
+    ${[0,1,2].filter(x=>x===0||(x===1&&(m&1))||(x===2&&(m&18))).map(x=>`<div class="grp"><span>${[m&8?"start":"press","hold",m&16?"release":"double"][x]}</span>${[0,1,2,3].map(i=>`<select data-gi="${x}:${i}">${OPTS}</select>`).join("")}</div>`).join("")}
     ${[0,1,2].some(x=>[0,1,2,3].some(i=>b[bo+1+x*4+i]>=0x76&&b[bo+1+x*4+i]<=0x79))?slider("mvs",U16(38)||1000,50,10000,10,"Mouse move speed","counts / s","for every “Mouse move” action in this profile"):""}
     <div class="row2"><label>Haptics</label><select id="bhap">${HAPT.map(([v,n])=>`<option value="${v}">${n}</option>`).join("")}</select><small>when it fires</small></div>
     ${trigLink}`;
-  ed.querySelectorAll("[data-bit]").forEach(e=>e.onchange=()=>{ b[bo]=(b[bo]&~+e.dataset.bit)|(e.checked?+e.dataset.bit:0); setDirty(); render(); });
+  ed.querySelectorAll("[data-bit]").forEach(e=>e.onchange=()=>{ const bit=+e.dataset.bit; let v=(b[bo]&~bit)|(e.checked?bit:0);
+    if(e.checked&&bit===16) v&=~2; if(e.checked&&bit===2) v&=~16; /* release and double share the third set */
+    if(e.checked&&bit===8) v&=~4; if(e.checked&&bit===4) v&=~8;
+    b[bo]=v; setDirty(); render(); });
   ed.querySelectorAll("[data-gi]").forEach(e=>{ const [x,i]=e.dataset.gi.split(":").map(Number); e.value=String(b[bo+1+x*4+i]); if(e.value==="") e.value="0";
     e.onchange=()=>{ b[bo+1+x*4+i]=+e.value; setDirty(); render(); }; });
   $("#bhap").value=String(b[bo+13]); $("#bhap").onchange=e=>{ b[bo+13]=+e.target.value; setDirty(); };
