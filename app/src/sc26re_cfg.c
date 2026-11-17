@@ -101,6 +101,15 @@ static const struct cfg_desc descs[SC26RE_CFG_COUNT] = {
 	[SC26RE_CFG_GM_BAND_R_LO] = { "gm_band_r_lo", 0, -2000, 0, NO_REGISTRY, 1 },
 	[SC26RE_CFG_GM_BAND_R_HI] = { "gm_band_r_hi", 0, 0, 2000, NO_REGISTRY, 1 },
 	[SC26RE_CFG_GM_HAPTIC] = { "gm_haptic", 0, 0, 3, NO_REGISTRY, 1 },
+	[SC26RE_CFG_GM_OUTPUT] = { "gm_output", 0, 0, 2, NO_REGISTRY, 1 },
+	[SC26RE_CFG_GM_CURVE] = { "gm_curve", 10, 5, 40, NO_REGISTRY, 1 },
+	[SC26RE_CFG_GM_ACCEL] = { "gm_accel", 0, 0, 400, NO_REGISTRY, 1 },
+	[SC26RE_CFG_GM_ACCEL_LO] = { "gm_accel_lo", 30, 0, 1000, NO_REGISTRY, 1 },
+	[SC26RE_CFG_GM_ACCEL_HI] = { "gm_accel_hi", 150, 1, 2000, NO_REGISTRY, 1 },
+	[SC26RE_CFG_GJ_DZ] = { "gj_dz", 0, 0, 200, NO_REGISTRY, 1 },
+	[SC26RE_CFG_GJ_ANTI] = { "gj_anti", 0, 0, 90, NO_REGISTRY, 1 },
+	[SC26RE_CFG_GJ_MAX] = { "gj_max", 300, 10, 2000, NO_REGISTRY, 1 },
+	[SC26RE_CFG_GJ_CURVE] = { "gj_curve", 10, 5, 40, NO_REGISTRY, 1 },
 };
 
 static int16_t values[SC26RE_CFG_COUNT];

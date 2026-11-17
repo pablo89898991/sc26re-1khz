@@ -224,6 +224,7 @@ static bool active(uint32_t buttons, uint32_t pressed)
 
 /* quick turn in progress: counts still to send and counts per second */
 static float qt_left;
+static volatile float joy_x, joy_y; /* gyro joystick deflection, -1..1 */
 static float qt_rate;
 
 static void quick_turn_start(int16_t deg)
@@ -395,6 +396,7 @@ void gyro_mouse_feed(const float dps[3], uint32_t buttons, float dt_s)
 	}
 	if(!act_now)
 	{
+		joy_x = joy_y = 0.0f;
 		/* drop gyro movement only; whole counts of a quick turn still go out */
 		if(qt_left == 0.0f)
 		{
@@ -419,20 +421,66 @@ void gyro_mouse_feed(const float dps[3], uint32_t buttons, float dt_s)
 			SC26RE_CFG_GM_AXIS_PITCH, SC26RE_CFG_GM_AXIS_YAW, SC26RE_CFG_GM_AXIS_ROLL
 		};
 
+		/* controller turn rate on the mouse axes, deg/s (x right, y down) */
+		float wx = 0.0f, wy = 0.0f, w;
+		int16_t out = sc26re_cfg_get(SC26RE_CFG_GM_OUTPUT);
+
 		for(size_t i = 0; i < 3; ++i)
 		{
 			int16_t a = sc26re_cfg_get(axis_cfg[i]);
-			float d = v[i] * natural[i] * k * (a < 0 ? -1.0f : 1.0f) *
+			float d = v[i] * natural[i] * (a < 0 ? -1.0f : 1.0f) *
 			          (float)sc26re_cfg_get(SC26RE_CFG_GM_SCALE_P + i) * 0.01f;
 
 			if(abs(a) == 1)
 			{
-				acc_x += d;
+				wx += d;
 			}
 			else if(abs(a) == 2)
 			{
-				acc_y += d;
+				wy += d;
 			}
+		}
+		w = sqrtf(wx * wx + wy * wy);
+		if(out == 1 || out == 2)
+		{
+			/* gyro as joystick: turn rate -> stick deflection */
+			float dz = (float)sc26re_cfg_get(SC26RE_CFG_GJ_DZ);
+			float mx = MAX((float)sc26re_cfg_get(SC26RE_CFG_GJ_MAX), dz + 1.0f);
+			float anti = (float)sc26re_cfg_get(SC26RE_CFG_GJ_ANTI) * 0.01f;
+			float n;
+
+			if(w <= dz || w <= 0.0f)
+			{
+				joy_x = joy_y = 0.0f;
+				return;
+			}
+			n = powf(MIN((w - dz) / (mx - dz), 1.0f), (float)sc26re_cfg_get(SC26RE_CFG_GJ_CURVE) * 0.1f);
+			n = anti + (1.0f - anti) * n;
+			joy_x = wx / w * n;
+			joy_y = -wy / w * n; /* stick up = cursor up */
+			acc_x = acc_y = 0.0f;
+			return;
+		}
+		joy_x = joy_y = 0.0f;
+		{
+			/* response curve (around 100 deg/s) and acceleration */
+			float c = (float)sc26re_cfg_get(SC26RE_CFG_GM_CURVE) * 0.1f;
+			float g = 1.0f;
+			int16_t acc = sc26re_cfg_get(SC26RE_CFG_GM_ACCEL);
+
+			if(c != 1.0f && w > 0.0f)
+			{
+				g = powf(MAX(w, 0.5f) / 100.0f, c - 1.0f);
+			}
+			if(acc > 0)
+			{
+				float lo = (float)sc26re_cfg_get(SC26RE_CFG_GM_ACCEL_LO);
+				float hi = MAX((float)sc26re_cfg_get(SC26RE_CFG_GM_ACCEL_HI), lo + 1.0f);
+
+				g *= 1.0f + (float)acc * 0.01f * CLAMP((w - lo) / (hi - lo), 0.0f, 1.0f);
+			}
+			acc_x += wx * k * g;
+			acc_y += wy * k * g;
 		}
 	}
 }
@@ -466,4 +514,30 @@ bool gyro_mouse_take(int8_t *dx, int8_t *dy)
 	*dx = (int8_t)x;
 	*dy = (int8_t)y;
 	return *dx != 0 || *dy != 0;
+}
+
+void gyro_mouse_joystick(struct controller_report *r)
+{
+	int16_t out = sc26re_cfg_get(SC26RE_CFG_GM_OUTPUT);
+	float jx = joy_x, jy = joy_y;
+	int32_t x, y;
+
+	if((out != 1 && out != 2) || !gyro_mouse_active() || (jx == 0.0f && jy == 0.0f))
+	{
+		return;
+	}
+	if(out == 1)
+	{
+		x = r->stick_right_x + (int32_t)lroundf(jx * 32767.0f);
+		y = r->stick_right_y + (int32_t)lroundf(jy * 32767.0f);
+		r->stick_right_x = (int16_t)CLAMP(x, -32767, 32767);
+		r->stick_right_y = (int16_t)CLAMP(y, -32767, 32767);
+	}
+	else
+	{
+		x = r->stick_left_x + (int32_t)lroundf(jx * 32767.0f);
+		y = r->stick_left_y + (int32_t)lroundf(jy * 32767.0f);
+		r->stick_left_x = (int16_t)CLAMP(x, -32767, 32767);
+		r->stick_left_y = (int16_t)CLAMP(y, -32767, 32767);
+	}
 }

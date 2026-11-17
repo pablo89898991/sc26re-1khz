@@ -9,7 +9,7 @@
 
 #define REMAP_PROFILES 4
 #define REMAP_MAGIC 0xA7
-#define REMAP_VERSION 2
+#define REMAP_VERSION 3
 
 /* sources: 0..29 controller button bits, then derived inputs */
 enum
@@ -24,7 +24,8 @@ enum
 	REMAP_SRC_RPAD_CW = 56,
 	REMAP_SRC_LT_SOFT = 58,   /* trigger soft pull (full pull = the click bit) */
 	REMAP_SRC_RT_SOFT = 59,
-	REMAP_SRC_COUNT = 60,
+	REMAP_SRC_LS_RING = 60,   /* outer ring: left stick, right stick, left pad, right pad */
+	REMAP_SRC_COUNT = 64,
 };
 
 /* binding modes (bits) */
@@ -50,7 +51,8 @@ enum
 #define REMAP_ANALOG_SCROLL 4 /* sticks: scroll; trackpads: circular scroll wheel */
 #define REMAP_ANALOG_GATES 5  /* trackpads: 4 corner gates */
 
-#define REMAP_AF_CLICK 0x01 /* trackpads: active while clicked (else while touched) */
+#define REMAP_AF_CLICK 0x01       /* trackpads: active while clicked (else while touched) */
+#define REMAP_AF_RING_INVERT 0x02 /* outer ring fires inside the radius instead */
 
 struct remap_analog
 {
@@ -59,8 +61,34 @@ struct remap_analog
 	uint8_t dz_in;  /* inner dead zone / activation, % of the radius */
 	uint8_t dz_out; /* outer dead zone, % (sticks to Steam) */
 	uint16_t speed; /* mouse: counts/s (stick) or per swipe (pad); scroll: notches/s x100 (stick) or deg per step (wheel) */
-	uint8_t haptic; /* feedback for mouse / scroll movement: 0 off, 1 tick, 2 click, 3 strong */
-	uint8_t reserved;
+	uint8_t haptic;  /* feedback for mouse / scroll movement: 0 off, 1 tick, 2 click, 3 strong */
+	uint8_t curve;   /* response exponent x10 (10 linear, 20 squared); 0 = mode default */
+	uint8_t ring;    /* outer ring radius, % (0 = off) */
+	uint8_t anti_dz; /* sticks to Steam: anti dead zone, % */
+	uint8_t reserved[2];
+} __packed;
+
+/* mode shift groups: while the group's shift button is held it uses its
+ * alternative settings and bindings */
+enum
+{
+	REMAP_SHIFT_ABXY,
+	REMAP_SHIFT_DPAD,
+	REMAP_SHIFT_LS,
+	REMAP_SHIFT_RS,
+	REMAP_SHIFT_LPAD,
+	REMAP_SHIFT_RPAD,
+	REMAP_SHIFT_LT,
+	REMAP_SHIFT_RT,
+	REMAP_SHIFT_GROUPS,
+};
+#define REMAP_SHIFT_SRC_COUNT 44
+
+struct remap_shift
+{
+	uint8_t button;    /* 0 none, else controller button bit + 1 */
+	uint8_t dpad_4way; /* D-pad group */
+	struct remap_analog an; /* stick / pad groups */
 } __packed;
 
 struct remap_binding
@@ -79,8 +107,12 @@ struct remap_profile
 	uint8_t trig_soft[2]; /* soft pull point, % of travel */
 	uint8_t reserved[13];
 	struct remap_analog an[4]; /* left stick, right stick, left pad, right pad */
+	struct remap_shift shift[REMAP_SHIFT_GROUPS];
 	struct remap_binding bind[REMAP_SRC_COUNT];
+	struct remap_binding sbind[REMAP_SHIFT_SRC_COUNT]; /* shifted bindings, see remap_shift_src */
 } __packed;
+
+extern const uint8_t remap_shift_src[REMAP_SHIFT_SRC_COUNT];
 
 void remap_init(void);
 bool remap_enabled(void);

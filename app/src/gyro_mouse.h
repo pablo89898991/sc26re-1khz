@@ -34,3 +34,6 @@ void gyro_mouse_cal_start(void);
 void gyro_mouse_cal_turn(void);
 void gyro_mouse_cal_stop(bool save);
 void gyro_mouse_status(struct gyro_mouse_status *st);
+struct controller_report;
+/* gyro output = joystick: adds the deflection to the chosen stick */
+void gyro_mouse_joystick(struct controller_report *r);

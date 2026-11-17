@@ -32,6 +32,10 @@
   #editor h4{margin:4px 0 8px;font-size:15px}
   .subs .item{display:flex;gap:8px;align-items:baseline;padding:4px 8px;border-radius:8px;cursor:pointer} .subs .item:hover{background:var(--panel2)}
   dialog{min-width:min(640px,92vw)}
+  .shiftbar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:6px 8px;margin:4px 0 8px;border:1px dashed #3a4a66;border-radius:10px}
+  .shiftbar select{padding:4px 6px;font-size:12.5px}
+  .seg{display:inline-flex;border:1px solid var(--edge);border-radius:8px;overflow:hidden} .seg button{border:0;border-radius:0;padding:5px 10px;font-size:12.5px} .seg button.on{background:var(--accent);color:#06101f}
+  #editor h4 em{color:var(--accent2);font-style:normal;font-size:12px}
   .modes label{font-size:12px;color:var(--muted);margin-right:8px;white-space:nowrap}
   .live{display:inline-block;width:9px;height:9px;border-radius:50%;background:#33415c;margin-left:6px;vertical-align:middle}
   .live.on{background:#4fc98a;box-shadow:0 0 8px #4fc98a}
@@ -137,6 +141,10 @@
       <p>Click it on the picture or in the lists. <b>Press</b> = actions while held (up to 4 at once, e.g. Ctrl + C). <b>Hold</b> adds a second set for holding longer than 0.25 s (a short press then taps the first set). <b>Double</b> adds a set for a quick second press. <b>Toggle</b> switches the first set on/off with each press. Then press <b>Save to controller</b>.</p>
       <h3>D-pad, sticks and trackpads</h3>
       <p><b>D-pad</b>: 8-way (diagonals press both directions) or 4-way (one direction at a time). <b>Sticks</b>: analog to Steam (with inner / outer dead zones), D-pad 4-way or 8-way (each direction bound like a button, dead zone = how far before it fires), mouse or scroll. <b>Trackpads</b>: to Steam, D-pad 4-way / 8-way, mouse, scroll wheel (circle your finger; each step fires clockwise / counter-clockwise) or gates (4 corners). A trackpad mode works while the pad is <b>touched</b> or only while it is <b>clicked</b>. Click the stick or trackpad to choose; its directions / corners / wheel appear in the list.</p>
+      <h3>Mode shifts</h3>
+      <p>Like Steam Input: every group (face buttons, D-pad, each stick, each trackpad, each trigger) can have a <b>mode shift button</b>. While you hold it, the group uses a second set of settings and bindings — e.g. hold LB and the right trackpad turns from mouse into a scroll wheel. Open the group (or one of its buttons), choose the button under “Mode shift”, then switch between <b>Normal</b> and <b>Shifted ⇧</b> to edit each. The shift button itself is not sent to the game.</p>
+      <h3>Outer ring</h3>
+      <p>Sticks and trackpads have an outer ring: its binding fires while the stick / finger is beyond the radius you set (or inside it, with invert) — e.g. sprint when the stick is pushed all the way.</p>
       <h3>Triggers</h3>
       <p><b>Soft pull</b> fires when the trigger passes the point you choose (1–100 %), <b>full pull</b> is the click at the end. Binding the soft pull takes the analog trigger away from Steam.</p>
       <h3>Haptics</h3>
@@ -146,7 +154,7 @@
       <h3>Profiles</h3>
       <p>4 profiles. Choose the active one with <b>Steam + D-pad</b> on the controller (up = 1, right = 2, down = 3, left = 4; the beep gets higher with the number), at the top of “Buttons &amp; profiles”, or with a “Switch to profile” action bound to any input. Export / Import saves a profile to a file.</p>
       <h3>Gyro</h3>
-      <p>Gyro settings and gyro as mouse (on/off: <b>LB + RB + View</b>) are on the “Gyro &amp; gyro mouse” page; they are the same for every profile.</p>
+      <p>Gyro settings, gyro as mouse (on/off: <b>LB + RB + View</b>) and gyro as a <b>joystick</b> (right or left stick, with dead zone, anti dead zone, full-deflection speed and response curve) are on the “Gyro &amp; gyro mouse” page, the same for every profile. The mouse also has a response curve and acceleration (off by default, so the real-world sensitivity stays 1:1).</p>
     </div>
   </section>
 </div>
@@ -155,7 +163,7 @@
 <script>
 const $=s=>document.querySelector(s);
 /* ---- layout: matches struct remap_profile in app/src/remap.h ---- */
-const PROF_SIZE=64+60*14, CH=40, PROF_VER=2;
+const PROF_SIZE=1704, CH=40, PROF_VER=3;
 const SRC=[
  ["Face buttons",[[0,"A"],[1,"B"],[2,"X"],[3,"Y"]]],
  ["Shoulders and triggers",[[19,"LB"],[9,"RB"],[27,"LT full pull"],[23,"RT full pull"],[58,"LT soft pull"],[59,"RT soft pull"]]],
@@ -163,10 +171,10 @@ const SRC=[
  ["D-pad",[[13,"D-pad up"],[10,"D-pad down"],[12,"D-pad left"],[11,"D-pad right"]]],
  ["Middle and stick clicks",[[6,"View"],[14,"Menu"],[4,"QAM"],[15,"L3 (left stick click)"],[5,"R3 (right stick click)"]]],
  ["Touch sensors",[[24,"Left stick touch","capsense"],[20,"Right stick touch","capsense"],[29,"Left grip touch","gripsense"],[28,"Right grip touch","gripsense"],[25,"Left pad touch"],[21,"Right pad touch"],[26,"Left pad click"],[22,"Right pad click"]]],
- ["Left stick",[[30,"Left stick up"],[31,"Left stick down"],[32,"Left stick left"],[33,"Left stick right"]],"ls"],
- ["Right stick",[[34,"Right stick up"],[35,"Right stick down"],[36,"Right stick left"],[37,"Right stick right"]],"rs"],
- ["Left trackpad",[[38,"Left pad up"],[39,"Left pad down"],[40,"Left pad left"],[41,"Left pad right"],[46,"Left pad gate top-left"],[47,"Left pad gate top-right"],[48,"Left pad gate bottom-left"],[49,"Left pad gate bottom-right"],[54,"Left pad wheel clockwise"],[55,"Left pad wheel counter-clockwise"]],"lp"],
- ["Right trackpad",[[42,"Right pad up"],[43,"Right pad down"],[44,"Right pad left"],[45,"Right pad right"],[50,"Right pad gate top-left"],[51,"Right pad gate top-right"],[52,"Right pad gate bottom-left"],[53,"Right pad gate bottom-right"],[56,"Right pad wheel clockwise"],[57,"Right pad wheel counter-clockwise"]],"rp"],
+ ["Left stick",[[30,"Left stick up"],[31,"Left stick down"],[32,"Left stick left"],[33,"Left stick right"],[60,"Left stick outer ring"]],"ls"],
+ ["Right stick",[[34,"Right stick up"],[35,"Right stick down"],[36,"Right stick left"],[37,"Right stick right"],[61,"Right stick outer ring"]],"rs"],
+ ["Left trackpad",[[38,"Left pad up"],[39,"Left pad down"],[40,"Left pad left"],[41,"Left pad right"],[46,"Left pad gate top-left"],[47,"Left pad gate top-right"],[48,"Left pad gate bottom-left"],[49,"Left pad gate bottom-right"],[54,"Left pad wheel clockwise"],[55,"Left pad wheel counter-clockwise"],[62,"Left pad outer ring"]],"lp"],
+ ["Right trackpad",[[42,"Right pad up"],[43,"Right pad down"],[44,"Right pad left"],[45,"Right pad right"],[50,"Right pad gate top-left"],[51,"Right pad gate top-right"],[52,"Right pad gate bottom-left"],[53,"Right pad gate bottom-right"],[56,"Right pad wheel clockwise"],[57,"Right pad wheel counter-clockwise"],[63,"Right pad outer ring"]],"rp"],
 ];
 /* ---- action list ---- */
 const KEYS={4:"A",5:"B",6:"C",7:"D",8:"E",9:"F",10:"G",11:"H",12:"I",13:"J",14:"K",15:"L",16:"M",17:"N",18:"O",19:"P",20:"Q",21:"R",22:"S",23:"T",24:"U",25:"V",26:"W",27:"X",28:"Y",29:"Z",
@@ -186,22 +194,39 @@ const OPTS=(()=>{
 })();
 const AIDX={ls:0,rs:1,lp:2,rp:3}, ANAME={ls:"Left stick",rs:"Right stick",lp:"Left trackpad",rp:"Right trackpad"};
 const isPad=an=>an==="lp"||an==="rp";
-const aOff=an=>32+AIDX[an]*8; /* mode, flags, dz_in, dz_out, speed u16, haptic, - */
+/* mode shift groups (same order as remap_shift_src in app/src/remap.c) */
+const SHIFT_SRC=[[0,1,2,3],[13,10,12,11],[30,31,32,33,60],[34,35,36,37,61],[38,39,40,41,46,47,48,49,54,55,62],[42,43,44,45,50,51,52,53,56,57,63],[58,27],[59,23]];
+const SHIFT_NAME=["Face buttons","D-pad","Left stick","Right stick","Left trackpad","Right trackpad","Left trigger","Right trigger"];
+const SIDX={}, SGRP={}; { let k=0; SHIFT_SRC.forEach((l,g)=>l.forEach(x=>{ SIDX[x]=k++; SGRP[x]=g; })); }
+const GRP_OF_AN={ls:2,rs:3,lp:4,rp:5};
+const shOff=g=>80+g*14; /* button (bit+1, 0 none), dpad 4-way, analog (12) */
+const shBtn=g=>g==null?0:prof[cur][shOff(g)];
+let layer=0; /* 1 = editing the shifted settings / bindings */
+const useShift=g=>layer===1&&shBtn(g)>0;
+const aOffL=(an,L)=>L?shOff(GRP_OF_AN[an])+2:32+AIDX[an]*12; /* mode, flags, dz_in, dz_out, speed u16, haptic, curve, ring, anti_dz */
+const aOff=an=>aOffL(an,useShift(GRP_OF_AN[an])?1:0);
+const bOffL=(s,L)=>L?1088+SIDX[s]*14:192+s*14;
+const bOff=s=>bOffL(s,useShift(SGRP[s])?1:0);
+const RAWBTN=[[0,"A"],[1,"B"],[2,"X"],[3,"Y"],[19,"LB"],[9,"RB"],[27,"LT click"],[23,"RT click"],[17,"L4"],[18,"L5"],[7,"R4"],[8,"R5"],[15,"L3"],[5,"R3"],[6,"View"],[14,"Menu"],[4,"QAM"],[13,"D-pad up"],[10,"D-pad down"],[12,"D-pad left"],[11,"D-pad right"],[26,"Left pad click"],[22,"Right pad click"],[25,"Left pad touch"],[21,"Right pad touch"],[24,"Left stick touch"],[20,"Right stick touch"],[29,"Left grip touch"],[28,"Right grip touch"]];
+const SHBTN=[[0,"— none —"],...RAWBTN.map(([v,n])=>[v+1,n])];
+const shName=g=>(SHBTN.find(([v])=>v===shBtn(g))||[0,"?"])[1];
 const MODES_STICK=[[0,"Analog (to Steam)"],[1,"D-pad 4-way"],[2,"D-pad 8-way"],[3,"Mouse"],[4,"Scroll"]];
 const MODES_PAD=[[0,"To Steam (not remapped)"],[1,"D-pad 4-way"],[2,"D-pad 8-way"],[3,"Mouse"],[4,"Scroll wheel (circle)"],[5,"Gates (4 corners)"]];
-const modeName=an=>((isPad(an)?MODES_PAD:MODES_STICK).find(([v])=>v===prof[cur][aOff(an)])||[0,"?"])[1];
+const modeNameL=(an,L)=>((isPad(an)?MODES_PAD:MODES_STICK).find(([v])=>v===prof[cur][aOffL(an,L)])||[0,"?"])[1];
+const modeName=an=>modeNameL(an,0)+(shBtn(GRP_OF_AN[an])?` <em>⇧ ${shName(GRP_OF_AN[an])}:</em> ${modeNameL(an,1)}`:"");
 const HAPT=[[0,"off"],[1,"tick (light)"],[2,"click"],[3,"strong"]];
 /* sub-inputs of a stick / pad mode: [source, label] */
-function subSources(an){ const m=prof[cur][aOff(an)], base={ls:30,rs:34,lp:38,rp:42}[an];
-  if(m===1||m===2) return ["Up","Down","Left","Right"].map((n,i)=>[base+i,n]);
-  if(isPad(an)&&m===5){ const g=an==="lp"?46:50; return ["Top-left","Top-right","Bottom-left","Bottom-right"].map((n,i)=>[g+i,n]); }
-  if(isPad(an)&&m===4){ const w=an==="lp"?54:56; return [[w,"Clockwise"],[w+1,"Counter-clockwise"]]; }
-  return []; }
+function subSources(an,L){ const o=L===undefined?aOff(an):aOffL(an,L), b=prof[cur], m=b[o], base={ls:30,rs:34,lp:38,rp:42}[an], out=[];
+  if(m===1||m===2) out.push(...["Up","Down","Left","Right"].map((n,i)=>[base+i,n]));
+  if(isPad(an)&&m===5){ const g=an==="lp"?46:50; out.push(...["Top-left","Top-right","Bottom-left","Bottom-right"].map((n,i)=>[g+i,n])); }
+  if(isPad(an)&&m===4){ const w=an==="lp"?54:56; out.push([w,"Clockwise"],[w+1,"Counter-clockwise"]); }
+  if(b[o+8]>0) out.push([60+AIDX[an],"Outer ring"]);
+  return out; }
 let prof=[0,1,2,3].map(()=>emptyProfile()), cur=0;
 function emptyProfile(){ const b=new Uint8Array(PROF_SIZE); b[0]=0xA7; b[1]=PROF_VER; b[17]=50; b[18]=50; const dv=new DataView(b.buffer);
-  for(const an of ["ls","rs","lp","rp"]){ const o=aOff(an); b[o+2]=isPad(an)?20:0; dv.setUint16(o+4,isPad(an)?1200:1500,true); }
+  for(const an of ["ls","rs","lp","rp"]){ const o=aOffL(an,0); b[o+2]=isPad(an)?20:0; dv.setUint16(o+4,isPad(an)?1200:1500,true); }
   return b; }
-const bOff=s=>64+s*14;
+
 
 /* ---- UI ---- */
 const SRCNAME={}; for(const [,list] of SRC) for(const [s,n] of list) SRCNAME[s]=n;
@@ -209,19 +234,24 @@ const ACTNAME=v=>v===0?"":MOUSE[v]||MODS[v]||KEYS[v]||(v>=0x80&&v<0x9e?"Pad "+((
 let sel=null; /* number = source, string = analog group "ls"/"rs"/"lp"/"rp" */
 function buildTabs(){ $("#tabs").innerHTML=[0,1,2,3].map(i=>`<button class="tab${i===cur?" on":""}" data-p="${i}">Profile ${i+1}${nameOf(prof[i])?": "+nameOf(prof[i]):""}</button>`).join(""); document.querySelectorAll("#tabs .tab").forEach(b=>b.onclick=()=>{ saveName(); cur=+b.dataset.p; render(); }); }
 function nameOf(b){ return new TextDecoder().decode(b.slice(2,16)).replace(/\0.*$/,""); }
-function saveName(){ const b=prof[cur]; b[0]=0xA7; b[1]=1; const nm=new TextEncoder().encode($("#pname").value.slice(0,13)); b.fill(0,2,16); b.set(nm.slice(0,13),2); }
-function grpText(b,s,g){ return [0,1,2,3].map(i=>ACTNAME(b[bOff(s)+1+g*4+i])).filter(x=>x).join(" + "); }
-function bindText(s){
-  const b=prof[cur], m=b[bOff(s)], main=grpText(b,s,0);
+function saveName(){ const b=prof[cur]; b[0]=0xA7; b[1]=PROF_VER; const nm=new TextEncoder().encode($("#pname").value.slice(0,13)); b.fill(0,2,16); b.set(nm.slice(0,13),2); }
+function grpTextO(b,o,g){ return [0,1,2,3].map(i=>ACTNAME(b[o+1+g*4+i])).filter(x=>x).join(" + "); }
+const grpText=(b,s,g)=>grpTextO(b,bOff(s),g);
+function bindTextO(o){
+  const b=prof[cur], m=b[o], main=grpTextO(b,o,0);
   let t=main||'<span class="none">—</span>';
-  if(m&1){ const h=grpText(b,s,1); if(h) t+=` <em>hold:</em> ${h}`; }
-  if(m&2){ const d=grpText(b,s,2); if(d) t+=` <em>double:</em> ${d}`; }
+  if(m&1){ const h=grpTextO(b,o,1); if(h) t+=` <em>hold:</em> ${h}`; }
+  if(m&2){ const d=grpTextO(b,o,2); if(d) t+=` <em>double:</em> ${d}`; }
   if(m&4) t+=" <em>(toggle)</em>";
   return t;
 }
-function item(s,label){ return `<div class="item${sel===s?" sel":""}" data-s="${s}"><span class="k">${label}</span><span class="b${grpText(prof[cur],s,0)?"":" none"}">${bindText(s)}</span></div>`; }
+const bindText=s=>bindTextO(bOff(s));
+function itemText(s){ const g=SGRP[s]; let t=bindTextO(bOffL(s,0));
+  if(g!=null&&shBtn(g)&&grpTextO(prof[cur],bOffL(s,1),0)) t+=` <em>⇧ ${shName(g)}:</em> ${bindTextO(bOffL(s,1))}`; return t; }
+function item(s,label){ const has=grpTextO(prof[cur],bOffL(s,0),0)||(SGRP[s]!=null&&shBtn(SGRP[s])&&grpTextO(prof[cur],bOffL(s,1),0));
+  return `<div class="item${sel===s?" sel":""}" data-s="${s}"><span class="k">${label}</span><span class="b${has?"":" none"}">${itemText(s)}</span></div>`; }
 function anItem(an){ return `<div class="item${sel===an?" sel":""}" data-s="${an}"><span class="k">mode</span><span class="b">${modeName(an)}</span></div>`; }
-function dirItems(an){ return subSources(an).map(([s,n])=>item(s,n)).join(""); }
+function dirItems(an){ const seen=new Set(), l=[...subSources(an,0)]; if(shBtn(GRP_OF_AN[an])) l.push(...subSources(an,1)); return l.filter(([x])=>!seen.has(x)&&seen.add(x)).map(([x,n])=>item(x,n)).join(""); }
 /* line drawing of the Steam Controller (2026) front, made for this page; centre line x = 281 */
 function smoothPath(pts,closed){
   const n=pts.length, P=i=>closed?pts[(i+n)%n]:pts[Math.max(0,Math.min(n-1,i))];
@@ -278,7 +308,7 @@ function render(){
   const b0=prof[cur];
   $("#colL").innerHTML=`<div class="sect">Left</div>${item(19,"LB")}${item(17,"L4")}${item(18,"L5")}${item(6,"View")}${item(15,"L3 click")}
     <div class="sect">Left trigger</div>${item(58,`soft pull ${b0[17]||50}%`)}${item(27,"full pull")}
-    <div class="sect">D-pad</div><div class="item${sel==="dp"?" sel":""}" data-s="dp"><span class="k">layout</span><span class="b">${b0[16]?"4-way":"8-way"}</span></div>${item(13,"Up")}${item(10,"Down")}${item(12,"Left")}${item(11,"Right")}
+    <div class="sect">D-pad</div><div class="item${sel==="dp"?" sel":""}" data-s="dp"><span class="k">layout</span><span class="b">${b0[16]?"4-way":"8-way"}${shBtn(1)?` <em>⇧ ${shName(1)}:</em> ${b0[shOff(1)+1]?"4-way":"8-way"}`:""}</span></div>${item(13,"Up")}${item(10,"Down")}${item(12,"Left")}${item(11,"Right")}
     <div class="sect">Left stick</div>${anItem("ls")}${dirItems("ls")}
     <div class="sect">Left trackpad</div>${anItem("lp")}${dirItems("lp")}${item(26,"Click")}`;
   $("#colR").innerHTML=`<div class="sect">Right</div>${item(9,"RB")}${item(7,"R4")}${item(8,"R5")}${item(14,"Menu")}${item(5,"R3 click")}${item(4,"QAM (…)")}
@@ -294,74 +324,111 @@ function render(){
   editor();
 }
 function openSel(v){ sel=isNaN(+v)?v:+v; render(); const d=$("#dlg"); if(d.showModal&&!d.open) d.showModal(); }
-const parentOf=s=>s>=30&&s<38?(s<34?"ls":"rs"):s>=38&&s<58?([38,46,54].some(x=>s>=x&&s<x+4&&!(x===54&&s>=56))?"lp":"rp"):null;
-const pct=(id,v,lo,hi,label,hint)=>`<div class="row2"><label>${label}</label><input type="range" id="${id}" min="${lo}" max="${hi}" value="${v}"><output id="${id}_o">${v}%</output>${hint?`<small>${hint}</small>`:""}</div>`;
-function wirePct(id,set){ const e=$("#"+id); e.oninput=()=>{ $("#"+id+"_o").textContent=e.value+"%"; set(+e.value); setDirty(); }; e.onchange=()=>render(); }
+const parentOf=s=>{ if(s>=60) return ["ls","rs","lp","rp"][s-60]; if(s>=30&&s<38) return s<34?"ls":"rs";
+  if(s>=38&&s<58) return ((s>=38&&s<42)||(s>=46&&s<50)||s===54||s===55)?"lp":"rp"; return null; };
+const slider=(id,v,lo,hi,step,label,fmt,hint)=>`<div class="row2"><label>${label}</label><input type="range" id="${id}" min="${lo}" max="${hi}" step="${step}" value="${v}"><output id="${id}_o">${fmt(v)}</output>${hint?`<small>${hint}</small>`:""}</div>`;
+function wireSl(id,fmt,set){ const e=$("#"+id); if(!e) return; e.oninput=()=>{ $("#"+id+"_o").textContent=fmt(+e.value); set(+e.value); setDirty(); }; e.onchange=()=>render(); }
+const P=v=>v+"%", X=v=>(v/10).toFixed(1)+"×";
+const pct=(id,v,lo,hi,label,hint)=>slider(id,v,lo,hi,1,label,P,hint);
+function wirePct(id,set){ wireSl(id,P,set); }
+function shiftBar(g){
+  if(g==null) return "";
+  const on=shBtn(g);
+  return `<div class="shiftbar"><span class="note">Mode shift — while holding</span><select id="shb">${SHBTN.map(([v,n])=>`<option value="${v}">${n}</option>`).join("")}</select>
+    ${on?`<span class="seg"><button data-l="0" class="${layer?"":"on"}">Normal</button><button data-l="1" class="${layer?"on":""}">Shifted ⇧</button></span>`:`<span class="note">the ${SHIFT_NAME[g].toLowerCase()} use${g===1||g>=6?"s":""} other settings</span>`}</div>`;
+}
+function wireShift(g){
+  if(!$("#shb")) return;
+  $("#shb").value=String(shBtn(g));
+  $("#shb").onchange=e=>{ const v=+e.target.value, b=prof[cur], o=shOff(g), was=b[o]; b[o]=v;
+    if(v&&!was){ b[o+1]=b[16]; if(g>=2&&g<=5){ const an=["ls","rs","lp","rp"][g-2]; b.copyWithin(o+2,aOffL(an,0),aOffL(an,0)+12); } layer=1; }
+    if(!v) layer=0; setDirty(); render(); };
+  document.querySelectorAll(".seg [data-l]").forEach(x=>x.onclick=()=>{ layer=+x.dataset.l; render(); });
+}
 function editor(){
   const ed=$("#editor"); if(sel===null){ ed.innerHTML=""; return; }
   const b=prof[cur], dv=new DataView(b.buffer);
   if(sel==="dp"){
+    const o=useShift(1)?shOff(1)+1:16;
     $("#dlgClear").style.display="none";
-    ed.innerHTML=`<h4>D-pad</h4><div class="row2"><label>Layout</label><select id="dpl"><option value="0">8-way — diagonals press both directions</option><option value="1">4-way — one direction at a time</option></select></div>
-      <p class="note">Bind the four directions in the list (Up / Down / Left / Right).</p>`;
-    $("#dpl").value=String(b[16]); $("#dpl").onchange=e=>{ b[16]=+e.target.value; setDirty(); render(); };
+    ed.innerHTML=`<h4>D-pad${useShift(1)?" <em>⇧ shifted</em>":""}</h4>${shiftBar(1)}
+      <div class="row2"><label>Layout</label><select id="dpl"><option value="0">8-way — diagonals press both directions</option><option value="1">4-way — one direction at a time</option></select></div>
+      <div class="sect" style="margin-left:0">Bindings</div><div class="subs">${[[13,"Up"],[10,"Down"],[12,"Left"],[11,"Right"]].map(([x,n])=>`<div class="item" data-sub="${x}"><span class="k">${n}</span><span class="b">${bindText(x)}</span></div>`).join("")}</div>`;
+    $("#dpl").value=String(b[o]); $("#dpl").onchange=e=>{ b[o]=+e.target.value; setDirty(); render(); };
+    wireShift(1); ed.querySelectorAll("[data-sub]").forEach(e=>e.onclick=()=>openSel(e.dataset.sub));
     return;
   }
   if(typeof sel==="string"){
-    const an=sel, o=aOff(an), m=b[o], pad=isPad(an), subs=subSources(an);
+    const an=sel, g=GRP_OF_AN[an], o=aOff(an), m=b[o], pad=isPad(an), subs=subSources(an);
     $("#dlgClear").style.display="none";
-    const sp=dv.getUint16(o+4,true);
-    let speed="";
-    if(m===3) speed=`<div class="row2"><label>Speed</label><input type="number" id="asp" min="50" max="20000" step="50" value="${sp}"><small>${pad?"mouse counts for a swipe across the whole pad":"mouse counts per second at full tilt"}</small></div>`;
-    if(m===4) speed=pad?`<div class="row2"><label>Step</label><input type="number" id="asp" min="5" max="180" step="5" value="${sp}"><small>degrees of circle per scroll step</small></div>`
-                       :`<div class="row2"><label>Speed</label><input type="number" id="asp" min="10" max="20000" step="10" value="${sp}"><small>notches per second ×100 at full tilt</small></div>`;
-    const dzIn = !(pad&&(m===0||m===3)) ? pct("dzi",b[o+2],0,90, pad?"Dead zone (centre)":"Inner dead zone", m===0?"0 = Steam’s own":pad?"finger inside it = nothing":"") : "";
-    const dzOut= (!pad&&m===0) ? pct("dzo",b[o+3],0,50,"Outer dead zone","full deflection reached this much earlier") : "";
-    const act = pad&&m!==0 ? `<div class="row2"><label>Works while</label><select id="aact"><option value="0">the pad is touched</option><option value="1">the pad is clicked</option></select></div>` : "";
-    const hap = (m===3||(m===4&&!pad)) ? `<div class="row2"><label>Haptics</label><select id="ahap">${HAPT.map(([v,n])=>`<option value="${v}">${n}</option>`).join("")}</select><small>${m===3?"ticks while moving":"tick per scroll notch"}</small></div>` : "";
-    ed.innerHTML=`<h4>${ANAME[an]}</h4>
+    const sp=dv.getUint16(o+4,true), cv=b[o+9]||0;
+    let h="";
+    if(pad&&m!==0) h+=`<div class="row2"><label>Works while</label><select id="aact"><option value="0">the pad is touched</option><option value="1">the pad is clicked</option></select></div>`;
+    if(!pad&&m===0){
+      h+=pct("dzi",b[o+2],0,90,"Inner dead zone","0 = Steam’s own");
+      h+=pct("dzo",b[o+3],0,50,"Outer dead zone","full deflection is reached this much earlier");
+      h+=pct("anti",b[o+10],0,90,"Anti dead zone","smallest deflection Steam sees once out of the dead zone");
+      h+=slider("crv",cv||10,5,40,1,"Response curve",X,"1.0× linear · above = finer near the centre · below = faster start");
+    }
+    if(m===1||m===2||m===5||(m===4&&pad)||(m===3&&!pad)||(m===4&&!pad))
+      h+=pct("dzi",b[o+2],0,90,pad?"Dead zone (centre)":"Dead zone",m===1||m===2?"how far before a direction fires":pad?"finger inside it = nothing":"");
+    if(m===3) h+=slider("asp",sp,pad?100:100,pad?20000:10000,50,"Sensitivity",v=>v+(pad?" / swipe":" /s"),pad?"mouse counts for a swipe across the whole pad":"mouse counts per second at full tilt");
+    if(m===3&&!pad) h+=slider("crv",cv||20,5,40,1,"Response curve",X,"2.0× default · 1.0× linear");
+    if(m===4&&!pad) h+=slider("asp",sp,10,5000,10,"Speed",v=>(v/100).toFixed(1)+" notches/s","at full tilt");
+    if(m===4&&pad) h+=slider("asp",sp,5,180,5,"Step",v=>v+"°","degrees of circle per scroll step");
+    if(m===3||m===4) h+=`<div class="row2"><label>Haptics</label><select id="ahap">${HAPT.map(([v,n])=>`<option value="${v}">${n}</option>`).join("")}</select><small>${m===3?"ticks while moving":pad?"(set on the clockwise / counter-clockwise bindings)":"tick per scroll notch"}</small></div>`;
+    if(!(pad&&m===0)) h+=slider("ring",b[o+8],0,100,1,"Outer ring",v=>v?v+"%":"off",`binding “Outer ring” fires ${b[o+1]&2?"inside":"beyond"} this radius`)+
+      `<div class="row2"><label></label><label class="note"><input type="checkbox" id="rinv"${b[o+1]&2?" checked":""}> invert — fire inside the radius (e.g. walk)</label></div>`;
+    ed.innerHTML=`<h4>${ANAME[an]}${useShift(g)?" <em>⇧ shifted</em>":""}</h4>${shiftBar(g)}
       <div class="row2"><label>Mode</label><select id="amode">${(pad?MODES_PAD:MODES_STICK).map(([v,n])=>`<option value="${v}">${n}</option>`).join("")}</select></div>
-      ${act}${dzIn}${dzOut}${speed}${hap}
-      ${subs.length?`<div class="sect" style="margin-left:0">Bindings</div><div class="subs">${subs.map(([s,n])=>`<div class="item" data-sub="${s}"><span class="k">${n}</span><span class="b${grpText(b,s,0)?"":" none"}">${bindText(s)}</span></div>`).join("")}</div>`:""}
-      ${m===0?`<p class="note">${pad?"Steam gets the trackpad as usual.":"Steam gets the stick (with the dead zones above)."}</p>`:""}`;
+      ${h}
+      ${subs.length?`<div class="sect" style="margin-left:0">Bindings</div><div class="subs">${subs.map(([x,n])=>`<div class="item" data-sub="${x}"><span class="k">${n}</span><span class="b${grpText(b,x,0)?"":" none"}">${bindText(x)}</span></div>`).join("")}</div>`:""}
+      ${m===0?`<p class="note">${pad?"Steam gets the trackpad as usual.":"Steam gets the stick with the settings above."}</p>`:""}`;
     $("#amode").value=String(m);
     $("#amode").onchange=e=>{ const nm=+e.target.value; b[o]=nm;
-      if(nm===3) dv.setUint16(o+4,pad?1200:1500,true);
+      if(nm===3){ dv.setUint16(o+4,pad?1200:1500,true); b[o+9]=0; }
       if(nm===4) dv.setUint16(o+4,pad?30:800,true);
+      if(nm===0&&!pad){ b[o+2]=0; b[o+3]=0; b[o+9]=0; }
       if((nm===1||nm===2)&&b[o+2]<5) b[o+2]=pad?20:30;
       if(pad&&(nm===4||nm===5)&&b[o+2]<5) b[o+2]=20;
       setDirty(); render(); };
     if($("#aact")){ $("#aact").value=String(b[o+1]&1); $("#aact").onchange=e=>{ b[o+1]=(b[o+1]&~1)|+e.target.value; setDirty(); render(); }; }
-    if($("#dzi")) wirePct("dzi",v=>b[o+2]=v);
-    if($("#dzo")) wirePct("dzo",v=>b[o+3]=v);
-    if($("#asp")) $("#asp").onchange=e=>{ const lo=+e.target.min, hi=+e.target.max; dv.setUint16(o+4,Math.max(lo,Math.min(hi,+e.target.value||lo)),true); setDirty(); };
+    wirePct("dzi",v=>b[o+2]=v); wirePct("dzo",v=>b[o+3]=v); wirePct("anti",v=>b[o+10]=v);
+    wireSl("crv",X,v=>b[o+9]=v);
+    if($("#asp")){ const f=$("#asp_o").textContent; wireSl("asp",{3:v=>v+(pad?" / swipe":" /s"),4:pad?(v=>v+"°"):(v=>(v/100).toFixed(1)+" notches/s")}[m],v=>dv.setUint16(o+4,v,true)); }
+    wireSl("ring",v=>v?v+"%":"off",v=>b[o+8]=v);
+    if($("#rinv")) $("#rinv").onchange=e=>{ b[o+1]=(b[o+1]&~2)|(e.target.checked?2:0); setDirty(); render(); };
     if($("#ahap")){ $("#ahap").value=String(b[o+6]); $("#ahap").onchange=e=>{ b[o+6]=+e.target.value; setDirty(); }; }
-    ed.querySelectorAll("[data-sub]").forEach(e=>e.onclick=()=>openSel(e.dataset.sub));
+    wireShift(g); ed.querySelectorAll("[data-sub]").forEach(e=>e.onclick=()=>openSel(e.dataset.sub));
     return;
   }
-  const s=sel, m=b[bOff(s)], par=parentOf(s);
+  const s=sel, g=SGRP[s], bo=bOff(s), m=b[bo], par=parentOf(s);
   $("#dlgClear").style.display="";
   const trig = s===58||s===59 ? pct("tsp",b[17+s-58]||50,1,100,"Soft pull point","how far the trigger is pulled before this fires; full pull = the click at the end") : "";
   const trigLink = s===27||s===23 ? `<p class="note">Full pull = the click at the end of the trigger. <a href="#" id="tlink">Soft pull →</a></p>` : s===58||s===59 ? `<p class="note"><a href="#" id="tlink">Full pull →</a></p>` : "";
-  ed.innerHTML=`${par?`<a href="#" id="back" class="note">← ${ANAME[par]}</a>`:""}<h4>${SRCNAME[s]||"input "+s}<span class="live" id="lvsel"></span></h4>
+  const back = par||(s>=10&&s<=13?"dp":null);
+  ed.innerHTML=`${back?`<a href="#" id="back" class="note">← ${back==="dp"?"D-pad":ANAME[back]}</a>`:""}<h4>${SRCNAME[s]||"input "+s}${useShift(g)?" <em>⇧ shifted</em>":""}<span class="live" id="lvsel"></span></h4>
+    ${par||back==="dp"?"":shiftBar(g)}
     ${trig}
     <div class="modes" style="margin:6px 0">${[[1,"hold"],[2,"double"],[4,"toggle"]].map(([bit,n])=>`<label><input type="checkbox" data-bit="${bit}"${m&bit?" checked":""}> ${n}</label>`).join("")}</div>
-    ${[0,1,2].filter(g=>g===0||(g===1&&(m&1))||(g===2&&(m&2))).map(g=>`<div class="grp"><span>${["press","hold","double"][g]}</span>${[0,1,2,3].map(i=>`<select data-gi="${g}:${i}">${OPTS}</select>`).join("")}</div>`).join("")}
+    ${[0,1,2].filter(x=>x===0||(x===1&&(m&1))||(x===2&&(m&2))).map(x=>`<div class="grp"><span>${["press","hold","double"][x]}</span>${[0,1,2,3].map(i=>`<select data-gi="${x}:${i}">${OPTS}</select>`).join("")}</div>`).join("")}
     <div class="row2"><label>Haptics</label><select id="bhap">${HAPT.map(([v,n])=>`<option value="${v}">${n}</option>`).join("")}</select><small>when it fires</small></div>
     ${trigLink}`;
-  ed.querySelectorAll("[data-bit]").forEach(e=>e.onchange=()=>{ b[bOff(s)]=(b[bOff(s)]&~+e.dataset.bit)|(e.checked?+e.dataset.bit:0); setDirty(); render(); });
-  ed.querySelectorAll("[data-gi]").forEach(e=>{ const [g,i]=e.dataset.gi.split(":").map(Number); e.value=String(b[bOff(s)+1+g*4+i]); if(e.value==="") e.value="0";
-    e.onchange=()=>{ b[bOff(s)+1+g*4+i]=+e.value; setDirty(); render(); }; });
-  $("#bhap").value=String(b[bOff(s)+13]); $("#bhap").onchange=e=>{ b[bOff(s)+13]=+e.target.value; setDirty(); };
-  if($("#tsp")) wirePct("tsp",v=>b[17+s-58]=v);
-  if($("#back")) $("#back").onclick=e=>{ e.preventDefault(); openSel(par); };
+  ed.querySelectorAll("[data-bit]").forEach(e=>e.onchange=()=>{ b[bo]=(b[bo]&~+e.dataset.bit)|(e.checked?+e.dataset.bit:0); setDirty(); render(); });
+  ed.querySelectorAll("[data-gi]").forEach(e=>{ const [x,i]=e.dataset.gi.split(":").map(Number); e.value=String(b[bo+1+x*4+i]); if(e.value==="") e.value="0";
+    e.onchange=()=>{ b[bo+1+x*4+i]=+e.value; setDirty(); render(); }; });
+  $("#bhap").value=String(b[bo+13]); $("#bhap").onchange=e=>{ b[bo+13]=+e.target.value; setDirty(); };
+  wirePct("tsp",v=>b[17+s-58]=v);
+  if($("#back")) $("#back").onclick=e=>{ e.preventDefault(); openSel(back); };
   if($("#tlink")) $("#tlink").onclick=e=>{ e.preventDefault(); openSel({27:58,23:59,58:27,59:23}[s]); };
+  wireShift(g);
 }
 function collect(){ saveName(); }
 let dirty=false;
 function setDirty(v=true){ dirty=v; $("#dirty").style.display=v?"":"none"; }
 $("#dlgDone").onclick=()=>$("#dlg").close();
 $("#dlgClear").onclick=()=>{ if(typeof sel==="number"){ prof[cur].fill(0,bOff(sel),bOff(sel)+14); setDirty(); render(); } };
+$("#dlg").addEventListener("close",()=>{ layer=0; });
 $("#dlg").addEventListener("close",()=>{ sel=null; render(); });
 $("#pname").oninput=()=>{ saveName(); setDirty(); buildTabs(); };
 document.querySelectorAll(".view").forEach(b=>b.onclick=()=>{ document.querySelectorAll(".view").forEach(x=>x.classList.toggle("on",x===b)); for(const v of ["map","gyro","help"]) $("#v_"+v).hidden=v!==b.dataset.v; });
@@ -478,6 +545,15 @@ const GY=[
  ["gmb:r","Mouse dead band roll","gband",null,0,""],
  ...[1,2,3,4].flatMap(q=>[[`gm_qt${q}_btn`,`Quick turn ${q}`,"sel",BTNOPTS,1,""],[`gm_qt${q}_deg`,`… angle`,"sel",DEGOPTS,1,""]]),
  ["gm_qt_ms","Quick turn time","num",[0,500,10],1,"ms, 0 = instant"],
+ ["gm_output","Gyro drives","sel",[[0,"the mouse"],[1,"a joystick — right stick"],[2,"a joystick — left stick"]],1,""],
+ ["gm_curve","Response curve","num",[0.5,4,0.1],10,"1.0 = linear (true 1:1)"],
+ ["gm_accel","Acceleration","num",[0,400,5],1,"% extra speed at fast turns; 0 = off"],
+ ["gm_accel_lo","Acceleration starts at","num",[0,1000,5],1,"°/s"],
+ ["gm_accel_hi","Acceleration full at","num",[1,2000,5],1,"°/s"],
+ ["gj_max","Full deflection at","num",[10,2000,5],1,"°/s of turning = stick fully pushed"],
+ ["gj_dz","Dead zone","num",[0,200,1],1,"°/s"],
+ ["gj_anti","Anti dead zone","num",[0,90,1],1,"%"],
+ ["gj_curve","Response curve","num",[0.5,4,0.1],10,"1.0 = linear"],
  ["gm_haptic","Haptics","sel",[[0,"off"],[1,"tick (light)"],[2,"click"],[3,"strong"]],1,"when the activation button starts the mouse and on quick turns"],
 ];
 const GYI={}; for(const e of GY) if(e[0]!=="#") GYI[e[0]]=e;
@@ -497,10 +573,16 @@ const CARDS=()=>[
    ${one("gyro_auto_cal")}${one("gyro_chord_mode","")}${one("gyro_band_soft","soft = no jump at the edge")}
    ${row("Dead bands","°/s, 0 and 0 = off",ctlHtml("band:x","Pitch")+"<br>"+ctlHtml("band:z","Yaw")+"<br>"+ctlHtml("band:y","Roll"))}
    <div class="tools"><button id="tCal">Calibrate drift</button><button id="tFull">Full calibration (+ dead bands)</button><button id="tReset">Reset to factory</button></div></div>`,
- `<div class="card"><h3>Gyro as mouse — activation and axes</h3>
-   ${row("Gyro moves the mouse","button or touch sensor, and how",ctlHtml("gm_act_button")+ctlHtml("gm_act_mode"))}
+ `<div class="card"><h3>Gyro — activation and axes</h3>
+   ${row("Gyro works","button or touch sensor, and how",ctlHtml("gm_act_button")+ctlHtml("gm_act_mode"))}
    ${row("Axes","what each gyro axis moves",ctlHtml("gm_axis_pitch","Pitch")+ctlHtml("gm_axis_yaw","Yaw")+ctlHtml("gm_axis_roll","Roll"))}
    ${one("gm_haptic")}</div>`,
+ `<div class="card"><h3>Gyro output and response</h3>
+   ${one("gm_output","mouse = real-world sensitivity below; joystick = for games without mouse support")}
+   <div class="sect" style="margin-left:0">Mouse</div>
+   ${one("gm_curve")}${one("gm_accel")}${row("Acceleration range","°/s: from … to",ctlHtml("gm_accel_lo","from")+ctlHtml("gm_accel_hi","to"))}
+   <div class="sect" style="margin-left:0">Joystick</div>
+   ${one("gj_max")}${one("gj_dz")}${one("gj_anti")}${one("gj_curve")}</div>`,
  `<div class="card"><h3>Gyro as mouse — sensitivity</h3>
    ${one("gm_sens")}
    ${row("Per axis","% of the sensitivity",ctlHtml("gm_scale_p","P")+ctlHtml("gm_scale_y","Y")+ctlHtml("gm_scale_r","R"))}
