@@ -121,6 +121,11 @@
         <td><select id="gmActBtn"></select> <select id="gmActMode"><option value="1">hold to turn on</option><option value="2">hold to turn off</option><option value="3">press to toggle</option><option value="0">always on</option></select></td></tr>
       <tr><td style="padding:6px 4px">Axes<div class="note">what each gyro axis moves; use “inverted” if a direction feels backwards</div></td>
         <td style="white-space:nowrap">Pitch <select id="gmAxP" class="gmAx"></select> Yaw <select id="gmAxY" class="gmAx"></select> Roll <select id="gmAxR" class="gmAx"></select></td></tr>
+      <tr><td style="padding:6px 4px">Per-axis sensitivity<div class="note">% of the sensitivity above, for each gyro axis separately (e.g. roll 88 %)</div></td>
+        <td style="white-space:nowrap">
+          <label class="note">Pitch <input type="range" id="gmScP" min="0" max="200" step="1" style="width:110px"> <input type="number" id="gmScPn" min="0" max="400" style="width:55px">%</label><br>
+          <label class="note">Yaw &nbsp;<input type="range" id="gmScY" min="0" max="200" step="1" style="width:110px"> <input type="number" id="gmScYn" min="0" max="400" style="width:55px">%</label><br>
+          <label class="note">Roll &nbsp;<input type="range" id="gmScR" min="0" max="200" step="1" style="width:110px"> <input type="number" id="gmScRn" min="0" max="400" style="width:55px">%</label></td></tr>
       <tr><td style="padding:6px 4px">Sensitivity (real world)<div class="note">1.00 = turning the controller 90° turns the camera 90° (needs the calibration below for that game); 2.00 = twice as much</div></td>
         <td><input type="number" id="gmSens" min="0.01" max="50" step="0.05" style="width:90px"> ×</td></tr>
       <tr><td style="padding:6px 4px">Mouse report rate (cable)<div class="note">the mouse shares USB frames with the pad: 1000 = mouse in 3 of 4 frames while moving (pad in the 4th), 500 = they alternate</div></td>
@@ -336,6 +341,14 @@ async function connect(){
 }
 $("#connect").onclick=connect;
 
+/* per-axis sliders mirror their number boxes */
+for(const a of ["P","Y","R"]){
+  const r=$("#gmSc"+a), n=$("#gmSc"+a+"n");
+  r.oninput=()=>{ n.value=r.value; gmDirty=true; };
+  n.oninput=()=>{ r.value=Math.min(200,+n.value||0); };
+  setInterval(()=>{ if(document.activeElement!==r && String(r.value)!==String(Math.min(200,+n.value||0))) r.value=Math.min(200,+n.value||0); },500);
+}
+
 /* ---- Save = everything; auto-refresh of the shown values ---- */
 let busySaving=false, lsQuiet=false;
 async function saveEverything(){
@@ -398,7 +411,7 @@ const GM_BTNS=[[0,"A"],[1,"B"],[2,"X"],[3,"Y"],[9,"RB"],[19,"LB"],[23,"RT click"
   const ax='<option value="0">off</option><option value="1">horizontal</option><option value="-1">horizontal inverted</option><option value="2">vertical</option><option value="-2">vertical inverted</option>';
   document.querySelectorAll(".gmAx").forEach(e=>e.innerHTML=ax);
 })();
-const GM={act_button:"#gmActBtn",act_mode:"#gmActMode",axis_pitch:"#gmAxP",axis_yaw:"#gmAxY",axis_roll:"#gmAxR",rate:"#gmRate",rate_wl:"#gmRateWl",cal_button:"#gmCalBtn",cal_speed:"#gmCalSpeed"};
+const GM={act_button:"#gmActBtn",act_mode:"#gmActMode",axis_pitch:"#gmAxP",axis_yaw:"#gmAxY",axis_roll:"#gmAxR",rate:"#gmRate",rate_wl:"#gmRateWl",scale_p:"#gmScPn",scale_y:"#gmScYn",scale_r:"#gmScRn",cal_button:"#gmCalBtn",cal_speed:"#gmCalSpeed"};
 const GM_BANDS={band_p_lo:"#gmBPlo",band_p_hi:"#gmBPhi",band_y_lo:"#gmBYlo",band_y_hi:"#gmBYhi",band_r_lo:"#gmBRlo",band_r_hi:"#gmBRhi"};
 let gmLoaded=false;
 function gmSay(t,c){ $("#gmStatus").innerHTML=c?`<span class="${c}">${t}</span>`:t; }

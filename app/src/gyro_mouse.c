@@ -317,7 +317,8 @@ void gyro_mouse_feed(const float dps[3], uint32_t buttons, float dt_s)
 		for(size_t i = 0; i < 3; ++i)
 		{
 			int16_t a = sc26re_cfg_get(axis_cfg[i]);
-			float d = v[i] * natural[i] * k * (a < 0 ? -1.0f : 1.0f);
+			float d = v[i] * natural[i] * k * (a < 0 ? -1.0f : 1.0f) *
+			          (float)sc26re_cfg_get(SC26RE_CFG_GM_SCALE_P + i) * 0.01f;
 
 			if(abs(a) == 1)
 			{
