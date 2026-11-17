@@ -153,6 +153,7 @@
       <div class="cards">
         <div class="card"><h3>Gyro drift</h3>
           <p class="note cardnote">Put the controller on a table and don’t touch it. <b>Calibrate drift</b> takes about 2 s (on the controller: LB + RB + X + Y). <b>Full calibration</b> also measures the gyro at rest and sets the pitch / yaw / roll dead bands (about 15 s). <b>Reset</b> goes back to the factory drift and turns the dead bands off.</p>
+          <div class="row2"><label>LB + RB + X + Y on the pad</label><select id="cChord"><option value="1">drift only (~2 s, default)</option><option value="0">full calibration (+ dead bands, ~15 s)</option></select><small>which calibration the button combination runs; saved at once</small></div>
           <div class="tools"><button class="primary" id="cGyCal">Calibrate drift</button><button id="cGyFull">Full calibration (+ dead bands)</button><button id="cGyReset" class="ghost">Reset to factory</button></div>
           <p class="note cardnote" id="cGyStatus"></p></div>
         <div class="card"><h3>Sticks</h3>
@@ -580,7 +581,7 @@ $("#connect").onclick=async()=>{
       if(!devs.includes(d)){ devs.push(d); d.addEventListener("inputreport",onReport); } }
     $("#status").textContent=devs.length?"connected — waiting for the controller…":"no device selected";
     for(let i=0;i<40&&devs.length>1&&!ctlDev;i++) await new Promise(r=>setTimeout(r,50));
-    await refreshState(); await readAll(); await gyRead(); await lvRead();
+    await refreshState(); await readAll(); await gyRead(); await lvRead(); await calRead();
   }catch(e){ $("#status").innerHTML=`<span class="err">${e.message}</span>`; }
 };
 navigator.hid&&navigator.hid.addEventListener("disconnect",e=>{ devs=devs.filter(d=>d!==e.device); if(ctlDev===e.device) ctlDev=null; $("#status").textContent=devs.length?"":"disconnected"; $("#status").className="chip"; });
@@ -853,6 +854,9 @@ $("#cCalStart").onclick=calTool("sc26re/gm_cal_start","armed — press the calib
 $("#cCalTurn").onclick=calTool("sc26re/gm_cal_turn","turning… press the button (or Stop) exactly at 360°");
 $("#cCalStop").onclick=async()=>{ await calTool("sc26re/gm_cal_stop","saved")(); try{ const hi=await cfgGet("gm_cal_hi"), lo=await cfgGet("gm_cal_lo"); cSet("cCalStatus",`<span class="ok">saved — ${hi*32768+lo} counts per 360°</span>`); }catch(e){} };
 $("#cCalCancel").onclick=calTool("sc26re/gm_cal_cancel","cancelled");
+$("#cChord").onchange=async e=>{ try{ await cfgSet("gyro_chord_mode",+e.target.value); const g=document.getElementById("g_gyro_chord_mode"); if(g) g.value=e.target.value;
+    cSet("cGyStatus",`<span class="ok">saved — LB + RB + X + Y now runs ${+e.target.value?"drift only":"the full calibration"}</span>`); }catch(err){ cSet("cGyStatus",`<span class="err">${err.message}</span>`); } };
+async function calRead(){ try{ const v=await cfgGet("gyro_chord_mode"); if(v!==null) $("#cChord").value=String(v); }catch(e){} }
 let prStep=0;
 $("#cPrStart").onclick=async()=>{ try{ await send("sc26re/prs_cal/1",0xF0); prStep=1; $("#cPrNext").disabled=false;
     cSet("cPrStatus","Step 1/2 — <b>don’t touch either trackpad</b> for 2 seconds, then press <b>Next</b>."); }catch(e){ cSet("cPrStatus",`<span class="err">${e.message}</span>`); } };
