@@ -209,45 +209,45 @@ function smoothPath(pts,closed){
     d+=` C${c1[0].toFixed(1)} ${c1[1].toFixed(1)} ${c2[0].toFixed(1)} ${c2[1].toFixed(1)} ${p2[0]} ${p2[1]}`; }
   return d+(closed?"Z":"");
 }
-const MIR=pts=>pts.map(([x,y])=>[562-x,y]);
-const SC_OUT_L=[[200,28],[165,29],[125,33],[99,40],[80,51],[65,67],[55,88],[45,123],[35,158],[25,198],[16,245],[11,300],[15,338],[25,364],[40,382],[60,393],[80,396],[97,393],[108,384],[118,370],[128,351],[140,337],[158,330],[200,328]];
+const CX=404, MIR=pts=>pts.map(([x,y])=>[2*CX-x,y]);
+const SC_OUT_L=[[330,45],[290,47],[270,49],[254,52],[238,56],[226,62],[214,68],[206,77],[198,92],[190,116],[182,142],[174,169],[166,201],[158,239],[152,280],[150,314],[152,345],[158,371],[166,387],[178,400],[192,409],[207,412],[222,411],[234,406],[242,397],[248,384],[254,366],[262,349],[274,337],[290,331],[330,330]];
 const SC_OUT=[...SC_OUT_L,...MIR(SC_OUT_L).reverse()];
-const SC_INNER_L=[[168,164],[140,166],[121,170],[106,180],[97,192],[91,210],[86,240],[80,275],[76,305],[73,335],[71,362]];
-const SC_BUMP_L=[[79,53],[82,40],[92,29],[108,22],[128,18],[148,18],[159,21],[167,29]];
-const SC_TRIG_L=[[96,22],[104,11],[120,5],[140,5],[152,9],[158,18]];
+const SC_INNER_L=[[299,160],[270,163],[246,170],[234,180],[228,190],[224,200],[219,220],[214,250],[209,280],[206,310],[203,350],[204,380],[207,400],[213,411]];
+const SC_BUMP_L=[[218,63],[224,55],[236,49],[252,44.5],[268,42.5],[280,44.5],[288,47]];
+const SC_TRIG_L=[[226,52],[236,40],[252,34],[270,33],[282,37],[288,45]];
 function picture(){
-  const COL="#b4bccb", ST=`stroke="${COL}" stroke-width="2.4" stroke-linejoin="round" stroke-linecap="round"`, F='fill="rgba(0,0,0,0)"';
-  const H=(s,inner)=>`<g class="hit${sel===s?" sel":""}" data-s="${s}">${inner}</g>`;
+  const COL="#bcc4d3", DIM="#4d586e", ST=`stroke="${COL}" stroke-width="2.6" stroke-linejoin="round" stroke-linecap="round"`, SD=`stroke="${DIM}" stroke-width="2.6" stroke-linecap="round"`, F='fill="rgba(0,0,0,0)"';
+  const NM=s=>SRCNAME[s]||{ls:"Left stick",rs:"Right stick",lp:"Left trackpad",rp:"Right trackpad"}[s]||"";
+  const H=(s,inner)=>`<g class="hit${sel===s?" sel":""}" data-s="${s}"><title>${NM(s)}</title>${inner}</g>`;
   const T=(x,y,t,fs,col)=>`<text x="${x}" y="${y}" text-anchor="middle" font-size="${fs}" font-weight="700" fill="${col||COL}" pointer-events="none">${t}</text>`;
-  const face=(s,x,y,t)=>H(s,`<circle class="sh" cx="${x}" cy="${y}" r="15.5" ${F} ${ST}/>`+T(x,y+6,t,16.5));
-  const pill=(s,x,y,w,h,inner)=>H(s,`<rect class="sh" x="${x-w/2}" y="${y-h/2}" width="${w}" height="${h}" rx="${h/2}" ${F} ${ST}/>`+(inner||""));
-  const stick=(an,x,y)=>H(an,`<circle class="sh" cx="${x}" cy="${y}" r="41" ${F} ${ST}/><circle cx="${x}" cy="${y}" r="24.5" fill="none" ${ST}/>`);
-  const pad=(an,x,y,rot)=>H(an,`<rect class="sh" x="${x-52}" y="${y-52}" width="104" height="104" rx="11" transform="rotate(${rot} ${x} ${y})" ${F} ${ST}/>`);
-  const dx=114, dy=105.5, w=13.5, L=40.5, r=5;
+  const face=(s,x,y)=>H(s,`<circle class="sh" cx="${x}" cy="${y}" r="15.5" ${F} ${ST}/>`);
+  const pill=(s,x,y,w,h)=>H(s,`<rect class="sh" x="${x-w/2}" y="${y-h/2}" width="${w}" height="${h}" rx="${h/2}" ${F} ${ST}/>`);
+  const stick=(an,x,y)=>H(an,`<circle class="sh" cx="${x}" cy="${y}" r="32" ${F} ${SD}/><circle cx="${x}" cy="${y}" r="19" fill="none" ${ST}/>`);
+  const pad=(an,x,y,rot)=>H(an,`<rect class="sh" x="${x-53}" y="${y-53}" width="106" height="106" rx="14" transform="rotate(${rot} ${x} ${y})" ${F} ${ST}/>`);
+  const dx=245.5, dy=109.5, w=12.5, L=36.5, r=6;
   const armD=`M${dx-w} ${dy-w} V${dy-L+r} Q${dx-w} ${dy-L} ${dx-w+r} ${dy-L} H${dx+w-r} Q${dx+w} ${dy-L} ${dx+w} ${dy-L+r} V${dy-w}`;
   const arm=(s,rot)=>H(s,`<path class="sh" d="${armD} L${dx} ${dy} Z" transform="rotate(${rot} ${dx} ${dy})" ${F} stroke="none"/><path d="${armD}" transform="rotate(${rot} ${dx} ${dy})" fill="none" ${ST}/>`);
   const DASH='stroke="#76819a" stroke-width="1.5" stroke-dasharray="4 3"';
-  const back=(s,x,y,t)=>H(s,`<rect class="sh" x="${x}" y="${y}" width="30" height="16" rx="8" ${F} ${DASH}/>`+T(x+15,y+12,t,9.5,"#8f9ab0"));
-  const bump=(s,pts,t,tx)=>H(s,`<path class="sh" d="${smoothPath(pts,false)} Z" ${F} ${ST}/>`+T(tx,29,t,9,"#8f9ab0"));
-  const trig=(s,pts,t,tx)=>H(s,`<path class="sh" d="${smoothPath(pts,false)}" ${F} ${DASH}/>`+T(tx,16,t,9,"#8f9ab0"));
-  const gripL="M15 300 C14 330 22 362 42 382 C56 393 70 393 72 380 L76 296 C56 282 30 284 15 300 Z";
-  const gripR=gripL.replace(/(-?\d+(\.\d+)?) (-?\d+(\.\d+)?)/g,(m,x,_a,y)=>`${562-x} ${y}`);
-  return `<svg viewBox="0 -4 562 412" width="100%">
-    ${trig(27,SC_TRIG_L,"LT",128)}${trig(23,MIR(SC_TRIG_L),"RT",434)}
-    ${bump(19,SC_BUMP_L,"LB",126)}${bump(9,MIR(SC_BUMP_L),"RB",436)}
+  const back=(s,x,y,t)=>H(s,`<rect class="sh" x="${x}" y="${y}" width="30" height="15" rx="7.5" ${F} ${DASH}/>`+T(x+15,y+11.2,t,9,"#8f9ab0"));
+  const bump=s=>pts=>H(s,`<path class="sh" d="${smoothPath(pts,false)}" ${F} ${ST} stroke-width="3"/>`);
+  const trig=(s,pts,t,tx)=>H(s,`<path class="sh" d="${smoothPath(pts,false)}" ${F} ${DASH}/>`+T(tx,29,t,9,"#8f9ab0"));
+  const gripL="M151 300 C150 340 155 378 176 399 C188 410 200 413 205 404 L207 300 C190 290 166 290 151 300 Z";
+  const gripR=gripL.replace(/(-?\d+(\.\d+)?) (-?\d+(\.\d+)?)/g,(m,x,_a,y)=>`${2*CX-x} ${y}`);
+  return `<svg viewBox="140 18 528 402" width="100%">
+    ${trig(27,SC_TRIG_L,"LT",256)}${trig(23,MIR(SC_TRIG_L),"RT",552)}
+    ${bump(19)(SC_BUMP_L)}${bump(9)(MIR(SC_BUMP_L))}
     <path d="${smoothPath(SC_OUT,true)}" fill="none" ${ST}/>
-    <path d="${smoothPath(SC_INNER_L,false)} ${smoothPath(MIR(SC_INNER_L),false)} M243 161 H319" fill="none" ${ST}/>
-    ${H(29,`<path class="sh" d="${gripL}" ${F} ${DASH}/>`+T(46,346,"grip",10,"#8590a6"))}
-    ${H(28,`<path class="sh" d="${gripR}" ${F} ${DASH}/>`+T(516,346,"grip",10,"#8590a6"))}
-    ${back(17,38,200,"L4")}${back(18,38,224,"L5")}${back(7,494,200,"R4")}${back(8,494,224,"R5")}
+    <path d="${smoothPath(SC_INNER_L,false)} ${smoothPath(MIR(SC_INNER_L),false)} M361 157 H447" fill="none" ${SD}/>
+    ${H(29,`<path class="sh" d="${gripL}" ${F} ${DASH}/>`+T(178,358,"grip",9.5,"#8590a6"))}
+    ${H(28,`<path class="sh" d="${gripR}" ${F} ${DASH}/>`+T(630,358,"grip",9.5,"#8590a6"))}
+    ${back(17,172,206,"L4")}${back(18,172,228,"L5")}${back(7,606,206,"R4")}${back(8,606,228,"R5")}
     ${arm(13,0)}${arm(11,90)}${arm(10,180)}${arm(12,270)}
-    ${pill(6,185,67,32,15,`<path d="M176 63 h10 v5 M181 68 h10 v4 h-10 z" fill="none" stroke="${COL}" stroke-width="1.6"/>`)}
-    ${pill(14,377,67,32,15,`<path d="M370 63.5 h14 M370 67 h14 M370 70.5 h14" stroke="${COL}" stroke-width="1.6"/>`)}
-    <circle cx="281" cy="106" r="16" fill="none" ${ST}/><circle cx="285.5" cy="101.5" r="5" fill="none" stroke="${COL}" stroke-width="2.2"/><path d="M274 110 L283 104" stroke="${COL}" stroke-width="2.4" stroke-linecap="round"/><circle cx="274" cy="110.5" r="2.6" fill="${COL}"/>
-    ${face(3,448,75,"Y")}${face(2,417,107,"X")}${face(1,480,107,"B")}${face(0,448,138,"A")}
-    ${stick("ls",202,145.5)}${stick("rs",360,145.5)}
-    ${pad("lp",178,247,8.5)}${pad("rp",384,247,-8.5)}
-    ${pill(4,281,248.5,42,15,`<circle cx="273" cy="248.5" r="1.8" fill="${COL}"/><circle cx="281" cy="248.5" r="1.8" fill="${COL}"/><circle cx="289" cy="248.5" r="1.8" fill="${COL}"/>`)}
+    ${pill(6,312,74.5,36,13)}${pill(14,496,74.5,36,13)}
+    <circle cx="${CX}" cy="74.5" r="3" fill="${DIM}"/><circle cx="${CX}" cy="109.5" r="16.5" fill="none" ${ST}/>
+    ${face(3,562.5,83.5)}${face(2,532.5,109.5)}${face(1,591.5,109.5)}${face(0,562.5,136.5)}
+    ${stick("ls",329,146)}${stick("rs",479,146)}
+    ${pad("lp",306,245,9)}${pad("rp",502,245,-9)}
+    ${pill(4,CX,243,42,17)}
   </svg>`;
 }
 function render(){
