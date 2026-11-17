@@ -435,6 +435,38 @@ void remap_process(struct controller_report *r, float dt)
 		r->buttons &= ~CHORD_MASK;
 		raw &= ~CHORD_MASK;
 	}
+	/*
+	 * Steam + D-pad: choose the profile (up 1, right 2, down 3, left 4),
+	 * whether the remapper is on or off. While Steam is held the D-pad is
+	 * hidden from the host and from the bindings.
+	 */
+	{
+		static uint32_t dp_prev;
+		const uint32_t dp_mask = BIT(CONTROLLER_BUTTON_DPAD_UP) | BIT(CONTROLLER_BUTTON_DPAD_RIGHT) |
+		                         BIT(CONTROLLER_BUTTON_DPAD_DOWN) | BIT(CONTROLLER_BUTTON_DPAD_LEFT);
+		static const uint8_t dp_bit[REMAP_PROFILES] = { CONTROLLER_BUTTON_DPAD_UP, CONTROLLER_BUTTON_DPAD_RIGHT,
+		                                                CONTROLLER_BUTTON_DPAD_DOWN, CONTROLLER_BUTTON_DPAD_LEFT };
+		uint32_t dp = (raw & BIT(CONTROLLER_BUTTON_STEAM)) ? (raw & dp_mask) : 0U;
+
+		for(int i = 0; i < REMAP_PROFILES; ++i)
+		{
+			if((dp & ~dp_prev) & BIT(dp_bit[i]))
+			{
+				if(i != sc26re_cfg_get(SC26RE_CFG_REMAP_PROFILE))
+				{
+					release_all();
+				}
+				(void)sc26re_cfg_set(SC26RE_CFG_REMAP_PROFILE, (int16_t)i, true);
+				(void)haptics_play_beep((uint16_t)(700 + 150 * i), 80);
+			}
+		}
+		dp_prev = dp;
+		if(raw & BIT(CONTROLLER_BUTTON_STEAM))
+		{
+			r->buttons &= ~dp_mask;
+			raw &= ~dp_mask;
+		}
+	}
 	if(!remap_enabled())
 	{
 		return;
