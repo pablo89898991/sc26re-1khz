@@ -296,12 +296,19 @@ let ctlDev=null, ctlManual=false;
 const devRate=new Map(); /* state reports per interface, for the picker */
 function ctl(){ return (ctlDev&&devs.includes(ctlDev))?ctlDev:devs[0]; }
 function pathTag(path){ let t=0xA5; for(const c of path) t=((t<<1)^(t>>7)^c.charCodeAt(0))&255; return t; }
+/* readable names: the cable controller vs the Puck's per-controller interfaces */
+function devLabel(d){
+  if(d.productId===0x1302) return "USB cable";
+  const puck=devs.filter(x=>x.productId!==0x1302);
+  const n=puck.indexOf(d);
+  return n>=0?`Puck slot ${n+1}`:(d.productName||"device");
+}
 function ctlPickerRefresh(){
   const sel=$("#ctlSel"); if(!sel) return;
   $("#ctlPick").style.display=devs.length>1?"":"none";
   if(devs.length<2) return;
   const cur=devs.indexOf(ctl());
-  sel.innerHTML=devs.map((d,i)=>{ const r=devRate.get(d)||0; return `<option value="${i}">#${i+1} ${r?"— controller ("+r+" reports/s)":"— no controller"}</option>`; }).join("");
+  sel.innerHTML=devs.map((d,i)=>{ const r=devRate.get(d)||0; return `<option value="${i}">${devLabel(d)} ${r?"— controller ("+r+" reports/s)":"— no controller"}</option>`; }).join("");
   if(cur>=0) sel.value=String(cur);
 }
 setInterval(()=>{ ctlPickerRefresh(); for(const d of devs) devRate.set(d,0); },1000);
@@ -332,7 +339,7 @@ async function connect(){
     const sel=await navigator.hid.requestDevice({filters:[{vendorId:0x28de}]});
     ctlManual=false; ctlDev=null;
     for(const d of sel){ if(!d.opened) await d.open(); d.__send=d.sendFeatureReport.bind(d); attach(d); if(!devs.includes(d)) devs.push(d); }
-    $("#status").innerHTML=devs.length?`<span class="ok">connected: ${devs.map(d=>d.productName||"device").join(", ")}</span>`:"no device selected";
+    $("#status").innerHTML=devs.length?`<span class="ok">connected: ${[...new Set(devs.map(d=>d.productId===0x1302?"controller (USB cable)":"Puck"))].join(" + ")}</span>`:"no device selected";
     if(devs.length && $("#imuOn").checked) await imuMode(IMU_MODE_ON);
     reset();
     showBoot();
