@@ -243,7 +243,7 @@
       <span class="ind" data-b="15"><i></i>L3</span><span class="ind" data-b="5"><i></i>R3</span>
       <span class="ind" data-b="0"><i></i>A</span><span class="ind" data-b="1"><i></i>B</span><span class="ind" data-b="2"><i></i>X</span><span class="ind" data-b="3"><i></i>Y</span>
       <span class="ind" data-b="13"><i></i>Up</span><span class="ind" data-b="10"><i></i>Down</span><span class="ind" data-b="12"><i></i>Left</span><span class="ind" data-b="11"><i></i>Right</span>
-      <span class="ind" data-b="6"><i></i>View</span><span class="ind" data-b="14"><i></i>Menu</span><span class="ind" data-b="16"><i></i>Steam</span><span class="ind" data-b="4"><i></i>QAM</span>
+      <span class="ind" data-b="14"><i></i>View</span><span class="ind" data-b="6"><i></i>Menu</span><span class="ind" data-b="16"><i></i>Steam</span><span class="ind" data-b="4"><i></i>QAM</span>
     </div>
     <div class="lbl" style="margin-top:12px">Quaternion fields show
       <select id="qmode" style="margin-left:6px">
@@ -436,7 +436,7 @@ $("#gmLink").onclick=async()=>{
 };
 
 /* ---- gyro as mouse (v49+) ---- */
-const GM_BTNS=[[0,"A"],[1,"B"],[2,"X"],[3,"Y"],[9,"RB"],[19,"LB"],[23,"RT click"],[27,"LT click"],[7,"R4"],[8,"R5"],[17,"L4"],[18,"L5"],[5,"R3"],[15,"L3"],[6,"View"],[14,"Menu"],[10,"D-pad down"],[11,"D-pad right"],[12,"D-pad left"],[13,"D-pad up"],[22,"right pad click"],[26,"left pad click"],[21,"right pad touch"],[25,"left pad touch"],[20,"right stick touch"],[24,"left stick touch"],[28,"right grip touch"],[29,"left grip touch"]];
+const GM_BTNS=[[0,"A"],[1,"B"],[2,"X"],[3,"Y"],[9,"RB"],[19,"LB"],[23,"RT click"],[27,"LT click"],[7,"R4"],[8,"R5"],[17,"L4"],[18,"L5"],[5,"R3"],[15,"L3"],[6,"Menu"],[14,"View"],[10,"D-pad down"],[11,"D-pad right"],[12,"D-pad left"],[13,"D-pad up"],[22,"right pad click"],[26,"left pad click"],[21,"right pad touch"],[25,"left pad touch"],[20,"right stick touch"],[24,"left stick touch"],[28,"right grip touch"],[29,"left grip touch"]];
 (function(){
   const opts=GM_BTNS.map(([v,n])=>`<option value="${v}">${n}</option>`).join("");
   $("#gmActBtn").innerHTML='<option value="-1">— none (always) —</option>'+opts;

@@ -54,12 +54,12 @@ struct lizard_trackpad_state
 static const uint8_t default_key_mappings[30] = {
 	[CONTROLLER_BUTTON_A] = 0x28,          /* Enter */
 	[CONTROLLER_BUTTON_B] = 0x29,          /* Escape */
-	[CONTROLLER_BUTTON_VIEW] = 0x29,       /* Escape */
+	[CONTROLLER_BUTTON_MENU] = 0x29,       /* Escape */
 	[CONTROLLER_BUTTON_DPAD_DOWN] = 0x51,  /* Down */
 	[CONTROLLER_BUTTON_DPAD_RIGHT] = 0x4f, /* Right */
 	[CONTROLLER_BUTTON_DPAD_LEFT] = 0x50,  /* Left */
 	[CONTROLLER_BUTTON_DPAD_UP] = 0x52,    /* Up */
-	[CONTROLLER_BUTTON_MENU] = 0x2b,       /* Tab */
+	[CONTROLLER_BUTTON_VIEW] = 0x2b,       /* Tab */
 };
 
 static K_MUTEX_DEFINE(lizard_mutex);

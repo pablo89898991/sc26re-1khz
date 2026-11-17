@@ -228,7 +228,7 @@ const SRC=[
  ["Shoulders and triggers",[[19,"LB"],[9,"RB"],[27,"LT full pull"],[23,"RT full pull"],[58,"LT soft pull"],[59,"RT soft pull"]]],
  ["Back buttons",[[17,"L4"],[18,"L5"],[7,"R4"],[8,"R5"]]],
  ["D-pad",[[13,"D-pad up"],[10,"D-pad down"],[12,"D-pad left"],[11,"D-pad right"]]],
- ["Middle and stick clicks",[[6,"View"],[14,"Menu"],[4,"QAM"],[15,"L3 (left stick click)"],[5,"R3 (right stick click)"]]],
+ ["Middle and stick clicks",[[6,"Menu"],[14,"View"],[4,"QAM"],[15,"L3 (left stick click)"],[5,"R3 (right stick click)"]]],
  ["Touch sensors",[[24,"Left stick touch","capsense"],[20,"Right stick touch","capsense"],[29,"Left grip touch","gripsense"],[28,"Right grip touch","gripsense"],[25,"Left pad touch"],[21,"Right pad touch"],[26,"Left pad click"],[22,"Right pad click"]]],
  ["Left stick",[[30,"Left stick up"],[31,"Left stick down"],[32,"Left stick left"],[33,"Left stick right"],[60,"Left stick outer ring"]],"ls"],
  ["Right stick",[[34,"Right stick up"],[35,"Right stick down"],[36,"Right stick left"],[37,"Right stick right"],[61,"Right stick outer ring"]],"rs"],
@@ -242,8 +242,8 @@ const KEYS={4:"A",5:"B",6:"C",7:"D",8:"E",9:"F",10:"G",11:"H",12:"I",13:"J",14:"
  83:"Num Lock",84:"Num /",85:"Num *",86:"Num -",87:"Num +",88:"Num Enter",89:"Num 1",90:"Num 2",91:"Num 3",92:"Num 4",93:"Num 5",94:"Num 6",95:"Num 7",96:"Num 8",97:"Num 9",98:"Num 0",99:"Num .",101:"Menu key"};
 const MODS={0xE0:"Left Ctrl",0xE1:"Left Shift",0xE2:"Left Alt",0xE3:"Left Win",0xE4:"Right Ctrl",0xE5:"Right Shift",0xE6:"Right Alt",0xE7:"Right Win"};
 const MOUSE={0x70:"Mouse left",0x71:"Mouse right",0x7A:"Mouse middle",0x7B:"Mouse back (4)",0x7C:"Mouse forward (5)",0x76:"Mouse move up",0x77:"Mouse move down",0x78:"Mouse move left",0x79:"Mouse move right",0x72:"Wheel up",0x73:"Wheel down",0x74:"Wheel left",0x75:"Wheel right"};
-const PADB=[[0,"A"],[1,"B"],[2,"X"],[3,"Y"],[19,"LB"],[9,"RB"],[27,"LT click"],[23,"RT click"],[17,"L4"],[18,"L5"],[7,"R4"],[8,"R5"],[13,"D-pad up"],[10,"D-pad down"],[12,"D-pad left"],[11,"D-pad right"],[6,"View"],[14,"Menu"],[4,"QAM"],[15,"L3"],[5,"R3"],[26,"Left pad click"],[22,"Right pad click"]];
-const XBOXB=[[0,"A"],[1,"B"],[2,"X"],[3,"Y"],[19,"LB"],[9,"RB"],[27,"LT (full)"],[23,"RT (full)"],[6,"Back"],[14,"Start"],[15,"L3"],[5,"R3"],[13,"D-pad up"],[10,"D-pad down"],[12,"D-pad left"],[11,"D-pad right"]];
+const PADB=[[0,"A"],[1,"B"],[2,"X"],[3,"Y"],[19,"LB"],[9,"RB"],[27,"LT click"],[23,"RT click"],[17,"L4"],[18,"L5"],[7,"R4"],[8,"R5"],[13,"D-pad up"],[10,"D-pad down"],[12,"D-pad left"],[11,"D-pad right"],[6,"Menu"],[14,"View"],[4,"QAM"],[15,"L3"],[5,"R3"],[26,"Left pad click"],[22,"Right pad click"]];
+const XBOXB=[[0,"A"],[1,"B"],[2,"X"],[3,"Y"],[19,"LB"],[9,"RB"],[27,"LT (full)"],[23,"RT (full)"],[6,"Start"],[14,"Back"],[15,"L3"],[5,"R3"],[13,"D-pad up"],[10,"D-pad down"],[12,"D-pad left"],[11,"D-pad right"]];
 const OPTS=(()=>{
   let h='<option value="0">—</option><optgroup label="Mouse">'+Object.entries(MOUSE).map(([v,n])=>`<option value="${v}">${n}</option>`).join("")+'</optgroup>';
   h+='<optgroup label="Modifiers">'+Object.entries(MODS).map(([v,n])=>`<option value="${v}">${n}</option>`).join("")+'</optgroup>';
@@ -273,7 +273,7 @@ const bOff=s=>bOffL(s,useShift(SGRP[s])?1:0);
 const U16=(o)=>new DataView(prof[cur].buffer).getUint16(o,true), setU16=(o,v)=>new DataView(prof[cur].buffer).setUint16(o,v,true);
 const S16=(o)=>new DataView(prof[cur].buffer).getInt16(o,true), setS16=(o,v)=>new DataView(prof[cur].buffer).setInt16(o,v,true);
 const softPct=t=>(U16(18+2*t)||5000)/100;
-const RAWBTN=[[0,"A"],[1,"B"],[2,"X"],[3,"Y"],[19,"LB"],[9,"RB"],[27,"LT click"],[23,"RT click"],[17,"L4"],[18,"L5"],[7,"R4"],[8,"R5"],[15,"L3"],[5,"R3"],[6,"View"],[14,"Menu"],[4,"QAM"],[13,"D-pad up"],[10,"D-pad down"],[12,"D-pad left"],[11,"D-pad right"],[26,"Left pad click"],[22,"Right pad click"],[25,"Left pad touch"],[21,"Right pad touch"],[24,"Left stick touch"],[20,"Right stick touch"],[29,"Left grip touch"],[28,"Right grip touch"]];
+const RAWBTN=[[0,"A"],[1,"B"],[2,"X"],[3,"Y"],[19,"LB"],[9,"RB"],[27,"LT click"],[23,"RT click"],[17,"L4"],[18,"L5"],[7,"R4"],[8,"R5"],[15,"L3"],[5,"R3"],[6,"Menu"],[14,"View"],[4,"QAM"],[13,"D-pad up"],[10,"D-pad down"],[12,"D-pad left"],[11,"D-pad right"],[26,"Left pad click"],[22,"Right pad click"],[25,"Left pad touch"],[21,"Right pad touch"],[24,"Left stick touch"],[20,"Right stick touch"],[29,"Left grip touch"],[28,"Right grip touch"]];
 const SHBTN=[[0,"— none —"],...RAWBTN.map(([v,n])=>[v+1,n])];
 const shName=g=>(SHBTN.find(([v])=>v===shBtn(g))||[0,"?"])[1];
 const MODES_STICK=[[0,"Analog (to Steam)"],[1,"D-pad 4-way"],[2,"D-pad 8-way"],[3,"Mouse"],[4,"Scroll"],[7,"Flick stick"]];
@@ -345,7 +345,7 @@ function picture(){
   const T=(x,y,t,fs,col)=>`<text x="${x}" y="${y}" text-anchor="middle" font-size="${fs}" font-weight="700" fill="${col||COL}" pointer-events="none">${t}</text>`;
   const face=(s,x,y)=>H(s,`<circle class="sh" cx="${x}" cy="${y}" r="15.5" ${F} ${ST}/>`);
   const pill=(s,x,y,w,h)=>H(s,`<rect class="sh" x="${x-w/2}" y="${y-h/2}" width="${w}" height="${h}" rx="${h/2}" ${F} ${ST}/>`);
-  const stick=(an,x,y)=>H(an,`<circle class="sh" cx="${x}" cy="${y}" r="32" ${F} ${SD}/><circle id="cap_${an}" cx="${x}" cy="${y}" r="32" fill="none" stroke="#4fc98a" stroke-width="3" opacity="0"/><circle cx="${x}" cy="${y}" r="19" fill="none" ${ST}/><circle id="dot_${an}" class="live-dot" cx="${x}" cy="${y}" r="7" data-x="${x}" data-y="${y}"/>`);
+  const stick=(an,x,y)=>H(an,`<circle class="sh" cx="${x}" cy="${y}" r="32" ${F} ${SD}/><circle id="cap_${an}" cx="${x}" cy="${y}" r="32" fill="none" stroke="#4fc98a" stroke-width="3" opacity="0"/><circle id="clk_${an}" cx="${x}" cy="${y}" r="19" fill="rgba(79,201,138,0)" ${ST}/><circle id="dot_${an}" class="live-dot" cx="${x}" cy="${y}" r="7" data-x="${x}" data-y="${y}"/>`);
   const pad=(an,x,y,rot)=>H(an,`<rect class="sh" x="${x-53}" y="${y-53}" width="106" height="106" rx="14" transform="rotate(${rot} ${x} ${y})" ${F} ${ST}/><g transform="rotate(${rot} ${x} ${y})"><circle id="dot_${an}" class="live-dot pad" cx="${x}" cy="${y}" r="7" data-x="${x}" data-y="${y}" opacity="0"/></g>`);
   const dx=245.5, dy=109.5, w=12.5, L=36.5, r=6;
   const armD=`M${dx-w} ${dy-w} V${dy-L+r} Q${dx-w} ${dy-L} ${dx-w+r} ${dy-L} H${dx+w-r} Q${dx+w} ${dy-L} ${dx+w} ${dy-L+r} V${dy-w}`;
@@ -367,7 +367,7 @@ function picture(){
     ${H(28,`<path class="sh" d="${gripR}" ${F} ${DASH}/>`+T(630,358,"grip",9.5,"#8590a6"))}
     ${back(17,172,206,"L4")}${back(18,172,228,"L5")}${back(7,606,206,"R4")}${back(8,606,228,"R5")}
     ${arm(13,0)}${arm(11,90)}${arm(10,180)}${arm(12,270)}
-    ${pill(6,312,74.5,36,13)}${pill(14,496,74.5,36,13)}
+    ${pill(14,312,74.5,36,13)}${pill(6,496,74.5,36,13)}
     <circle cx="${CX}" cy="74.5" r="3" fill="${DIM}"/><circle cx="${CX}" cy="109.5" r="16.5" fill="none" ${ST}/>
     ${face(3,562.5,83.5)}${face(2,532.5,109.5)}${face(1,591.5,109.5)}${face(0,562.5,136.5)}
     ${stick("ls",329,146)}${stick("rs",479,146)}
@@ -383,12 +383,12 @@ function render(){
   buildTabs();
   $("#pname").value=nameOf(prof[cur]); $("#block").checked=(prof[cur][17]&1)!==0;
   const b0=prof[cur];
-  $("#colL").innerHTML=`<div class="sect">Left</div>${item(19,"LB")}${item(17,"L4")}${item(18,"L5")}${item(6,"View")}${item(15,"L3 click")}
+  $("#colL").innerHTML=`<div class="sect">Left</div>${item(19,"LB")}${item(17,"L4")}${item(18,"L5")}${item(14,"View")}${item(15,"L3 click")}
     <div class="sect">Left trigger</div>${item(58,`soft pull ${softPct(0)}%`)}${item(27,"full pull")}
     <div class="sect">D-pad</div><div class="item${sel==="dp"?" sel":""}" data-s="dp"><span class="k">layout</span><span class="b">${b0[16]?"4-way":"8-way"}${shBtn(1)?` <em>⇧ ${shName(1)}:</em> ${b0[shOff(1)+1]?"4-way":"8-way"}`:""}</span></div>${item(13,"Up")}${item(10,"Down")}${item(12,"Left")}${item(11,"Right")}
     <div class="sect">Left stick</div>${anItem("ls")}${dirItems("ls")}
     <div class="sect">Left trackpad</div>${anItem("lp")}${dirItems("lp")}${item(26,"Click")}`;
-  $("#colR").innerHTML=`<div class="sect">Right</div>${item(9,"RB")}${item(7,"R4")}${item(8,"R5")}${item(14,"Menu")}${item(5,"R3 click")}${item(4,"QAM (…)")}
+  $("#colR").innerHTML=`<div class="sect">Right</div>${item(9,"RB")}${item(7,"R4")}${item(8,"R5")}${item(6,"Menu")}${item(5,"R3 click")}${item(4,"QAM (…)")}
     <div class="sect">Right trigger</div>${item(59,`soft pull ${softPct(1)}%`)}${item(23,"full pull")}
     <div class="sect">Face buttons</div>${item(0,"A")}${item(1,"B")}${item(2,"X")}${item(3,"Y")}
     <div class="sect">Right stick</div>${anItem("rs")}${dirItems("rs")}
@@ -601,6 +601,7 @@ setInterval(()=>{
   for(const [an,ox,oy,op,bit] of [["lp",17,19,21,25],["rp",23,25,27,21]]){ const e=el("dot_"+an); if(!e) continue;
     const on=(lastBtn&(1<<bit))!==0||g(ox)!==0||g(oy)!==0; e.setAttribute("opacity",on?"1":"0");
     if(on){ e.setAttribute("cx",+e.dataset.x+g(ox)/32767*48); e.setAttribute("cy",+e.dataset.y-g(oy)/32767*48); e.setAttribute("r",6+Math.min(1,d.getUint16(op,true)/32767)*8); } }
+  for(const [an,bit] of [["ls",15],["rs",5]]){ const e=el("clk_"+an); if(e) e.setAttribute("fill",(lastBtn&(1<<bit))?"rgba(79,201,138,.45)":"rgba(79,201,138,0)"); }
   for(const [an,bit] of [["ls",24],["rs",20]]){ const e=el("cap_"+an); if(e) e.setAttribute("opacity",(lastBtn&(1<<bit))?"0.9":"0"); }
   for(const [id,o] of [["lvl_lt",5],["lvl_rt",7]]){ const e=el(id); if(e) e.setAttribute("width",Math.max(0,Math.min(1,g(o)/32767))*56); }
 },33);
@@ -644,7 +645,7 @@ $("#export").onclick=()=>{ collect(); const j=JSON.stringify({sc2remap:1,name:na
 $("#import").onchange=async e=>{ const f=e.target.files[0]; if(!f) return; try{ const j=JSON.parse(await f.text()); if(!j.data||j.data.length!==PROF_SIZE) throw new Error("not a profile file for this version"); prof[cur]=new Uint8Array(j.data); setDirty(); render(); $("#pstatus").innerHTML='<span class="ok">imported — press Save to controller</span>'; }catch(err){ $("#pstatus").innerHTML=`<span class="err">${err.message}</span>`; } e.target.value=""; };
 
 /* ---- gyro + gyro as mouse settings (sc26re cfg values, same as the report meter) ---- */
-const BTNOPTS=[[-1,"— none —"],[0,"A"],[1,"B"],[2,"X"],[3,"Y"],[19,"LB"],[9,"RB"],[27,"LT click"],[23,"RT click"],[17,"L4"],[18,"L5"],[7,"R4"],[8,"R5"],[15,"L3"],[5,"R3"],[6,"View"],[14,"Menu"],[13,"D-pad up"],[10,"D-pad down"],[12,"D-pad left"],[11,"D-pad right"],[26,"Left pad click"],[22,"Right pad click"],[25,"Left pad touch"],[21,"Right pad touch"],[24,"Left stick touch"],[20,"Right stick touch"],[29,"Left grip touch"],[28,"Right grip touch"]];
+const BTNOPTS=[[-1,"— none —"],[0,"A"],[1,"B"],[2,"X"],[3,"Y"],[19,"LB"],[9,"RB"],[27,"LT click"],[23,"RT click"],[17,"L4"],[18,"L5"],[7,"R4"],[8,"R5"],[15,"L3"],[5,"R3"],[6,"Menu"],[14,"View"],[13,"D-pad up"],[10,"D-pad down"],[12,"D-pad left"],[11,"D-pad right"],[26,"Left pad click"],[22,"Right pad click"],[25,"Left pad touch"],[21,"Right pad touch"],[24,"Left stick touch"],[20,"Right stick touch"],[29,"Left grip touch"],[28,"Right grip touch"]];
 const AXOPTS=[[0,"off"],[1,"horizontal"],[-1,"horizontal inverted"],[2,"vertical"],[-2,"vertical inverted"]];
 const DEGOPTS=[90,180,270,360].flatMap(d=>[[d,d+"° right"],[-d,d+"° left"]]);
 /* [cfg name, label, kind, options|[min,max,step], scale, hint]; kind: sel / num / auto (num with "Steam") */
