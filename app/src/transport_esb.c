@@ -480,12 +480,6 @@ static void queue_latest_input(void)
 		payload.length += sizeof(pending_write_result);
 		write_included = true;
 	}
-	if(latest_input_valid && payload.length + latest_input_42.length - 1 <= ESB_MAX_PAYLOAD_SIZE)
-	{
-		memcpy(&payload.data[payload.length], &latest_input_42.data[1], latest_input_42.length - 1);
-		payload.length += latest_input_42.length - 1;
-		report_included = true;
-	}
 	/*
 	 * Mouse/keyboard reports ride in a payload that cannot be replaced. Only one
 	 * such payload at a time: meanwhile the reports wait (mouse movement merges
@@ -508,6 +502,21 @@ static void queue_latest_input(void)
 		memcpy(&payload.data[payload.length], entry->data, entry->len);
 		payload.length += entry->len;
 		queued_reports_included++;
+	}
+	/*
+	 * The Puck turns every report in a payload into a USB report on the same
+	 * HID endpoint (mouse 0x40, keyboard 0x41 and pad 0x42 share one interface
+	 * per slot, polled at most once per ms). Two reports from one payload
+	 * compete for one USB slot and the Puck keeps only the newest, which lost
+	 * about a third of the gyro-mouse movement. So a payload carries either
+	 * the queued mouse/keyboard report or the pad state, never both.
+	 */
+	if(queued_reports_included == 0 && latest_input_valid &&
+	   payload.length + latest_input_42.length - 1 <= ESB_MAX_PAYLOAD_SIZE)
+	{
+		memcpy(&payload.data[payload.length], &latest_input_42.data[1], latest_input_42.length - 1);
+		payload.length += latest_input_42.length - 1;
+		report_included = true;
 	}
 	k_spin_unlock(&latest_input_lock, key);
 	if(feature_len == 0 && !write_included && !report_included && queued_reports_included == 0)
