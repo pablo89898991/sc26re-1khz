@@ -28,6 +28,19 @@
   .modes label{font-size:12px;color:var(--muted);margin-right:8px;white-space:nowrap}
   .live{display:inline-block;width:9px;height:9px;border-radius:50%;background:#33415c;margin-left:6px;vertical-align:middle}
   .live.on{background:#4fc98a;box-shadow:0 0 8px #4fc98a}
+  .board{display:grid;grid-template-columns:1fr 360px 1fr;gap:10px;align-items:start}
+  .col .item{display:flex;gap:8px;align-items:baseline;padding:3px 6px;border-radius:8px;cursor:pointer}
+  .col.l .item{justify-content:flex-end;text-align:right} .col .item:hover,.col .item.sel{background:var(--panel2)}
+  .item .k{font-size:12px;color:var(--muted);white-space:nowrap} .item .b{font-size:13.5px;color:#d7e3f5}
+  .item .b.none{color:#55637c} .item .b em{color:var(--accent2);font-style:normal;font-size:11.5px}
+  .item.on .k{color:#9ff0c4}
+  .sect{font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--accent2);margin:12px 6px 2px;font-weight:700}
+  .col.l .sect{text-align:right}
+  svg .hit{cursor:pointer} svg .hit:hover .sh,svg .hit.sel .sh{stroke:var(--accent);stroke-width:3}
+  svg .hit.on .sh{fill:rgba(79,201,138,.25)}
+  .bottom{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-top:8px}
+  #editor{margin-top:14px;border-top:1px solid var(--edge);padding-top:12px}
+  @media (max-width:900px){.board{grid-template-columns:1fr}.bottom{grid-template-columns:repeat(2,1fr)}}
 </style>
 </head>
 <body>
@@ -59,8 +72,14 @@
       <label class="note"><input type="file" id="import" accept=".json" style="width:180px"></label>
       <span id="pstatus" class="note"></span>
     </div>
-    <p class="note">Each input: <b>press</b> actions while held (up to 4 at once, e.g. Ctrl + C). Tick <b>hold</b> for a second set when held longer than 0.25 s (then a short press taps the first set), <b>double</b> for a set on a second quick press, or <b>toggle</b> to switch the first set on/off with each press. The dot lights while the input is active.</p>
-    <table id="tbl"></table>
+    <p class="note">Click an input on the controller or in the lists to edit it. <b>Press</b>: actions while held (up to 4 at once, e.g. Ctrl + C). <b>Hold</b>: a second set when held longer than 0.25 s (a short press then taps the first set). <b>Double</b>: a set on a second quick press. <b>Toggle</b>: the first set switches on/off with each press. Inputs light up green while you press them.</p>
+    <div class="board">
+      <div class="col l" id="colL"></div>
+      <div id="pic"></div>
+      <div class="col r" id="colR"></div>
+    </div>
+    <div class="bottom" id="colB"></div>
+    <div id="editor"></div>
   </div>
 </div>
 <script>
@@ -104,51 +123,84 @@ function emptyProfile(){ const b=new Uint8Array(PROF_SIZE); b[0]=0xA7; b[1]=1; c
 const bOff=s=>36+s*13;
 
 /* ---- UI ---- */
-function buildTabs(){ $("#tabs").innerHTML=[0,1,2,3].map(i=>`<button class="tab${i===cur?" on":""}" data-p="${i}">Profile ${i+1}${nameOf(prof[i])?": "+nameOf(prof[i]):""}</button>`).join(""); document.querySelectorAll("#tabs .tab").forEach(b=>b.onclick=()=>{ collect(); cur=+b.dataset.p; render(); }); }
+const SRCNAME={}; for(const [,list] of SRC) for(const [s,n] of list) SRCNAME[s]=n;
+const ACTNAME=v=>v===0?"":MOUSE[v]||MODS[v]||KEYS[v]||(v>=0x80&&v<0x9e?"Pad "+((PADB.find(([b])=>b===v-0x80)||[0,"#"+(v-0x80)])[1]):v>=0xC0&&v<0xC4?"Profile "+(v-0xBF):"0x"+v.toString(16));
+const AMNAME=["to Steam","4 directions","Mouse","Scroll"];
+let sel=null; /* number = source, string = analog group "ls"/"rs"/"lp"/"rp" */
+function buildTabs(){ $("#tabs").innerHTML=[0,1,2,3].map(i=>`<button class="tab${i===cur?" on":""}" data-p="${i}">Profile ${i+1}${nameOf(prof[i])?": "+nameOf(prof[i]):""}</button>`).join(""); document.querySelectorAll("#tabs .tab").forEach(b=>b.onclick=()=>{ saveName(); cur=+b.dataset.p; render(); }); }
 function nameOf(b){ return new TextDecoder().decode(b.slice(2,16)).replace(/\0.*$/,""); }
+function saveName(){ const b=prof[cur]; b[0]=0xA7; b[1]=1; const nm=new TextEncoder().encode($("#pname").value.slice(0,13)); b.fill(0,2,16); b.set(nm.slice(0,13),2); }
+function grpText(b,s,g){ return [0,1,2,3].map(i=>ACTNAME(b[bOff(s)+1+g*4+i])).filter(x=>x).join(" + "); }
+function bindText(s){
+  const b=prof[cur], m=b[bOff(s)], main=grpText(b,s,0);
+  let t=main||'<span class="none">—</span>';
+  if(m&1){ const h=grpText(b,s,1); if(h) t+=` <em>hold:</em> ${h}`; }
+  if(m&2){ const d=grpText(b,s,2); if(d) t+=` <em>double:</em> ${d}`; }
+  if(m&4) t+=" <em>(toggle)</em>";
+  return t;
+}
+function item(s,label){ return `<div class="item${sel===s?" sel":""}" data-s="${s}"><span class="k">${label}</span><span class="b${grpText(prof[cur],s,0)?"":" none"}">${bindText(s)}</span></div>`; }
+function anItem(an,label){ const m=prof[cur][AOFF[an]]; return `<div class="item${sel===an?" sel":""}" data-s="${an}"><span class="k">${label}</span><span class="b">${AMNAME[m]||"?"}</span></div>`; }
+function dirItems(an,base,names){ return prof[cur][AOFF[an]]===1?names.map((n,i)=>item(base+i,n)).join(""):""; }
+/* original schematic of the controller's inputs (not to scale) */
+function picture(){
+  const H=(s,inner)=>`<g class="hit${sel===s?" sel":""}" data-s="${s}">${inner}</g>`;
+  const c=(x,y,r,t)=>`<circle class="sh" cx="${x}" cy="${y}" r="${r}" fill="#1d283c" stroke="#5b6c8c" stroke-width="2"/>`+(t?`<text x="${x}" y="${y+4}" text-anchor="middle" font-size="11" fill="#cfe0ff">${t}</text>`:"");
+  const r=(x,y,w,h,rx,t)=>`<rect class="sh" x="${x}" y="${y}" width="${w}" height="${h}" rx="${rx}" fill="#1d283c" stroke="#5b6c8c" stroke-width="2"/>`+(t?`<text x="${x+w/2}" y="${y+h/2+4}" text-anchor="middle" font-size="10" fill="#cfe0ff">${t}</text>`:"");
+  return `<svg viewBox="0 0 360 260" width="100%">
+    <path d="M60 40 Q180 20 300 40 Q350 50 352 120 Q356 210 320 240 Q295 255 270 228 L235 195 Q180 185 125 195 L90 228 Q65 255 40 240 Q4 210 8 120 Q10 50 60 40Z" fill="#121a29" stroke="#3b4a66" stroke-width="2"/>
+    ${H(19,r(55,26,60,12,6,"LB"))}${H(9,r(245,26,60,12,6,"RB"))}
+    ${H(27,r(70,8,40,14,6,"LT"))}${H(23,r(250,8,40,14,6,"RT"))}
+    ${H(6,r(140,50,22,12,5,"View"))}${H(14,r(198,50,22,12,5,"Menu"))}${H(4,r(168,170,24,10,5,"…"))}
+    ${H("dp",`<path class="sh" d="M50 70 h16 v16 h16 v16 h-16 v16 h-16 v-16 h-16 v-16 h16z" fill="#1d283c" stroke="#5b6c8c" stroke-width="2"/>`)}
+    ${H(3,c(300,62,11,"Y"))}${H(2,c(278,84,11,"X"))}${H(1,c(322,84,11,"B"))}${H(0,c(300,106,11,"A"))}
+    ${H("ls",c(115,110,22,"L"))}${H("rs",c(245,110,22,"R"))}
+    ${H("lp",r(60,140,78,70,14,"Left pad"))}${H("rp",r(222,140,78,70,14,"Right pad"))}
+  </svg>`;
+}
 function render(){
   buildTabs();
+  $("#pname").value=nameOf(prof[cur]);
+  $("#colL").innerHTML=`<div class="sect">Left</div>${item(19,"LB")}${item(27,"LT click")}${item(17,"L4")}${item(18,"L5")}${item(6,"View")}${item(15,"L3 click")}
+    <div class="sect">D-pad</div>${item(13,"Up")}${item(10,"Down")}${item(12,"Left")}${item(11,"Right")}
+    <div class="sect">Left stick</div>${anItem("ls","mode")}${dirItems("ls",30,["Up","Down","Left","Right"])}
+    <div class="sect">Left trackpad</div>${anItem("lp","mode")}${dirItems("lp",38,["Up region","Down region","Left region","Right region"])}${item(26,"Click")}`;
+  $("#colR").innerHTML=`<div class="sect">Right</div>${item(9,"RB")}${item(23,"RT click")}${item(7,"R4")}${item(8,"R5")}${item(14,"Menu")}${item(5,"R3 click")}${item(4,"QAM (…)")}
+    <div class="sect">Face buttons</div>${item(0,"A")}${item(1,"B")}${item(2,"X")}${item(3,"Y")}
+    <div class="sect">Right stick</div>${anItem("rs","mode")}${dirItems("rs",34,["Up","Down","Left","Right"])}
+    <div class="sect">Right trackpad</div>${anItem("rp","mode")}${dirItems("rp",42,["Up region","Down region","Left region","Right region"])}${item(22,"Click")}`;
+  $("#colB").innerHTML=`<div><div class="sect">Stick touch (capsense)</div>${item(24,"Left")}${item(20,"Right")}</div>
+    <div><div class="sect">Grip touch (gripsense)</div>${item(29,"Left")}${item(28,"Right")}</div>
+    <div><div class="sect">Trackpad touch</div>${item(25,"Left")}${item(21,"Right")}</div><div></div>`;
+  $("#pic").innerHTML=picture();
+  document.querySelectorAll("[data-s]").forEach(e=>e.onclick=()=>{ const v=e.dataset.s; sel=isNaN(+v)?v:+v; if(sel==="dp") sel=13; render(); });
+  editor();
+}
+function editor(){
+  const ed=$("#editor"); if(sel===null){ ed.innerHTML='<p class="note">Select an input above.</p>'; return; }
   const b=prof[cur], dv=new DataView(b.buffer);
-  $("#pname").value=nameOf(b);
-  let h="";
-  for(const [title,list,an] of SRC){
-    h+=`<tr><td colspan="2" style="padding-top:14px"><b>${title}</b>`;
-    if(an){
-      const isStick=AMODES[an]==="stick";
-      h+=` &nbsp; <select data-am="${an}"><option value="0">to Steam (not remapped)</option><option value="1">4 directions (below)</option><option value="2">mouse</option><option value="3">scroll wheel</option></select>
-        <label class="note"> ${isStick?"speed":"sensitivity"} <input type="number" data-as="${an}" min="50" max="20000" step="50" style="width:90px"> ${isStick?"counts/s at full tilt (scroll: ×0.01 notches/s)":"counts per swipe across the pad"}</label>`;
-    }
-    h+=`</td></tr>`;
-    for(const [s,name,hint] of list){
-      h+=`<tr><td class="n">${name}<span class="live" id="lv${s}"></span>${hint?`<small>${hint}</small>`:""}</td><td>
-        <div class="modes"><label><input type="checkbox" data-m="${s}" data-bit="1"> hold</label><label><input type="checkbox" data-m="${s}" data-bit="2"> double</label><label><input type="checkbox" data-m="${s}" data-bit="4"> toggle</label></div>
-        ${[0,1,2].map(g=>`<div class="grp" data-g="${s}:${g}"><span>${["press","hold","double"][g]}</span>${[0,1,2,3].map(i=>`<select data-a="${s}:${g}:${i}">${OPTS}</select>`).join("")}</div>`).join("")}
-      </td></tr>`;
-    }
+  if(typeof sel==="string"){
+    const isStick=AMODES[sel]==="stick", base={ls:30,rs:34,lp:38,rp:42}[sel];
+    ed.innerHTML=`<b>${{ls:"Left stick",rs:"Right stick",lp:"Left trackpad",rp:"Right trackpad"}[sel]}</b>
+      <div class="bar" style="margin-top:8px"><select id="amode">${AMNAME.map((n,i)=>`<option value="${i}">${i===0?"to Steam (not remapped)":i===1?"4 directions (each bound below)":n}</option>`).join("")}</select>
+      <label class="note">${isStick?"speed":"sensitivity"} <input type="number" id="aspeed" min="50" max="20000" step="50" style="width:90px"> ${isStick?"counts/s at full tilt (scroll: ×0.01 notches/s)":"counts per swipe across the pad"}</label></div>
+      <p class="note">${b[AOFF[sel]]===1?"Click a direction in the list to bind it.":""}</p>`;
+    $("#amode").value=String(b[AOFF[sel]]); $("#aspeed").value=dv.getUint16(SOFF[sel],true);
+    $("#amode").onchange=e=>{ b[AOFF[sel]]=+e.target.value; render(); };
+    $("#aspeed").onchange=e=>{ dv.setUint16(SOFF[sel],Math.max(50,Math.min(20000,+e.target.value||1000)),true); };
+    return;
   }
-  $("#tbl").innerHTML=h;
-  for(const an in AOFF){ const e=document.querySelector(`[data-am="${an}"]`); e.value=String(b[AOFF[an]]); document.querySelector(`[data-as="${an}"]`).value=dv.getUint16(SOFF[an],true); }
-  document.querySelectorAll("[data-a]").forEach(e=>{ const [s,g,i]=e.dataset.a.split(":").map(Number); e.value=String(b[bOff(s)+1+g*4+i]); if(e.value==="") e.value="0"; });
-  document.querySelectorAll("[data-m]").forEach(e=>{ const s=+e.dataset.m; e.checked=(b[bOff(s)]&+e.dataset.bit)!==0; e.onchange=showGroups; });
-  showGroups();
+  const s=sel, m=b[bOff(s)];
+  ed.innerHTML=`<b>${SRCNAME[s]||"input "+s}</b><span class="live" id="lvsel"></span>
+    <div class="modes" style="margin:6px 0">${[[1,"hold"],[2,"double"],[4,"toggle"]].map(([bit,n])=>`<label><input type="checkbox" data-bit="${bit}"${m&bit?" checked":""}> ${n}</label>`).join("")}</div>
+    ${[0,1,2].filter(g=>g===0||(g===1&&(m&1))||(g===2&&(m&2))).map(g=>`<div class="grp"><span>${["press","hold","double"][g]}</span>${[0,1,2,3].map(i=>`<select data-gi="${g}:${i}">${OPTS}</select>`).join("")}</div>`).join("")}
+    <div class="bar" style="margin-top:6px"><button id="unbind">Clear this input</button></div>`;
+  ed.querySelectorAll("[data-bit]").forEach(e=>e.onchange=()=>{ b[bOff(s)]=(b[bOff(s)]&~+e.dataset.bit)|(e.checked?+e.dataset.bit:0); render(); });
+  ed.querySelectorAll("[data-gi]").forEach(e=>{ const [g,i]=e.dataset.gi.split(":").map(Number); e.value=String(b[bOff(s)+1+g*4+i]); if(e.value==="") e.value="0";
+    e.onchange=()=>{ b[bOff(s)+1+g*4+i]=+e.value; const keep=sel; render(); sel=keep; }; });
+  $("#unbind").onclick=()=>{ b.fill(0,bOff(s),bOff(s)+13); render(); };
 }
-function showGroups(){
-  document.querySelectorAll("[data-g]").forEach(d=>{
-    const [s,g]=d.dataset.g.split(":").map(Number);
-    const m=[...document.querySelectorAll(`[data-m="${s}"]`)].reduce((a,e)=>a|(e.checked?+e.dataset.bit:0),0);
-    d.style.display=g===0||(g===1&&(m&1))||(g===2&&(m&2))?"":"none";
-  });
-}
-function collect(){
-  const b=prof[cur], dv=new DataView(b.buffer);
-  b[0]=0xA7; b[1]=1;
-  const nm=new TextEncoder().encode($("#pname").value.slice(0,13)); b.fill(0,2,16); b.set(nm.slice(0,13),2);
-  for(const an in AOFF){ b[AOFF[an]]=+document.querySelector(`[data-am="${an}"]`).value; dv.setUint16(SOFF[an],Math.max(50,Math.min(20000,+document.querySelector(`[data-as="${an}"]`).value||1000)),true); }
-  for(let s=0;s<46;s++) b[bOff(s)]=0;
-  document.querySelectorAll("[data-m]").forEach(e=>{ if(e.checked) b[bOff(+e.dataset.m)]|=+e.dataset.bit; });
-  document.querySelectorAll("[data-a]").forEach(e=>{ const [s,g,i]=e.dataset.a.split(":").map(Number); b[bOff(s)+1+g*4+i]=+e.value; });
-}
-
+function collect(){ saveName(); }
 /* ---- WebHID, same protocol as the report meter ---- */
 let devs=[], ctlDev=null; const rate=new Map();
 const pathTag=p=>{ let t=0xA5; for(const c of p) t=((t<<1)^(t>>7)^c.charCodeAt(0))&255; return t; };
@@ -185,7 +237,10 @@ $("#connect").onclick=async()=>{
 navigator.hid&&navigator.hid.addEventListener("disconnect",e=>{ devs=devs.filter(d=>d!==e.device); if(ctlDev===e.device) ctlDev=null; $("#status").textContent=devs.length?"":"disconnected"; });
 let lastBtn=0;
 function onReport(e){ if(e.reportId!==0x42) return; rate.set(e.device,1); if(!ctlDev) ctlDev=e.device; if(e.device!==ctlDev||e.data.byteLength<5) return; lastBtn=e.data.getUint32(1,true); }
-setInterval(()=>{ for(let s=0;s<30;s++){ const el=document.getElementById("lv"+s); if(el) el.classList.toggle("on",(lastBtn&(1<<s))!==0); } },100);
+setInterval(()=>{
+  document.querySelectorAll("[data-s]").forEach(e=>{ const v=+e.dataset.s; if(!isNaN(v)&&v<30) e.classList.toggle("on",(lastBtn&(1<<v))!==0); });
+  const l=document.getElementById("lvsel"); if(l&&typeof sel==="number"&&sel<30) l.classList.toggle("on",(lastBtn&(1<<sel))!==0);
+},100);
 
 async function refreshState(){
   const on=await cfgGet("remap_on"), p=await cfgGet("remap_profile");
@@ -214,7 +269,7 @@ $("#write").onclick=async()=>{
     buildTabs();
   }catch(e){ $("#pstatus").innerHTML=`<span class="err">${e.message}</span>`; }
 };
-$("#clear").onclick=()=>{ if(confirm(`Clear profile ${cur+1}? (Save to controller afterwards.)`)){ prof[cur]=emptyProfile(); render(); } };
+$("#clear").onclick=()=>{ if(confirm(`Clear profile ${cur+1}? (Save to controller afterwards.)`)){ prof[cur]=emptyProfile(); sel=null; render(); } };
 $("#export").onclick=()=>{ collect(); const j=JSON.stringify({sc2remap:1,name:nameOf(prof[cur]),data:Array.from(prof[cur])}); const a=document.createElement("a"); a.href=URL.createObjectURL(new Blob([j],{type:"application/json"})); a.download=`sc2-remap-${(nameOf(prof[cur])||"profile"+(cur+1)).replace(/\W+/g,"_")}.json`; a.click(); };
 $("#import").onchange=async e=>{ const f=e.target.files[0]; if(!f) return; try{ const j=JSON.parse(await f.text()); if(!j.data||j.data.length!==PROF_SIZE) throw new Error("not a profile file for this version"); prof[cur]=new Uint8Array(j.data); render(); $("#pstatus").innerHTML='<span class="ok">imported — press Save to controller</span>'; }catch(err){ $("#pstatus").innerHTML=`<span class="err">${err.message}</span>`; } e.target.value=""; };
 render();
