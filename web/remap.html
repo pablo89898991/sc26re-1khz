@@ -40,6 +40,19 @@
   svg .hit.on .sh{fill:rgba(79,201,138,.25)}
   .bottom{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-top:8px}
   #editor{margin-top:14px;border-top:1px solid var(--edge);padding-top:12px}
+  .cards{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px}
+  .card{background:var(--panel2);border:1px solid var(--edge);border-radius:12px;padding:12px 14px}
+  .card h3{margin:0 0 8px;font-size:14px;color:var(--accent2)}
+  .card .row{display:grid;grid-template-columns:150px 1fr;gap:8px;align-items:center;padding:5px 0;border-top:1px solid #243149}
+  .card .row:first-of-type{border-top:0}
+  .card .row .lab{font-size:13px} .card .row .lab small{display:block;font-size:11px;color:var(--muted);line-height:1.35}
+  .card .ctl{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+  .card .ctl select,.card .ctl input{padding:5px 8px;font-size:13px}
+  .card .tools{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+  .card .tools button{padding:6px 10px;font-size:12.5px}
+  .card.wide{grid-column:1 / -1}
+  details.card summary{cursor:pointer;color:var(--accent2);font-weight:600;font-size:14px}
+  @media (max-width:900px){.cards{grid-template-columns:1fr}}
   @media (max-width:900px){.board{grid-template-columns:1fr}.bottom{grid-template-columns:repeat(2,1fr)}}
 </style>
 </head>
@@ -83,17 +96,11 @@
   </div>
   <div class="panel" id="gyroPanel">
     <h2>Gyro and gyro as mouse</h2>
-    <p class="note">The same settings as in the report meter (they are controller-wide, not per profile). <b>Apply</b> = until power-off, <b>Save</b> = kept. Gyro as mouse on/off on the controller: <b>LB + RB + View</b> (off after every power-on). While it is on, no program gets the gyro.</p>
     <div class="bar"><button id="gyRead">Read</button><button class="primary" id="gyApply">Apply</button><button id="gySave">Save</button>
       <button id="gmOn">Gyro as mouse: ?</button><span id="gyStatus" class="note"></span></div>
-    <table id="gyTbl" style="margin-top:8px"></table>
-    <div class="sect" style="margin-left:0">Gyro tools</div>
-    <div class="bar">
-      <button id="tCal">Calibrate gyro (drift)</button><button id="tFull">Full gyro calibration (+ dead bands)</button><button id="tReset">Reset gyro calibration</button>
-      <button id="tCalStart">360° calibration: start</button><button id="tCalTurn">start turn</button><button id="tCalStop">stop at 360° &amp; save</button><button id="tCalCancel">cancel</button>
-      <span id="tStatus" class="note"></span>
-    </div>
-    <p class="note">360° calibration (per game): in the game look at something you can find again, press <i>start</i> (or LB + RB + View + A), then the calibration button (or <i>start turn</i>) — the camera turns slowly — and press it again when it has done exactly 360°.</p>
+    <p class="note">Controller-wide settings (not per profile), the same as in the report meter. <b>Apply</b> = until power-off, <b>Save</b> = kept. Gyro as mouse on/off on the controller: <b>LB + RB + View</b> (always off after power-on); while it is on no program gets the gyro.</p>
+    <div class="cards" id="gyCards"></div>
+    <p class="note" id="tStatus"></p>
   </div>
 </div>
 <script>
@@ -327,18 +334,41 @@ const GY=[
  ...[1,2,3,4].flatMap(q=>[[`gm_qt${q}_btn`,`Quick turn ${q}`,"sel",BTNOPTS,1,""],[`gm_qt${q}_deg`,`… angle`,"sel",DEGOPTS,1,""]]),
  ["gm_qt_ms","Quick turn time","num",[0,500,10],1,"ms, 0 = instant"],
 ];
-function gyBuild(){
-  let h="";
-  for(const [n,label,kind,o,,hint] of GY){
-    if(n==="#"){ h+=`<tr><td colspan="2"><div class="sect" style="margin-left:0">${label}</div></td></tr>`; continue; }
-    let ctl="";
-    if(kind==="sel") ctl=`<select id="g_${n}">${o.map(([v,t])=>`<option value="${v}">${t}</option>`).join("")}</select>`;
-    else if(kind==="num"||kind==="auto") ctl=`<input type="number" id="g_${n}" min="${o[0]}" max="${o[1]}" step="${o[2]}" style="width:110px">`+(kind==="auto"?` <label class="note"><input type="checkbox" id="ga_${n}"> Steam</label>`:"");
-    else ctl=`<input type="number" step="0.01" id="g_${n}_lo" style="width:80px"> … <input type="number" step="0.01" id="g_${n}_hi" style="width:80px">`;
-    h+=`<tr><td class="n">${label}${hint?`<small>${hint}</small>`:""}</td><td>${ctl}</td></tr>`;
-  }
-  $("#gyTbl").innerHTML=h;
+const GYI={}; for(const e of GY) if(e[0]!=="#") GYI[e[0]]=e;
+function ctlHtml(n,short){
+  const [,label,kind,o]=GYI[n];
+  if(kind==="sel") return (short?`<span class="note">${short}</span>`:"")+`<select id="g_${n}">${o.map(([v,t])=>`<option value="${v}">${t}</option>`).join("")}</select>`;
+  if(kind==="num"||kind==="auto") return (short?`<span class="note">${short}</span>`:"")+`<input type="number" id="g_${n}" min="${o[0]}" max="${o[1]}" step="${o[2]}" style="width:${short?70:100}px">`+(kind==="auto"?` <label class="note"><input type="checkbox" id="ga_${n}"> Steam</label>`:"");
+  return (short?`<span class="note">${short}</span>`:"")+`<input type="number" step="0.01" id="g_${n}_lo" style="width:68px"><span class="note">to</span><input type="number" step="0.01" id="g_${n}_hi" style="width:68px">`;
 }
+const row=(label,hint,ctl)=>`<div class="row"><div class="lab">${label}${hint?`<small>${hint}</small>`:""}</div><div class="ctl">${ctl}</div></div>`;
+const one=(n,hint)=>row(GYI[n][1],hint===undefined?GYI[n][5]:hint,ctlHtml(n));
+const CARDS=()=>[
+ `<div class="card"><h3>Gyro sensor</h3>
+   ${one("gyro_hw_lpf","0 off … 8 strongest; 1 = default")}${one("gyro_filter","0 off … 4 strong (adds delay)")}
+   ${one("gyro_deadzone")}${one("gyro_fsr","")}${one("gyro_odr","")}</div>`,
+ `<div class="card"><h3>Gyro calibration</h3>
+   ${one("gyro_auto_cal")}${one("gyro_chord_mode","")}${one("gyro_band_soft","soft = no jump at the edge")}
+   ${row("Dead bands","°/s, 0 and 0 = off",ctlHtml("band:x","Pitch")+"<br>"+ctlHtml("band:z","Yaw")+"<br>"+ctlHtml("band:y","Roll"))}
+   <div class="tools"><button id="tCal">Calibrate drift</button><button id="tFull">Full calibration (+ dead bands)</button><button id="tReset">Reset to factory</button></div></div>`,
+ `<div class="card"><h3>Gyro as mouse — activation and axes</h3>
+   ${row("Gyro moves the mouse","button or touch sensor, and how",ctlHtml("gm_act_button")+ctlHtml("gm_act_mode"))}
+   ${row("Axes","what each gyro axis moves",ctlHtml("gm_axis_pitch","Pitch")+ctlHtml("gm_axis_yaw","Yaw")+ctlHtml("gm_axis_roll","Roll"))}</div>`,
+ `<div class="card"><h3>Gyro as mouse — sensitivity</h3>
+   ${one("gm_sens")}
+   ${row("Per axis","% of the sensitivity",ctlHtml("gm_scale_p","P")+ctlHtml("gm_scale_y","Y")+ctlHtml("gm_scale_r","R"))}
+   ${row("Counts per 360°","= Steam Dots per 360°; set by the 360° calibration",ctlHtml("cal360"))}
+   ${row("360° calibration","button and turn speed (counts/s)",ctlHtml("gm_cal_button")+ctlHtml("gm_cal_speed"))}
+   <div class="tools"><button id="tCalStart">Start 360° calibration</button><button id="tCalTurn">Start turn</button><button id="tCalStop">Stop at 360° &amp; save</button><button id="tCalCancel">Cancel</button></div>
+   <p class="note" style="margin:6px 0 0">In the game look at something you can find again → Start (or LB + RB + View + A) → press the calibration button: the camera turns slowly → press it again at exactly 360°.</p></div>`,
+ `<div class="card"><h3>Quick turns (flick)</h3>
+   ${[1,2,3,4].map(q=>row(`Turn ${q}`,"",ctlHtml(`gm_qt${q}_btn`)+ctlHtml(`gm_qt${q}_deg`))).join("")}
+   ${one("gm_qt_ms")}</div>`,
+ `<details class="card"><summary>Advanced (mouse rates, mouse dead bands)</summary>
+   ${one("gm_rate","")}${one("gm_rate_wl","")}${one("gm_band_soft","")}
+   ${row("Mouse dead bands","°/s, 0 and 0 = off (default)",ctlHtml("gmb:p","Pitch")+"<br>"+ctlHtml("gmb:y","Yaw")+"<br>"+ctlHtml("gmb:r","Roll"))}</details>`,
+];
+function gyBuild(){ $("#gyCards").innerHTML=CARDS().join(""); }
 const gyEl=id=>document.getElementById(id);
 async function gyRead(){
   try{
@@ -378,6 +408,7 @@ async function gyWrite(save){
 async function gmOnRefresh(){ const on=await cfgGet("gm_enabled"); $("#gmOn").textContent="Gyro as mouse: "+(on?"ON — turn off":"off — turn on"); $("#gmOn").className=on?"primary":""; }
 $("#gyRead").onclick=gyRead; $("#gyApply").onclick=()=>gyWrite(false); $("#gySave").onclick=()=>gyWrite(true);
 $("#gmOn").onclick=async()=>{ try{ const on=await cfgGet("gm_enabled"); await send("sc26re/gm_enabled",0xEE,[on?0:1,0]); await gmOnRefresh(); }catch(e){ $("#gyStatus").innerHTML=`<span class="err">${e.message}</span>`; } };
+gyBuild();
 async function tool(op,path,msg){ try{ if(op===0xB5){ const b=new Uint8Array(63); b[0]=0xB5; await serial(()=>ctl().sendFeatureReport(1,b)); } else await send(path,op); $("#tStatus").innerHTML=`<span class="ok">${msg}</span>`; }catch(e){ $("#tStatus").innerHTML=`<span class="err">${e.message}</span>`; } }
 $("#tCal").onclick=()=>tool(0xB5,"","measuring — don't touch the controller for 2 s");
 $("#tFull").onclick=()=>tool(0xF0,"sc26re/gyro_full_cal","full calibration started — put the controller down and let go (about 15 s, chime when done)");
@@ -386,7 +417,6 @@ $("#tCalStart").onclick=async()=>{ await gyWrite(false); tool(0xF0,"sc26re/gm_ca
 $("#tCalTurn").onclick=()=>tool(0xF0,"sc26re/gm_cal_turn","turning…");
 $("#tCalStop").onclick=async()=>{ await tool(0xF0,"sc26re/gm_cal_stop","saved"); setTimeout(gyRead,500); };
 $("#tCalCancel").onclick=()=>tool(0xF0,"sc26re/gm_cal_cancel","cancelled");
-gyBuild();
 render();
 </script>
 </body>
