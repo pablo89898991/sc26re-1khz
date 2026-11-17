@@ -122,3 +122,5 @@ int haptics_play_power_sound(bool on);
 int haptics_play_drop_sound(void);
 /* short audible beep on both grips (progress feedback) */
 int haptics_play_beep(uint16_t frequency_hz, uint16_t duration_ms);
+/* remapper / gyro feedback on the trackpad actuators: 1 tick, 2 click, 3 strong pulse */
+int haptics_play_feedback(uint8_t level, uint8_t channels);

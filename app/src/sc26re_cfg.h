@@ -82,6 +82,7 @@ enum sc26re_cfg_id
 	SC26RE_CFG_GM_BAND_Y_HI,
 	SC26RE_CFG_GM_BAND_R_LO,
 	SC26RE_CFG_GM_BAND_R_HI,
+	SC26RE_CFG_GM_HAPTIC,      /* gyro mouse feedback: 0 off, 1 tick, 2 click, 3 strong */
 	SC26RE_CFG_COUNT,
 };
 

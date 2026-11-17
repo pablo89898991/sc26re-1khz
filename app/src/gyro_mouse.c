@@ -235,6 +235,7 @@ static void quick_turn_start(int16_t deg)
 	qt_left += counts;
 	qt_rate = ms > 0 ? fabsf(qt_left) * 1000.0f / (float)ms : 1e9f;
 	k_mutex_unlock(&lock);
+	(void)haptics_play_feedback((uint8_t)sc26re_cfg_get(SC26RE_CFG_GM_HAPTIC), HAPTICS_CHANNELS_PRIMARY);
 }
 
 uint32_t gyro_mouse_filter_buttons(uint32_t raw)
@@ -379,7 +380,20 @@ void gyro_mouse_feed(const float dps[3], uint32_t buttons, float dt_s)
 		}
 	}
 
-	if(sc26re_cfg_get(SC26RE_CFG_GM_ENABLED) != 1 || chord_down || !active(buttons, pressed))
+	bool act_now = sc26re_cfg_get(SC26RE_CFG_GM_ENABLED) == 1 && !chord_down && active(buttons, pressed);
+
+	{
+		/* feedback when the activation button starts moving the cursor */
+		static bool act_prev;
+		int16_t ab = sc26re_cfg_get(SC26RE_CFG_GM_ACT_BUTTON);
+
+		if(act_now && !act_prev && ab >= 0 && ab <= 29 && sc26re_cfg_get(SC26RE_CFG_GM_ACT_MODE) != 0)
+		{
+			(void)haptics_play_feedback((uint8_t)sc26re_cfg_get(SC26RE_CFG_GM_HAPTIC), HAPTICS_CHANNELS_PRIMARY);
+		}
+		act_prev = act_now;
+	}
+	if(!act_now)
 	{
 		/* drop gyro movement only; whole counts of a quick turn still go out */
 		if(qt_left == 0.0f)

@@ -100,6 +100,7 @@ static const struct cfg_desc descs[SC26RE_CFG_COUNT] = {
 	[SC26RE_CFG_GM_BAND_Y_HI] = { "gm_band_y_hi", 0, 0, 2000, NO_REGISTRY, 1 },
 	[SC26RE_CFG_GM_BAND_R_LO] = { "gm_band_r_lo", 0, -2000, 0, NO_REGISTRY, 1 },
 	[SC26RE_CFG_GM_BAND_R_HI] = { "gm_band_r_hi", 0, 0, 2000, NO_REGISTRY, 1 },
+	[SC26RE_CFG_GM_HAPTIC] = { "gm_haptic", 0, 0, 3, NO_REGISTRY, 1 },
 };
 
 static int16_t values[SC26RE_CFG_COUNT];

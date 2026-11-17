@@ -2190,6 +2190,18 @@ int haptics_play_beep(uint16_t frequency_hz, uint16_t duration_ms)
 	return haptics_submit_effect(&command);
 }
 
+/* remapper / gyro feedback: 1 tick, 2 click, 3 strong pulse */
+int haptics_play_feedback(uint8_t level, uint8_t channels)
+{
+	switch(level)
+	{
+		case 1: return haptics_debug_play_tick(channels);
+		case 2: return haptics_debug_play_click(channels);
+		case 3: return haptics_debug_play_pulse(channels);
+		default: return 0;
+	}
+}
+
 int haptics_debug_play_tick(uint8_t channels)
 {
 	struct haptics_effect command = {

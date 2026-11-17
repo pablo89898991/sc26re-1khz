@@ -9,15 +9,22 @@
 
 #define REMAP_PROFILES 4
 #define REMAP_MAGIC 0xA7
+#define REMAP_VERSION 2
 
-/* sources: 0..29 controller button bits, then derived directions */
+/* sources: 0..29 controller button bits, then derived inputs */
 enum
 {
-	REMAP_SRC_LS_UP = 30, /* +down, left, right */
+	REMAP_SRC_LS_UP = 30,     /* up, down, left, right */
 	REMAP_SRC_RS_UP = 34,
-	REMAP_SRC_LPAD_UP = 38,
+	REMAP_SRC_LPAD_UP = 38,   /* up, down, left, right */
 	REMAP_SRC_RPAD_UP = 42,
-	REMAP_SRC_COUNT = 46,
+	REMAP_SRC_LPAD_GATE = 46, /* gates: top-left, top-right, bottom-left, bottom-right */
+	REMAP_SRC_RPAD_GATE = 50,
+	REMAP_SRC_LPAD_CW = 54,   /* scroll wheel: clockwise, counter-clockwise */
+	REMAP_SRC_RPAD_CW = 56,
+	REMAP_SRC_LT_SOFT = 58,   /* trigger soft pull (full pull = the click bit) */
+	REMAP_SRC_RT_SOFT = 59,
+	REMAP_SRC_COUNT = 60,
 };
 
 /* binding modes (bits) */
@@ -35,16 +42,32 @@ enum
 #define REMAP_ACT_PAD 0x80     /* + Steam pad button bit 0..29 */
 #define REMAP_ACT_PROFILE 0xC0 /* + profile 0..3 */
 
-/* stick / trackpad modes */
-#define REMAP_ANALOG_PASS 0   /* goes to Steam as usual */
-#define REMAP_ANALOG_DIRS 1   /* 4 direction sources only */
-#define REMAP_ANALOG_MOUSE 2
-#define REMAP_ANALOG_SCROLL 3
+/* stick / trackpad modes (struct remap_analog.mode) */
+#define REMAP_ANALOG_PASS 0   /* to Steam as an analog input (sticks: dead zones applied) */
+#define REMAP_ANALOG_DPAD4 1  /* 4-way: one direction at a time */
+#define REMAP_ANALOG_DPAD8 2  /* 8-way: diagonals hold both directions */
+#define REMAP_ANALOG_MOUSE 3
+#define REMAP_ANALOG_SCROLL 4 /* sticks: scroll; trackpads: circular scroll wheel */
+#define REMAP_ANALOG_GATES 5  /* trackpads: 4 corner gates */
+
+#define REMAP_AF_CLICK 0x01 /* trackpads: active while clicked (else while touched) */
+
+struct remap_analog
+{
+	uint8_t mode;
+	uint8_t flags;
+	uint8_t dz_in;  /* inner dead zone / activation, % of the radius */
+	uint8_t dz_out; /* outer dead zone, % (sticks to Steam) */
+	uint16_t speed; /* mouse: counts/s (stick) or per swipe (pad); scroll: notches/s x100 (stick) or deg per step (wheel) */
+	uint8_t haptic; /* feedback for mouse / scroll movement: 0 off, 1 tick, 2 click, 3 strong */
+	uint8_t reserved;
+} __packed;
 
 struct remap_binding
 {
 	uint8_t mode;
 	uint8_t act[3][4]; /* group 0 press/tap, 1 hold, 2 double */
+	uint8_t haptic;    /* feedback when it fires: 0 off, 1 tick, 2 click, 3 strong */
 } __packed;
 
 struct remap_profile
@@ -52,10 +75,10 @@ struct remap_profile
 	uint8_t magic;
 	uint8_t version;
 	char name[14];
-	uint8_t ls_mode, rs_mode, lp_mode, rp_mode;
-	uint16_t ls_speed, rs_speed; /* mouse counts/s at full deflection */
-	uint16_t lp_sens, rp_sens;   /* mouse counts for a swipe across the whole pad */
-	uint8_t reserved[8];
+	uint8_t dpad_4way;    /* physical D-pad: 0 8-way, 1 4-way */
+	uint8_t trig_soft[2]; /* soft pull point, % of travel */
+	uint8_t reserved[13];
+	struct remap_analog an[4]; /* left stick, right stick, left pad, right pad */
 	struct remap_binding bind[REMAP_SRC_COUNT];
 } __packed;
 
