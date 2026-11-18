@@ -30,6 +30,7 @@
   <h1>SC2 <span>3D Overlay</span></h1>
   <div class="row"><button class="primary" id="connect">Connect controller</button><span id="status" class="note">not connected</span></div>
   <div class="row"><label>Shows</label><select id="src"><option value="raw">the physical controller (native, also when remapped)</option><option value="steam">what Steam receives</option></select></div>
+  <div class="row"><label>Model</label><select id="mdl"><option value="valve">Valve’s official model (exact shape)</option><option value="detail">detailed, textured</option></select></div>
   <div class="row"><label>Background</label><select id="bg"><option value="#00ff00">green (chroma key)</option><option value="#ff00ff">magenta (chroma key)</option><option value="#0d1320">dark</option><option value="#ffffff">white</option></select></div>
   <div class="row"><label>Pressed</label><input type="color" id="hiCol" value="#1a9fff"><label>Touched</label><input type="color" id="touchCol" value="#5fe39a"></div>
   <div class="row"><label>View tilt</label><input type="range" id="tilt" min="-30" max="90" value="20"><label>Size</label><input type="range" id="zoom" min="40" max="160" value="100"></div>
@@ -38,7 +39,8 @@
   <div class="row"><label><input type="checkbox" id="level"> keep level with gravity</label><label><input type="checkbox" id="imuOn"> turn gyro on without Steam</label></div>
   <div class="row"><label>Invert</label><label><input type="checkbox" id="invP"> pitch</label><label><input type="checkbox" id="invY"> yaw</label><label><input type="checkbox" id="invR"> roll</label></div>
   <p class="note">For recording: in OBS add a <b>Window Capture</b> of this browser window and a <b>Chroma Key</b> filter (green). OBS’s Browser Source cannot open the controller (no WebHID). <b>H</b> hides this panel, <b>R</b> recenters, drag with the mouse to turn the view (double-click resets it). “Native” (sc26re v51+) shows what your hands do even when the remapper is on; “what Steam receives” shows the pad after remapping.</p>
-  <p class="note">3D model: “Steam Machine + Controller” by <a href="https://sketchfab.com/dark_igorek" target="_blank">dark_igorek</a>, <a href="https://creativecommons.org/licenses/by/4.0/" target="_blank">CC BY 4.0</a>, split into parts by <a href="https://github.com/robinneefs/steam-controller-toolkit" target="_blank">steam-controller-toolkit</a>. Rendered with three.js.</p>
+  <p class="note">Valve’s model: © 2026 Valve Corporation, <a href="https://gitlab.steamos.cloud/SteamHardware/SteamController" target="_blank">Steam Controller CAD files</a>, <a href="http://creativecommons.org/licenses/by-nc-sa/4.0/" target="_blank">CC BY-NC-SA 4.0</a> (low-poly version, converted to one file). Not affiliated with or endorsed by Valve.
+  Detailed model: “Steam Machine + Controller” by <a href="https://sketchfab.com/dark_igorek" target="_blank">dark_igorek</a>, <a href="https://creativecommons.org/licenses/by/4.0/" target="_blank">CC BY 4.0</a>, split into parts by <a href="https://github.com/robinneefs/steam-controller-toolkit" target="_blank">steam-controller-toolkit</a>. Rendered with three.js.</p>
 </div>
 <script type="module">
 import * as THREE from "three";
@@ -47,7 +49,7 @@ import { MeshoptDecoder } from "./vendor/three/examples/jsm/libs/meshopt_decoder
 
 const $ = s => document.querySelector(s);
 /* ---------- settings ---------- */
-const SET_IDS = ["src", "xray", "bg", "hiCol", "touchCol", "tilt", "zoom", "useGyro", "level", "imuOn", "invP", "invY", "invR"];
+const SET_IDS = ["mdl", "src", "xray", "bg", "hiCol", "touchCol", "tilt", "zoom", "useGyro", "level", "imuOn", "invP", "invY", "invR"];
 try { const o = JSON.parse(localStorage.getItem("sc26re_overlay2") || "{}"); for (const k of SET_IDS) if (k in o) { const e = $("#" + k); if (e.type === "checkbox") e.checked = o[k]; else e.value = o[k]; } } catch (e) {}
 function saveSet() { const o = {}; for (const k of SET_IDS) { const e = $("#" + k); o[k] = e.type === "checkbox" ? e.checked : e.value; } try { localStorage.setItem("sc26re_overlay2", JSON.stringify(o)); } catch (e) {} }
 SET_IDS.forEach(k => $("#" + k).addEventListener("input", saveSet));
@@ -122,27 +124,92 @@ function addFinger(padPivot) {
   if (!o || !px || !pz) return undefined;
   const ax = px.clone().sub(o).normalize(), ay = pz.clone().sub(o).normalize(), n = new THREE.Vector3().crossVectors(ax, ay).normalize();
   const frame = new THREE.Group(); frame.matrix.makeBasis(ax, ay, n).setPosition(padPivot.worldToLocal(o.clone())); frame.matrixAutoUpdate = false;
-  const finger = new THREE.Mesh(new THREE.SphereGeometry(0.22, 16, 12), new THREE.MeshBasicMaterial({ color: 0xffb547 }));
+  const k = padPivot.getWorldScale(new THREE.Vector3()).x || 1;
+  const finger = new THREE.Mesh(new THREE.SphereGeometry(0.22 / k, 16, 12), new THREE.MeshBasicMaterial({ color: 0xffb547 }));
   finger.visible = false; frame.add(finger); padPivot.add(frame); return finger;
 }
-new GLTFLoader().setMeshoptDecoder(MeshoptDecoder).loadAsync("./models/steam-controller.glb").then(gltf => {
-  /* measure the parts with the model unrotated (world space = model space), then put it back */
-  const pose = model.quaternion.clone(); model.quaternion.identity();
-  model.add(gltf.scene); model.updateMatrixWorld(true);
-  const meshes = []; gltf.scene.traverse(o => { if (o.isMesh && o.name.startsWith("part_")) meshes.push(o); else if (o.isMesh) bodyMats.push(o.material); });
-  const dpadBox = new THREE.Box3(); for (const m of meshes) if (m.name.startsWith("part_dpad_")) dpadBox.expandByObject(m);
-  for (const mesh of meshes) {
-    const name = mesh.name.slice(5), material = mesh.material.clone(); mesh.material = material;
-    const box = new THREE.Box3().setFromObject(mesh), pivot = new THREE.Group();
-    pivot.position.copy(name.startsWith("dpad_") ? dpadBox.getCenter(new THREE.Vector3()) : pivotFor(name, box));
-    mesh.parent.add(pivot); pivot.updateMatrixWorld(true); pivot.attach(mesh);
-    parts.set(name, { pivot, material, rest: pivot.position.clone() });
-  }
-  for (const s of ["l", "r"]) { const p = parts.get("pad_" + s); if (p) fingers[s] = addFinger(p.pivot); }
-  bodyMats = [...new Set(bodyMats)];
-  model.quaternion.copy(pose);
-  ready = true; $("#loading").remove();
-}).catch(e => { $("#loading").textContent = "could not load the 3D model: " + e.message; });
+/* two models: Valve's official shape (low-poly parts, flat colours) or a detailed textured one */
+let xrayNow = null;
+const VALVE_SCALE = 7.8;
+const VALVE_TRIG_Z = -0.76; /* Valve's info.txt says -1, which leaves the triggers floating in front of the shell */ /* Valve's model is ~2.06 units wide: about cm like the other one */
+let padHalf = 1.45, loadGen = 0;
+function clearModel() { for (const c of [...model.children]) model.remove(c); parts.clear(); for (const k in fingers) delete fingers[k]; bodyMats = []; ready = false; xrayNow = null; }
+function loadTextured(gen) {
+  return new GLTFLoader().setMeshoptDecoder(MeshoptDecoder).loadAsync("./models/steam-controller.glb").then(gltf => {
+    if (gen !== loadGen) return;
+    const pose = model.quaternion.clone(); model.quaternion.identity();
+    model.add(gltf.scene); model.updateMatrixWorld(true);
+    const meshes = []; gltf.scene.traverse(o => { if (o.isMesh && o.name.startsWith("part_")) meshes.push(o); else if (o.isMesh) bodyMats.push(o.material); });
+    const dpadBox = new THREE.Box3(); for (const m of meshes) if (m.name.startsWith("part_dpad_")) dpadBox.expandByObject(m);
+    for (const mesh of meshes) {
+      const name = mesh.name.slice(5), material = mesh.material.clone(); mesh.material = material;
+      const box = new THREE.Box3().setFromObject(mesh), pivot = new THREE.Group();
+      pivot.position.copy(name.startsWith("dpad_") ? dpadBox.getCenter(new THREE.Vector3()) : pivotFor(name, box));
+      mesh.parent.add(pivot); pivot.updateMatrixWorld(true); pivot.attach(mesh);
+      parts.set(name, { pivot, material, rest: pivot.position.clone() });
+    }
+    padHalf = 1.45;
+    for (const s of ["l", "r"]) { const p = parts.get("pad_" + s); if (p) fingers[s] = addFinger(p.pivot); }
+    bodyMats = [...new Set(bodyMats)];
+    model.quaternion.copy(pose);
+  });
+}
+/* Valve's parts (gitlab.steamos.cloud/SteamHardware/SteamController, low-poly set): x right, y out of
+ * the face, z towards the grips. Sticks and triggers are modelled at the origin and placed here
+ * (Valve's info.txt): sticks at (±0.3, 0.22, -0.39) tilting up to 25°, triggers hinged at
+ * (±0.63, 0.02, -0.76) and pulled up to 20°. */
+const VALVE_PARTS = { south_button: "a", east_button: "b", west_button: "x", north_button: "y", back_button: "view", start_button: "menu", guide_button: "steam", misc1: "qam",
+  left_shoulder: "bumper_l", right_shoulder: "bumper_r", paddle2: "back_l4", paddle4: "back_l5", paddle1: "back_r4", paddle3: "back_r5",
+  dpad_up: "dpad_up", dpad_down: "dpad_down", dpad_left: "dpad_left", dpad_right: "dpad_right", touchpad: "pad_l", misc2: "pad_r",
+  left_trigger: "trigger_l", right_trigger: "trigger_r", left_gripsense: "grip_l", right_gripsense: "grip_r" };
+const VALVE_COL = { body: 0x23262c, button: 0x30343c, pad: 0x1b1d22, a: 0x30343c, cap: 0x2b2e35 };
+function loadValve(gen) {
+  return new GLTFLoader().loadAsync("./models/steam-controller-valve.glb").then(gltf => {
+    if (gen !== loadGen) return;
+    const pose = model.quaternion.clone(); model.quaternion.identity();
+    const root = new THREE.Group(); root.scale.setScalar(VALVE_SCALE); model.add(root);
+    const mat = (c, rough = 0.62) => new THREE.MeshStandardMaterial({ color: c, roughness: rough, metalness: 0.05 });
+    const byName = {}; gltf.scene.traverse(o => { if (o.isMesh) byName[o.name || o.parent.name] = o; });
+    const shellMat = mat(VALVE_COL.body, 0.7);
+    for (const n of ["top_shell", "bottom_shell"]) if (byName[n]) { byName[n].material = shellMat; root.add(byName[n]); }
+    bodyMats.push(shellMat);
+    root.updateMatrixWorld(true);
+    const dpadBox = new THREE.Box3(); for (const n of ["dpad_up", "dpad_down", "dpad_left", "dpad_right"]) if (byName[n]) dpadBox.expandByObject(byName[n]);
+    for (const [vn, name] of Object.entries(VALVE_PARTS)) {
+      const mesh = byName[vn]; if (!mesh) continue;
+      const material = mat(name.startsWith("pad_") ? VALVE_COL.pad : VALVE_COL.button, name.startsWith("pad_") ? 0.45 : 0.55); mesh.material = material;
+      const pivot = new THREE.Group(); root.add(pivot);
+      if (name.startsWith("trigger_")) {
+        const sx = name.endsWith("l") ? -1 : 1; pivot.position.set(0.63 * sx, 0.02, VALVE_TRIG_Z);
+        pivot.add(mesh); /* the blade hangs from its hinge at the model's origin */
+      } else if (name.startsWith("grip_")) {
+        material.transparent = true; material.opacity = 0; material.depthWrite = false; pivot.add(mesh);
+      } else {
+        root.updateMatrixWorld(true);
+        const box = new THREE.Box3().setFromObject(mesh), c = name.startsWith("dpad_") ? dpadBox.getCenter(new THREE.Vector3()) : box.getCenter(new THREE.Vector3());
+        root.worldToLocal(c); pivot.position.copy(c); mesh.position.sub(c); pivot.add(mesh);
+      }
+      parts.set(name, { pivot, material, rest: pivot.position.clone(), unit: 1 / VALVE_SCALE });
+    }
+    for (const s of ["l", "r"]) {
+      const sx = s === "l" ? -1 : 1, pivot = new THREE.Group(); pivot.position.set(0.3 * sx, 0.22, -0.39); root.add(pivot);
+      const capMat = mat(VALVE_COL.cap, 0.5);
+      for (const n of ["stick_base", "stick_ring", "stick_cap"]) { const m = byName[(s === "l" ? "left_" : "right_") + n]; if (m) { m.material = capMat; pivot.add(m); } }
+      parts.set("stick_" + s, { pivot, material: capMat, rest: pivot.position.clone(), unit: 1 / VALVE_SCALE, tilt: 0.436 });
+    }
+    model.updateMatrixWorld(true);
+    padHalf = 0.22 * VALVE_SCALE;
+    for (const s of ["l", "r"]) { const p = parts.get("pad_" + s); if (p) fingers[s] = addFinger(p.pivot); }
+    model.quaternion.copy(pose);
+  });
+}
+function loadModel() {
+  const gen = ++loadGen; clearModel(); $("#loading") && ($("#loading").textContent = "loading the 3D model…");
+  (($("#mdl").value === "detail") ? loadTextured : loadValve)(gen).then(() => { if (gen !== loadGen) return; ready = true; $("#loading") && $("#loading").remove(); })
+    .catch(e => { if ($("#loading")) $("#loading").textContent = "could not load the 3D model: " + e.message; });
+}
+loadModel();
+$("#mdl").addEventListener("change", () => { if (!$("#loading")) { const d = document.createElement("div"); d.id = "loading"; document.body.appendChild(d); } loadModel(); });
 
 /* ---------- input state ---------- */
 const st = { btn: 0, lt: 0, rt: 0, ls: [0, 0], rs: [0, 0], lp: [0, 0, 0], rp: [0, 0, 0] };
@@ -222,7 +289,7 @@ setInterval(() => { const n = rawN; rawN = 0; if (!devs.length) return;
 const BLACK = new THREE.Color(0);
 const bit = b => (st.btn & (1 << b)) !== 0;
 function glow(name, color, k) { const p = parts.get(name); if (!p) return; p.material.emissive.copy(color || BLACK); p.material.emissiveIntensity = color ? k : 0; }
-function pressPart(name, dir, depth) { const p = parts.get(name); if (p) p.pivot.position.copy(p.rest).addScaledVector(dir, depth); }
+function pressPart(name, dir, depth) { const p = parts.get(name); if (p) p.pivot.position.copy(p.rest).addScaledVector(dir, depth * (p.unit || 1)); }
 function poseParts() {
   const HI = new THREE.Color($("#hiCol").value), TOUCH = new THREE.Color($("#touchCol").value);
   for (const [name, b, dir] of PRESS_PARTS) { const on = bit(b); pressPart(name, dir, on ? PRESS_DEPTH : 0); glow(name, on ? HI : null, 0.8); }
@@ -233,22 +300,22 @@ function poseParts() {
     const L = s === "l";
     const stick = parts.get("stick_" + s);
     if (stick) { const [sx, sy] = L ? st.ls : st.rs, clicked = bit(L ? 15 : 5), touched = bit(L ? 24 : 20);
-      stick.pivot.rotation.set(-sy * STICK_TILT, 0, -sx * STICK_TILT);
-      stick.pivot.position.copy(stick.rest).addScaledVector(DOWN, clicked ? PRESS_DEPTH : 0);
+      stick.pivot.rotation.set(-sy * (stick.tilt || STICK_TILT), 0, -sx * (stick.tilt || STICK_TILT));
+      stick.pivot.position.copy(stick.rest).addScaledVector(DOWN, (clicked ? PRESS_DEPTH : 0) * (stick.unit || 1));
       glow("stick_" + s, clicked ? HI : touched ? TOUCH : null, clicked ? 0.8 : 0.45); }
     const pd = L ? st.lp : st.rp, touched = bit(L ? 25 : 21), clicked = bit(L ? 26 : 22), pp = parts.get("pad_" + s);
-    if (pp) { pp.pivot.position.copy(pp.rest).addScaledVector(DOWN, clicked ? PRESS_DEPTH * 0.5 : 0); glow("pad_" + s, clicked ? HI : touched ? TOUCH : null, clicked ? 0.6 : 0.35); }
+    if (pp) { pp.pivot.position.copy(pp.rest).addScaledVector(DOWN, (clicked ? PRESS_DEPTH * 0.5 : 0) * (pp.unit || 1)); glow("pad_" + s, clicked ? HI : touched ? TOUCH : null, clicked ? 0.6 : 0.35); }
     const f = fingers[s];
-    if (f) { f.visible = touched; f.position.set(pd[0] * PAD_HALF, pd[1] * PAD_HALF, 0.08); f.scale.setScalar(1 + pd[2] * 2.7); }
+    if (f) { f.visible = touched; f.position.set(pd[0] * padHalf * (pp && pp.unit ? pp.unit : 1), pd[1] * padHalf * (pp && pp.unit ? pp.unit : 1), 0.08 * (pp && pp.unit ? pp.unit : 1)); f.scale.setScalar(1 + pd[2] * 2.7); }
     const tr = parts.get("trigger_" + s);
     if (tr) { const pull = Math.max(0, L ? st.lt : st.rt), tc = bit(L ? 27 : 23); tr.pivot.rotation.x = -pull * TRIGGER_SWING; glow("trigger_" + s, tc ? HI : pull > 0.02 ? TOUCH : null, 0.3 + pull * 0.5); }
   }
+  for (const [g, n] of [[29, "grip_l"], [28, "grip_r"]]) { const p = parts.get(n); if (p) { p.material.opacity = bit(g) ? 0.85 : 0; p.material.color.set(TOUCH); } }
   /* grips: the back buttons' side glows softly while the grip is held */
   for (const [g, list] of [[29, ["back_l4", "back_l5"]], [28, ["back_r4", "back_r5"]]]) if (bit(g)) for (const n of list) if (!bit({ back_l4: 17, back_l5: 18, back_r4: 7, back_r5: 8 }[n])) glow(n, TOUCH, 0.25);
 }
 
 /* ---------- render ---------- */
-let xrayNow = null;
 function frame() {
   requestAnimationFrame(frame);
   renderer.setClearColor($("#bg").value, 1);
@@ -269,7 +336,7 @@ function frame() {
 }
 requestAnimationFrame(frame);
 /* test hook (#debug): turn the controller from the console / a test */
-if (location.hash === "#debug") window.__ov = { st, gyroStep, recenter, fingers, get raw() { return [rawOk, rawFresh, performance.now(), rawN]; }, get q() { return q; }, set q(v) { q = v; } };
+if (location.hash === "#debug") window.__ov = { st, setDrag(ax, ay, az, w) { drag.set(ax, ay, az, w); }, parts, gyroStep, recenter, fingers, get raw() { return [rawOk, rawFresh, performance.now(), rawN]; }, get q() { return q; }, set q(v) { q = v; } };
 </script>
 </body>
 </html>
