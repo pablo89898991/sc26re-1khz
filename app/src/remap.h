@@ -203,6 +203,7 @@ bool remap_gyro_value(int id, int16_t *value);
 /* output monitor for the editor page (30 bytes) */
 void remap_monitor(uint8_t *out);
 /* 8 bytes: keyboard reports sent (le16), refused (le16), last error, link (0 USB, 1 Bluetooth, 2 Puck, 3 none), kbd state valid */
+/* 14 bytes: keyboard diagnostics (8) + Xbox pad diagnostics (6, see xinput_diag) */
 void remap_diag(uint8_t *out);
 /* physical controller state before any remapping (3D overlay) */
 void remap_raw_capture(const struct controller_report *r);

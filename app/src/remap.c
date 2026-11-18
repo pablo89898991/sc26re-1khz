@@ -28,6 +28,7 @@
 #include "gyro_mouse.h"
 #include "haptics.h"
 #include "remap.h"
+#include "xinput.h"
 #include "imu.h"
 #include "rgbw_led.h"
 #include "sc26re_cfg.h"
@@ -973,6 +974,11 @@ void remap_diag(uint8_t *out)
 	out[5] = transport_link_kind();
 	out[6] = kbd_valid ? 1U : 0U;
 	out[7] = 0;
+#ifndef SC26RE_SIM
+	xinput_diag(&out[8]);
+#else
+	memset(&out[8], 0, 6);
+#endif
 }
 
 static uint8_t kbd_owed[8]; /* releases held back for the radio (report layout) */

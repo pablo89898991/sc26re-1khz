@@ -645,10 +645,10 @@ bool valve_settings_read(const char *path, uint8_t *buf, size_t capacity, size_t
 		*len = 24;
 		return true;
 	}
-	if(strcmp(path, "sc26re/rmp_diag") == 0 && capacity >= 8)
+	if(strcmp(path, "sc26re/rmp_diag") == 0 && capacity >= 14)
 	{
 		remap_diag(buf);
-		*len = 8;
+		*len = 14;
 		return true;
 	}
 	if(strcmp(path, "sc26re/rmp_out") == 0 && capacity >= 30)

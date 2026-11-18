@@ -242,19 +242,25 @@ setInterval(async () => { if (!$("#imuOn").checked) return; for (const d of devs
 /* ---------- native source: the controller's physical state, polled (sc26re v51+) ---------- */
 const pathTag = p => { let t = 0xA5; for (const c of p) t = ((t << 1) ^ (t >> 7) ^ c.charCodeAt(0)) & 255; return t; };
 function pathCmd(op, path) { const p = new TextEncoder().encode(path), buf = new Uint8Array(63); buf[0] = op; buf[1] = p.length + 1; buf.set(p, 2); return buf; }
-const featDev = () => devs.find(d => d.collections.some(c => c.featureReports && c.featureReports.length));
+const hasFeat = d => d.collections.some(c => c.featureReports && c.featureReports.length);
+/* the interface that sends the pad reports, if it takes feature reports, else the first that does */
+const featDev = () => (ctlDev && hasFeat(ctlDev) ? ctlDev : devs.find(hasFeat));
 /* The settings channel is shared: with the remapper page open at the same time a reply can be
  * the other page's. Ask again instead of giving up. */
 async function readPath(path) {
   const d = featDev(); if (!d) throw new Error("no device"); const tag = pathTag(path);
   for (let tries = 0; tries < 4; tries++) {
-    await d.sendFeatureReport(1, pathCmd(0xED, path));
-    for (let k = 0; k < 4; k++) {
-      const r = new Uint8Array((await d.receiveFeatureReport(1)).buffer); const o = r[0] === 0xED ? 0 : (r[1] === 0xED ? 1 : -1);
-      if (o < 0) continue;
-      const data = r.slice(o + 2, o + 2 + r[o + 1]);
-      if (data.length && data[0] === tag) return data.slice(1);
-      break; /* another request's reply: send ours again */
+    try { await d.sendFeatureReport(1, pathCmd(0xED, path)); } catch (e) { await new Promise(r => setTimeout(r, 20)); continue; }
+    /* the reply needs a few ms (USB, Puck, Bluetooth); reading too early fails or gives the last reply */
+    for (let k = 0; k < 6; k++) {
+      let r = null; try { r = new Uint8Array((await d.receiveFeatureReport(1)).buffer); } catch (e) {}
+      const o = !r ? -1 : r[0] === 0xED ? 0 : (r[1] === 0xED ? 1 : -1);
+      if (o >= 0) {
+        const data = r.slice(o + 2, o + 2 + r[o + 1]);
+        if (data.length && data[0] === tag) return data.slice(1);
+        break; /* another request's reply: ask again */
+      }
+      await new Promise(res => setTimeout(res, 2 + k * 4));
     }
   }
   throw new Error("no reply");

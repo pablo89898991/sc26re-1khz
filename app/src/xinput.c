@@ -173,6 +173,7 @@ static uint8_t xi_last[XINPUT_REPORT_SIZE];
 static bool xi_last_valid;
 static bool xi_active; /* pad_out = 1 at power-on */
 static struct k_spinlock xi_lock;
+static uint16_t xi_sent_n, xi_ctrl_n; /* diagnostics: reports the host took, vendor requests seen */
 
 static int xi_submit_out(struct usbd_class_data *const c_data)
 {
@@ -206,6 +207,10 @@ static int xi_request(struct usbd_class_data *const c_data, struct net_buf *cons
 	if(ep == xi_desc.in_ep.bEndpointAddress)
 	{
 		atomic_set(&xi_in_busy, 0);
+		if(err == 0)
+		{
+			xi_sent_n++;
+		}
 		if(err != 0)
 		{
 			xi_last_valid = false; /* resend */
@@ -253,9 +258,22 @@ static int xi_init(struct usbd_class_data *c_data)
 static int xi_control_to_host(struct usbd_class_data *c_data, const struct usb_setup_packet *const setup,
                               struct net_buf *const buf)
 {
+	/* the vendor "capabilities" requests a wired Xbox 360 pad answers (XInputGetCapabilities):
+	 * wValue 0x0100 = inputs (20 bytes), 0x0000 = outputs (rumble motors, 8 bytes) */
+	static const uint8_t caps_in[20] = { 0x00, 0x14, 0xFF, 0xF7, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+	                                     0xFF, 0xFF, 0xFF, 0xFF, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
+	static const uint8_t caps_out[8] = { 0x00, 0x08, 0x00, 0xFF, 0xFF, 0x00, 0x00, 0x00 };
+
 	ARG_UNUSED(c_data);
-	ARG_UNUSED(setup);
-	ARG_UNUSED(buf);
+	xi_ctrl_n++;
+	if(setup->RequestType.type == USB_REQTYPE_TYPE_VENDOR && setup->bRequest == 0x01U)
+	{
+		const uint8_t *d = setup->wValue == 0x0100U ? caps_in : caps_out;
+		size_t n = setup->wValue == 0x0100U ? sizeof(caps_in) : sizeof(caps_out);
+
+		net_buf_add_mem(buf, d, MIN(MIN(n, (size_t)setup->wLength), net_buf_tailroom(buf)));
+		return 0;
+	}
 	errno = -ENOTSUP;
 	return 0;
 }
@@ -295,6 +313,18 @@ void xinput_setup(struct usbd_context *ctx, bool on)
 	{
 		LOG_ERR("XInput: MS OS 2.0 descriptor not added");
 	}
+	/* Windows keeps what it learned about a device per VID / PID / bcdDevice: a release
+	 * number of its own makes it read the descriptors again (with the Xbox interface and
+	 * its compatible ID) instead of using what it stored for the plain Steam Controller */
+	(void)usbd_device_set_bcd_device(ctx, 0x0360);
+}
+
+void xinput_diag(uint8_t out[6])
+{
+	out[0] = (uint8_t)((xi_active ? 1U : 0U) | (atomic_get(&xi_enabled) ? 2U : 0U) | (xi_cdata ? 4U : 0U));
+	out[1] = (uint8_t)sc26re_cfg_get(SC26RE_CFG_PAD_OUT);
+	sys_put_le16(xi_sent_n, &out[2]);
+	sys_put_le16(xi_ctrl_n, &out[4]);
 }
 
 const char *xinput_class_name(void)

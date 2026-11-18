@@ -99,7 +99,7 @@
 <body>
 <div class="top">
   <div class="topin">
-    <div class="brand">SC2 <span class="hz">Remapper</span> <span class="note" id="pagever" title="page version — if it is older than expected, press Ctrl+F5">p.2026-11-18m</span></div>
+    <div class="brand">SC2 <span class="hz">Remapper</span> <span class="note" id="pagever" title="page version — if it is older than expected, press Ctrl+F5">p.2026-11-18n</span></div>
     <button class="primary" id="connect">Connect controller</button>
     <span id="status" class="chip">not connected</span>
     <span class="grow"></span>
@@ -1119,7 +1119,9 @@ setInterval(async()=>{
   remapOn=b[1]!==0; /* also follows LB+RB+Menu on the controller */
   /* diagnostics: keyboard reports handed to the link (newer firmware) */
   let diag=""; if(monDiagOk!==false){ try{ const g=await read("sc26re/rmp_diag"); if(g&&g.length>=6){ monDiagOk=true; const gv=new DataView(g.buffer,g.byteOffset); if(linkNow!==g[5]){ linkNow=g[5]; updXbWarn(); }
-    diag=`<br><span class="note">keyboard reports sent ${gv.getUint16(0,true)}, refused ${gv.getUint16(2,true)}${gv.getUint16(2,true)?` (last error ${(g[4]<<24>>24)})`:""} · link ${["USB cable","Bluetooth","Puck","none"][g[5]]||"?"}</span>`; } }catch(e){ if(monDiagOk===null) monDiagOk=false; } }
+    diag=`<br><span class="note">keyboard reports sent ${gv.getUint16(0,true)}, refused ${gv.getUint16(2,true)}${gv.getUint16(2,true)?` (last error ${(g[4]<<24>>24)})`:""} · link ${["USB cable","Bluetooth","Puck","none"][g[5]]||"?"}</span>`;
+    if(g.length>=14&&(g[8]&1||g[9])){ const xs=gv.getUint16(10,true);
+      diag+=`<br><span class="note">Xbox pad: ${!(g[8]&1)?"off until the controller is turned off and on":g[5]!==0?"only over the USB cable":!(g[8]&2)?"<b>Windows has not started it</b> (no Xbox 360 driver on the interface)":`running · ${xs} reports taken by Windows`}</span>`; } } }catch(e){ if(monDiagOk===null) monDiagOk=false; } }
   $("#mon").innerHTML=`<b>Output</b> · profile ${b[0]+1} · remapper ${b[1]===1?"on":b[1]===2?"on (empty profile)":"off"}<br>${all||"<span>nothing pressed</span>"}${diag}`;
 },150);
 
