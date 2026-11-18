@@ -1,0 +1,16 @@
+steam-controller.glb
+
+Adapted from "Steam Machine + Controller" by dark_igorek
+  Source:  https://sketchfab.com/3d-models/steam-machine-controller-c1fcf77d71984c11818a5e2412816705
+  Author:  https://sketchfab.com/dark_igorek
+
+Licensed under the Creative Commons Attribution 4.0 International License (CC BY 4.0).
+  Summary:    https://creativecommons.org/licenses/by/4.0/
+  Legal code: https://creativecommons.org/licenses/by/4.0/legalcode
+
+Modifications: controller extracted from the original scene, scaled to centimetres and centred,
+inputs split into separate parts, unused vertex attributes removed, textures re-encoded as WebP,
+geometry quantized and meshopt-compressed.
+
+The original is provided by the licensor "as-is"; see the legal code for the disclaimer of
+warranties and limitation of liability. No endorsement by the author is implied.

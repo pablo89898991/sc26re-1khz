@@ -99,7 +99,7 @@
 <body>
 <div class="top">
   <div class="topin">
-    <div class="brand">SC2 <span class="hz">Remapper</span> <span class="note" id="pagever" title="page version — if it is older than expected, press Ctrl+F5">p.2026-11-18l</span></div>
+    <div class="brand">SC2 <span class="hz">Remapper</span> <span class="note" id="pagever" title="page version — if it is older than expected, press Ctrl+F5">p.2026-11-18m</span></div>
     <button class="primary" id="connect">Connect controller</button>
     <span id="status" class="chip">not connected</span>
     <span class="grow"></span>
@@ -738,7 +738,7 @@ function onReport(e){ if(e.reportId!==0x42) return; rate.set(e.device,1); if(!ct
 /* while the remapper is on, remapped inputs are missing from the pad report: the
  * picture shows the physical controller instead (same layout, read from the firmware) */
 setInterval(async()=>{
-  if(!remapOn||!devs.length||$("#v_map").hidden||bulk) return;
+  if(!remapOn||!devs.length||$("#v_map").hidden||bulk||document.hidden) return; /* hidden tab: leave the settings channel to the 3D overlay */
   let b; try{ b=await read("sc26re/raw"); }catch(e){ return; }
   if(!b||b.length<28) return;
   const u=new Uint8Array(1+b.length); u.set(b,1); const dv=new DataView(u.buffer);
@@ -1104,7 +1104,7 @@ $("#gyAuto").onchange=e=>{ const b=prof[cur]; b[17]=(b[17]&~4)|(e.target.checked
 let monPrev=null;
 const KEYNAME=v=>MODS[v]||KEYS[v]||("key "+v);
 setInterval(async()=>{
-  if(!devs.length||$("#v_map").hidden||bulk) return;
+  if(!devs.length||$("#v_map").hidden||bulk||document.hidden) return;
   let b; try{ b=await read("sc26re/rmp_out"); }catch(e){ return; }
   if(!b||b.length<30) { $("#mon").innerHTML=""; return; }
   const dv=new DataView(b.buffer,b.byteOffset,30), t=performance.now();

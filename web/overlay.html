@@ -5,250 +5,271 @@
 <title>SC2 3D Overlay</title>
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <style>
-  html,body{margin:0;height:100%;overflow:hidden;font:13px/1.4 system-ui,Segoe UI,Roboto,sans-serif;color:#dfe7f5}
-  canvas{display:block;width:100vw;height:100vh}
-  #ui{position:fixed;top:10px;left:10px;background:rgba(14,19,30,.92);border:1px solid #2c3850;border-radius:12px;padding:10px 12px;max-width:340px;box-shadow:0 8px 30px rgba(0,0,0,.4)}
+  html,body{margin:0;height:100%;overflow:hidden;font:13px/1.4 system-ui,Segoe UI,Roboto,sans-serif;color:#dfe7f5;background:#00ff00}
+  #view{position:fixed;inset:0} #view canvas{display:block;width:100%;height:100%;touch-action:none}
+  #ui{position:fixed;top:10px;left:10px;background:rgba(14,19,30,.92);border:1px solid #2c3850;border-radius:12px;padding:10px 12px;max-width:350px;box-shadow:0 8px 30px rgba(0,0,0,.4)}
   #ui h1{font-size:15px;margin:0 0 6px} #ui h1 span{color:#5fb3ff}
   #ui .row{display:flex;align-items:center;gap:8px;margin:5px 0;flex-wrap:wrap}
   #ui label{color:#a9b6cc} #ui input[type=range]{width:120px}
+  select{background:#1a2438;color:#e8f1ff;border:1px solid #34476b;border-radius:6px;padding:3px 5px;font:inherit;max-width:300px}
   button{background:#22304a;color:#e8f1ff;border:1px solid #34476b;border-radius:8px;padding:5px 10px;cursor:pointer;font:inherit}
   button.primary{background:#2f7fe0;border-color:#2f7fe0}
-  .note{font-size:11.5px;color:#8b98ae} .ok{color:#4fc98a} .err{color:#ff7a7a}
+  .note{font-size:11.5px;color:#8b98ae} .ok{color:#4fc98a} .err{color:#ff7a7a} .warn{color:#ffd58a}
   #ui.hidden{display:none}
+  #loading{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);color:#0d1320;font-weight:600}
+  a{color:#7fbfff}
 </style>
+<script type="importmap">
+{ "imports": { "three": "./vendor/three/build/three.module.min.js" } }
+</script>
 </head>
 <body>
-<canvas id="c"></canvas>
+<div id="view"></div>
+<div id="loading">loading the 3D model…</div>
 <div id="ui">
   <h1>SC2 <span>3D Overlay</span></h1>
   <div class="row"><button class="primary" id="connect">Connect controller</button><span id="status" class="note">not connected</span></div>
-  <div class="row"><label>Shows</label><select id="src"><option value="raw">the physical controller (native, even when remapped)</option><option value="steam">what Steam receives</option></select></div>
+  <div class="row"><label>Shows</label><select id="src"><option value="raw">the physical controller (native, also when remapped)</option><option value="steam">what Steam receives</option></select></div>
   <div class="row"><label>Background</label><select id="bg"><option value="#00ff00">green (chroma key)</option><option value="#ff00ff">magenta (chroma key)</option><option value="#0d1320">dark</option><option value="#ffffff">white</option></select></div>
-  <div class="row"><label>Body</label><input type="color" id="bodyCol" value="#2a2f3a"><label>Pressed</label><input type="color" id="hiCol" value="#4fc98a"></div>
-  <div class="row"><label>View tilt</label><input type="range" id="tilt" min="0" max="90" value="55"><label>Size</label><input type="range" id="zoom" min="40" max="160" value="100"></div>
-  <div class="row"><label><input type="checkbox" id="xray" checked> show back buttons, triggers and grips through the body</label></div>
+  <div class="row"><label>Pressed</label><input type="color" id="hiCol" value="#1a9fff"><label>Touched</label><input type="color" id="touchCol" value="#5fe39a"></div>
+  <div class="row"><label>View tilt</label><input type="range" id="tilt" min="-30" max="90" value="20"><label>Size</label><input type="range" id="zoom" min="40" max="160" value="100"></div>
+  <div class="row"><label><input type="checkbox" id="xray"> see-through body (back buttons and triggers stay visible)</label></div>
   <div class="row"><label><input type="checkbox" id="useGyro" checked> gyro moves it</label><button id="recenter">Recenter (R)</button></div>
   <div class="row"><label><input type="checkbox" id="level"> keep level with gravity</label><label><input type="checkbox" id="imuOn"> turn gyro on without Steam</label></div>
   <div class="row"><label>Invert</label><label><input type="checkbox" id="invP"> pitch</label><label><input type="checkbox" id="invY"> yaw</label><label><input type="checkbox" id="invR"> roll</label></div>
-  <p class="note">For recording: in OBS add a <b>Window Capture</b> of this browser window and a <b>Chroma Key</b> filter (green). OBS’s Browser Source cannot open the controller (no WebHID). <b>H</b> hides this panel, <b>R</b> recenters, drag with the mouse to turn the view. “Native” (sc26re v51+) shows what your hands do even when buttons, sticks, pads or the gyro are remapped to keyboard / mouse; “what Steam receives” shows the pad after remapping.</p>
+  <p class="note">For recording: in OBS add a <b>Window Capture</b> of this browser window and a <b>Chroma Key</b> filter (green). OBS’s Browser Source cannot open the controller (no WebHID). <b>H</b> hides this panel, <b>R</b> recenters, drag with the mouse to turn the view (double-click resets it). “Native” (sc26re v51+) shows what your hands do even when the remapper is on; “what Steam receives” shows the pad after remapping.</p>
+  <p class="note">3D model: “Steam Machine + Controller” by <a href="https://sketchfab.com/dark_igorek" target="_blank">dark_igorek</a>, <a href="https://creativecommons.org/licenses/by/4.0/" target="_blank">CC BY 4.0</a>, split into parts by <a href="https://github.com/robinneefs/steam-controller-toolkit" target="_blank">steam-controller-toolkit</a>. Rendered with three.js.</p>
 </div>
-<script>
-"use strict";
-const $=s=>document.querySelector(s);
+<script type="module">
+import * as THREE from "three";
+import { GLTFLoader } from "./vendor/three/examples/jsm/loaders/GLTFLoader.js";
+import { MeshoptDecoder } from "./vendor/three/examples/jsm/libs/meshopt_decoder.module.js";
+
+const $ = s => document.querySelector(s);
 /* ---------- settings ---------- */
-const SET_IDS=["src","xray","bg","bodyCol","hiCol","tilt","zoom","useGyro","level","imuOn","invP","invY","invR"];
-try{ const o=JSON.parse(localStorage.getItem("sc26re_overlay")||"{}"); for(const k of SET_IDS) if(k in o){ const e=$("#"+k); if(e.type==="checkbox") e.checked=o[k]; else e.value=o[k]; } }catch(e){}
-function saveSet(){ const o={}; for(const k of SET_IDS){ const e=$("#"+k); o[k]=e.type==="checkbox"?e.checked:e.value; } try{ localStorage.setItem("sc26re_overlay",JSON.stringify(o)); }catch(e){} }
-SET_IDS.forEach(k=>$("#"+k).addEventListener("input",saveSet));
-window.addEventListener("keydown",e=>{ if(e.key==="h"||e.key==="H") $("#ui").classList.toggle("hidden"); if(e.key==="r"||e.key==="R") recenter(); });
+const SET_IDS = ["src", "xray", "bg", "hiCol", "touchCol", "tilt", "zoom", "useGyro", "level", "imuOn", "invP", "invY", "invR"];
+try { const o = JSON.parse(localStorage.getItem("sc26re_overlay2") || "{}"); for (const k of SET_IDS) if (k in o) { const e = $("#" + k); if (e.type === "checkbox") e.checked = o[k]; else e.value = o[k]; } } catch (e) {}
+function saveSet() { const o = {}; for (const k of SET_IDS) { const e = $("#" + k); o[k] = e.type === "checkbox" ? e.checked : e.value; } try { localStorage.setItem("sc26re_overlay2", JSON.stringify(o)); } catch (e) {} }
+SET_IDS.forEach(k => $("#" + k).addEventListener("input", saveSet));
+window.addEventListener("keydown", e => { if (e.key === "h" || e.key === "H") $("#ui").classList.toggle("hidden"); if (e.key === "r" || e.key === "R") recenter(); });
 
-/* ---------- math ---------- */
-const V=(x,y,z)=>[x,y,z];
-function qmul(a,b){ return [a[0]*b[0]-a[1]*b[1]-a[2]*b[2]-a[3]*b[3], a[0]*b[1]+a[1]*b[0]+a[2]*b[3]-a[3]*b[2], a[0]*b[2]-a[1]*b[3]+a[2]*b[0]+a[3]*b[1], a[0]*b[3]+a[1]*b[2]-a[2]*b[1]+a[3]*b[0]]; }
-function qnorm(q){ const l=Math.hypot(...q)||1; return q.map(v=>v/l); }
-function qaxis(ax,ang){ const s=Math.sin(ang/2); return [Math.cos(ang/2),ax[0]*s,ax[1]*s,ax[2]*s]; }
-function qrot(q,v){ const p=qmul(qmul(q,[0,...v]),[q[0],-q[1],-q[2],-q[3]]); return [p[1],p[2],p[3]]; }
-function m4(){ return new Float32Array([1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1]); }
-function mmul(a,b){ const r=new Float32Array(16); for(let i=0;i<4;i++) for(let j=0;j<4;j++){ let s=0; for(let k=0;k<4;k++) s+=a[k*4+j]*b[i*4+k]; r[i*4+j]=s; } return r; }
-function mq(q){ const [w,x,y,z]=q; return new Float32Array([1-2*(y*y+z*z),2*(x*y+w*z),2*(x*z-w*y),0, 2*(x*y-w*z),1-2*(x*x+z*z),2*(y*z+w*x),0, 2*(x*z+w*y),2*(y*z-w*x),1-2*(x*x+y*y),0, 0,0,0,1]); }
-function mt(x,y,z){ const m=m4(); m[12]=x; m[13]=y; m[14]=z; return m; }
-function ms(s){ const m=m4(); m[0]=m[5]=m[10]=s; return m; }
-function mpersp(f,a,n,fa){ const t=1/Math.tan(f/2), m=new Float32Array(16); m[0]=t/a; m[5]=t; m[10]=(fa+n)/(n-fa); m[11]=-1; m[14]=2*fa*n/(n-fa); return m; }
-
-/* ---------- geometry (units: the 2D outline px, centre x 404, y 220; front face z>0) ---------- */
-const CX=404, CY=220, MIR=p=>p.map(([x,y])=>[2*CX-x,y]);
-const OUT_L=[[330,45],[290,47],[270,49],[254,52],[238,56],[226,62],[214,68],[206,77],[198,92],[190,116],[182,142],[174,169],[166,201],[158,239],[152,280],[150,314],[152,345],[158,371],[166,387],[178,400],[192,409],[207,412],[222,411],[234,406],[242,397],[248,384],[254,366],[262,349],[274,337],[290,331],[330,330]];
-function smoothPts(pts,steps){ const n=pts.length, out=[]; for(let i=0;i<n;i++){ const p0=pts[(i-1+n)%n],p1=pts[i],p2=pts[(i+1)%n],p3=pts[(i+2)%n];
-  for(let t=0;t<steps;t++){ const u=t/steps,u2=u*u,u3=u2*u; out.push([0,1].map(k=>0.5*((2*p1[k])+(-p0[k]+p2[k])*u+(2*p0[k]-5*p1[k]+4*p2[k]-p3[k])*u2+(-p0[k]+3*p1[k]-3*p2[k]+p3[k])*u3))); } } return out; }
-const OUTLINE=smoothPts([...OUT_L,...MIR(OUT_L).reverse()],3).map(([x,y])=>[x-CX,CY-y]);
-function earcut(poly){ /* simple ear clipping, poly ccw or cw */
-  const n=poly.length, idx=[...Array(n).keys()], tris=[]; let area=0;
-  for(let i=0;i<n;i++){ const a=poly[i],b=poly[(i+1)%n]; area+=a[0]*b[1]-b[0]*a[1]; }
-  if(area<0) idx.reverse();
-  const cross=(a,b,c)=>(b[0]-a[0])*(c[1]-a[1])-(b[1]-a[1])*(c[0]-a[0]);
-  const inside=(p,a,b,c)=>cross(a,b,p)>=0&&cross(b,c,p)>=0&&cross(c,a,p)>=0;
-  let guard=0;
-  while(idx.length>3&&guard++<10000){ let cut=false;
-    for(let i=0;i<idx.length;i++){ const ia=idx[(i-1+idx.length)%idx.length], ib=idx[i], ic=idx[(i+1)%idx.length], a=poly[ia],b=poly[ib],c=poly[ic];
-      if(cross(a,b,c)<=0) continue; let ok=true;
-      for(const j of idx){ if(j===ia||j===ib||j===ic) continue; if(inside(poly[j],a,b,c)){ ok=false; break; } }
-      if(ok){ tris.push(ia,ib,ic); idx.splice(i,1); cut=true; break; } }
-    if(!cut) break; }
-  if(idx.length===3) tris.push(...idx);
-  return {tris,flip:area<0};
+/* ---------- orientation (controller sensor frame: +X right, +Y towards the triggers, +Z out of the face) ---------- */
+function qmul(a, b) { return [a[0]*b[0]-a[1]*b[1]-a[2]*b[2]-a[3]*b[3], a[0]*b[1]+a[1]*b[0]+a[2]*b[3]-a[3]*b[2], a[0]*b[2]-a[1]*b[3]+a[2]*b[0]+a[3]*b[1], a[0]*b[3]+a[1]*b[2]-a[2]*b[1]+a[3]*b[0]]; }
+function qnorm(q) { const l = Math.hypot(...q) || 1; return q.map(v => v / l); }
+function qaxis(ax, ang) { const s = Math.sin(ang / 2); return [Math.cos(ang / 2), ax[0]*s, ax[1]*s, ax[2]*s]; }
+function qrot(q, v) { const p = qmul(qmul(q, [0, ...v]), [q[0], -q[1], -q[2], -q[3]]); return [p[1], p[2], p[3]]; }
+let q = [1, 0, 0, 0], qRef = [1, 0, 0, 0];
+function recenter() { qRef = [q[0], q[1], q[2], q[3]]; }
+$("#recenter").onclick = recenter;
+/* gyro rates (deg/s) about the controller's own X (pitch), Y (roll) and Z (yaw) axes */
+function gyroStep(gx, gy, gz, dt) {
+  if (!$("#useGyro").checked) return;
+  const k = Math.PI / 180, w = [gx * k * ($("#invP").checked ? -1 : 1), gy * k * ($("#invR").checked ? -1 : 1), gz * k * ($("#invY").checked ? -1 : 1)];
+  const a = Math.hypot(...w) * dt;
+  if (a > 0) q = qnorm(qmul(q, qaxis(w.map(v => v * dt / a), a)));
 }
-/* mesh builder: positions, normals, part id */
-function Mesh(){ return {p:[],n:[]}; }
-function tri(m,a,b,c){ const u=[b[0]-a[0],b[1]-a[1],b[2]-a[2]], v=[c[0]-a[0],c[1]-a[1],c[2]-a[2]];
-  let n=[u[1]*v[2]-u[2]*v[1],u[2]*v[0]-u[0]*v[2],u[0]*v[1]-u[1]*v[0]]; const l=Math.hypot(...n)||1; n=n.map(x=>x/l);
-  m.p.push(...a,...b,...c); m.n.push(...n,...n,...n); }
-function extrude(m,poly,z0,z1,inset){ const {tris}=earcut(poly);
-  const P=(i,z)=>[poly[i][0],poly[i][1],z];
-  for(let i=0;i<tris.length;i+=3){ tri(m,P(tris[i],z1),P(tris[i+1],z1),P(tris[i+2],z1)); tri(m,P(tris[i],z0),P(tris[i+2],z0),P(tris[i+1],z0)); }
-  let area=0; for(let i=0;i<poly.length;i++){ const a=poly[i],b=poly[(i+1)%poly.length]; area+=a[0]*b[1]-b[0]*a[1]; }
-  for(let i=0;i<poly.length;i++){ const j=(i+1)%poly.length; const a=P(i,z0),b=P(j,z0),c=P(j,z1),d=P(i,z1);
-    if(area>0){ tri(m,a,b,c); tri(m,a,c,d); } else { tri(m,a,c,b); tri(m,a,d,c); } }
+/* nudge towards gravity: lying face up is level */
+function levelStep(acc) {
+  if (!$("#level").checked) return;
+  const al = Math.hypot(...acc); if (!(al > 8000 && al < 25000)) return;
+  const up = qrot(q, acc.map(v => v / al)), t = [0, 0, 1];
+  const c = [up[1]*t[2]-up[2]*t[1], up[2]*t[0]-up[0]*t[2], up[0]*t[1]-up[1]*t[0]], s = Math.hypot(...c);
+  if (s > 1e-4) q = qnorm(qmul(qaxis(c.map(v => v / s), Math.min(Math.asin(Math.min(s, 1)), 0.004)), q));
 }
-function roundRect(w,h,r,seg=6){ const pts=[]; const c=[[w/2-r,h/2-r,0],[-w/2+r,h/2-r,90],[-w/2+r,-h/2+r,180],[w/2-r,-h/2+r,270]];
-  for(const [x,y,a0] of c) for(let i=0;i<=seg;i++){ const a=(a0+90*i/seg)*Math.PI/180; pts.push([x+Math.cos(a)*r,y+Math.sin(a)*r]); } return pts; }
-const circle=(r,seg=28)=>[...Array(seg)].map((_,i)=>[Math.cos(i/seg*2*Math.PI)*r,Math.sin(i/seg*2*Math.PI)*r]);
-const crossPoly=(w,L)=>[[w,w],[w,L],[-w,L],[-w,w],[-L,w],[-L,-w],[-w,-w],[-w,-L],[w,-L],[w,-w],[L,-w],[L,w]];
 
-/* parts: each = mesh + base transform + colour; drawn with its own model matrix */
-const PARTS=[];
-function part(name,poly,z0,z1,opt={}){ const m=Mesh(); extrude(m,poly,z0,z1); PARTS.push({name,m,x:opt.x||0,y:opt.y||0,z:0,rot:opt.rot||0,col:opt.col||null,bit:opt.bit,kind:opt.kind||"button",hi:0,dz:0,tilt:[0,0],scale:1,visible:true}); return PARTS[PARTS.length-1]; }
-const P2=(x,y)=>[x-CX,CY-y];
-const T=24; /* body half thickness */
-part("body",OUTLINE,-T,T,{kind:"body"});
-/* D-pad arms */
-{ const [x,y]=P2(245.5,109.5); const w=12.5,L=36.5;
-  part("dup",[[-w,w],[w,w],[w,L],[-w,L]],T,T+5,{x,y,bit:13}); part("ddown",[[-w,-L],[w,-L],[w,-w],[-w,-w]],T,T+5,{x,y,bit:10});
-  part("dleft",[[-L,-w],[-w,-w],[-w,w],[-L,w]],T,T+5,{x,y,bit:12}); part("dright",[[w,-w],[L,-w],[L,w],[w,w]],T,T+5,{x,y,bit:11});
-  part("dcen",[[-w,-w],[w,-w],[w,w],[-w,w]],T,T+4,{x,y}); }
-for(const [bit,px,py,col] of [[3,562.5,83.5,"#e9c64a"],[2,532.5,109.5,"#5d97ff"],[1,591.5,109.5,"#ff6b6b"],[0,562.5,136.5,"#55d68d"]]){ const [x,y]=P2(px,py); part("face"+bit,circle(15),T,T+6,{x,y,bit,col}); }
-for(const [bit,px] of [[14,312],[6,496]]){ const [x,y]=P2(px,74.5); part("mid"+bit,roundRect(36,13,6.5),T,T+3,{x,y,bit}); }
-{ const [x,y]=P2(404,243); part("qam",roundRect(42,17,8.5),T,T+3,{x,y,bit:4}); }
-{ const [x,y]=P2(404,109.5); part("steam",circle(16.5),T,T+3,{x,y,bit:16,col:"#c9d3e6"}); }
-for(const [an,px,bit,cap] of [["ls",329,15,24],["rs",479,5,20]]){ const [x,y]=P2(px,146);
-  part(an+"well",circle(32),T-2,T+1,{x,y,col:"#15181f"}); const s=part(an+"stem",circle(9),T,T+14,{x,y,kind:"stick"}); s.an=an;
-  const c=part(an+"cap",circle(20),T+14,T+22,{x,y,kind:"stick",bit,cap}); c.an=an; }
-for(const [an,px,rot] of [["lp",306,9],["rp",502,-9]]){ const [x,y]=P2(px,245);
-  part(an,roundRect(106,106,14),T-1,T+1.5,{x,y,rot:-rot*Math.PI/180,col:"#1c2029",kind:"pad"}).an=an;
-  const d=part(an+"dot",circle(7),T+1.6,T+3,{x,y,rot:-rot*Math.PI/180,col:"#5fb3ff",kind:"dot"}); d.an=an; }
-/* bumpers and triggers on the top edge (they stick out of the back half) */
-for(const [side,px] of [[0,252],[1,556]]){ const [x,y]=P2(px,52);
-  part(side?"rb":"lb",roundRect(66,12,5),-2,T-2,{x,y:y+6,bit:side?9:19});
-  const tr=part(side?"rt":"lt",roundRect(56,16,6),-T,-2,{x,y:y+52,bit:side?23:27,kind:"trigger"}); tr.side=side; tr.xray=true; }
-/* back buttons and grip zones on the back */
-for(const [bit,px,py] of [[17,190,215],[18,190,250],[7,618,215],[8,618,250]]){ const [x,y]=P2(px,py); part("back"+bit,roundRect(26,18,7),-T-4,-T,{x,y,bit}).xray=true; }
-for(const [bit,px] of [[29,186],[28,622]]){ const [x,y]=P2(px,345); part("grip"+bit,roundRect(52,70,20),-T-6,-T,{x,y,bit,col:"#232834",kind:"grip"}).xray=true; }
+/* ---------- three.js scene (model space: cm, +x right, +y out of the face, +z towards the grips) ---------- */
+const view = $("#view");
+const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, preserveDrawingBuffer: false });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+view.appendChild(renderer.domElement);
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(30, 1, 0.1, 200);
+scene.add(new THREE.HemisphereLight(0xe8eef5, 0x1a1d22, 2.2));
+const key = new THREE.DirectionalLight(0xffffff, 2.4); key.position.set(5, 12, 9);
+const rim = new THREE.DirectionalLight(0x9fc4ff, 1.4); rim.position.set(-8, 4, -10);
+scene.add(key, rim);
+const model = new THREE.Group(); scene.add(model);
+/* resting pose: face to the camera, triggers on top */
+const FRONT = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), Math.PI / 2);
+let drag = new THREE.Quaternion();
 
-/* ---------- WebGL ---------- */
-const cv=$("#c"), gl=cv.getContext("webgl",{antialias:true,premultipliedAlpha:false});
-const vs=`attribute vec3 p; attribute vec3 n; uniform mat4 M, VP; varying vec3 vn; varying vec3 vp;
-void main(){ vec4 w=M*vec4(p,1.); vp=w.xyz; vn=mat3(M)*n; gl_Position=VP*w; }`;
-const fs=`precision mediump float; varying vec3 vn; varying vec3 vp; uniform vec3 col; uniform vec3 eye; uniform float alpha;
-void main(){ vec3 N=normalize(vn); vec3 L=normalize(vec3(.4,.8,1.)); vec3 E=normalize(eye-vp); vec3 H=normalize(L+E);
- float d=max(dot(N,L),0.), s=pow(max(dot(N,H),0.),40.)*.35, rim=pow(1.-max(dot(N,E),0.),3.)*.25;
- gl_FragColor=vec4(col*(.32+.68*d)+vec3(s+rim),alpha); }`;
-function sh(t,src){ const s=gl.createShader(t); gl.shaderSource(s,src); gl.compileShader(s); if(!gl.getShaderParameter(s,gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s)); return s; }
-const prog=gl.createProgram(); gl.attachShader(prog,sh(gl.VERTEX_SHADER,vs)); gl.attachShader(prog,sh(gl.FRAGMENT_SHADER,fs)); gl.linkProgram(prog); gl.useProgram(prog);
-const loc={p:gl.getAttribLocation(prog,"p"),n:gl.getAttribLocation(prog,"n"),M:gl.getUniformLocation(prog,"M"),VP:gl.getUniformLocation(prog,"VP"),col:gl.getUniformLocation(prog,"col"),eye:gl.getUniformLocation(prog,"eye"),alpha:gl.getUniformLocation(prog,"alpha")};
-for(const pt of PARTS){ pt.pb=gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER,pt.pb); gl.bufferData(gl.ARRAY_BUFFER,new Float32Array(pt.m.p),gl.STATIC_DRAW);
-  pt.nb=gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER,pt.nb); gl.bufferData(gl.ARRAY_BUFFER,new Float32Array(pt.m.n),gl.STATIC_DRAW); pt.cnt=pt.m.p.length/3; }
-gl.enable(gl.DEPTH_TEST);
-const hex=h=>[1,3,5].map(i=>parseInt(h.slice(i,i+2),16)/255);
-const mix=(a,b,t)=>a.map((v,i)=>v+(b[i]-v)*t);
+function resize() {
+  const w = view.clientWidth, h = view.clientHeight; if (!w || !h) return;
+  renderer.setSize(w, h, false); camera.aspect = w / h; camera.updateProjectionMatrix();
+}
+new ResizeObserver(resize).observe(view); resize();
 
-/* ---------- input ---------- */
-let q=[1,0,0,0], qRef=[1,0,0,0], st={btn:0,lt:0,rt:0,ls:[0,0],rs:[0,0],lp:[0,0,0],rp:[0,0,0]}, lastTs=null, devs=[], ctlDev=null;
-let dragQ=[1,0,0,0];
-function recenter(){ qRef=[q[0],-q[1],-q[2],-q[3]]; }
-$("#recenter").onclick=recenter;
-/* nudge towards gravity: accel in the model frame (x, z->y, y->z) */
-function levelStep(acc){ const al=Math.hypot(...acc); if(!(al>8000&&al<25000)) return; const gm=acc.map(v=>v/al), up=qrot(q,gm), target=[0,0,1];
-  const c=[up[1]*target[2]-up[2]*target[1],up[2]*target[0]-up[0]*target[2],up[0]*target[1]-up[1]*target[0]], s=Math.hypot(...c);
-  if(s>1e-4){ const corr=qaxis(c.map(v=>v/s),Math.min(Math.asin(Math.min(s,1)),0.004)); q=qnorm(qmul(corr,q)); } }
-function onReport(e){
-  if(e.reportId!==0x42) return; if(!ctlDev) ctlDev=e.device; if(e.device!==ctlDev) return;
-  if(rawOk&&$("#src").value==="raw") return;
-  const d=e.data; if(d.byteLength<51) return;
-  const g=o=>d.getInt16(o,true);
-  st.btn=d.getUint32(1,true); st.lt=g(5)/32767; st.rt=g(7)/32767; st.ls=[g(9)/32767,g(11)/32767]; st.rs=[g(13)/32767,g(15)/32767];
-  st.lp=[g(17)/32767,g(19)/32767,d.getUint16(21,true)/32767]; st.rp=[g(23)/32767,g(25)/32767,d.getUint16(27,true)/32767];
-  const ts=d.getUint32(29,true); let dt=lastTs===null?0.001:((ts-lastTs)>>>0)/1e6; lastTs=ts; if(!(dt>0&&dt<0.05)) dt=0.001;
-  if($("#useGyro").checked){
-    const k=0.06103*Math.PI/180, sP=$("#invP").checked?-1:1, sY=$("#invY").checked?-1:1, sR=$("#invR").checked?-1:1;
-    /* gyro x = pitch (model X), y = yaw (model Z, out of the face), z = roll (model Y, towards the triggers) */
-    const w=[g(39)*k*sP, g(43)*k*sR, g(41)*k*sY], a=Math.hypot(...w)*dt;
-    if(a>0) q=qnorm(qmul(q,qaxis(w.map(v=>v/Math.hypot(...w)),a)));
-    if($("#level").checked) levelStep([g(33),g(37),g(35)]);
+const parts = new Map(), fingers = {};
+let bodyMats = [], ready = false;
+const DOWN = new THREE.Vector3(0, -1, 0), UP = new THREE.Vector3(0, 1, 0), BUMPER_IN = new THREE.Vector3(0, -0.6, 0.8).normalize();
+/* part, sc26re button bit, press direction */
+const PRESS_PARTS = [["a", 0, DOWN], ["b", 1, DOWN], ["x", 2, DOWN], ["y", 3, DOWN], ["view", 14, DOWN], ["menu", 6, DOWN], ["steam", 16, DOWN], ["qam", 4, DOWN],
+  ["bumper_l", 19, BUMPER_IN], ["bumper_r", 9, BUMPER_IN], ["back_l4", 17, UP], ["back_l5", 18, UP], ["back_r4", 7, UP], ["back_r5", 8, UP]];
+const DPAD = [["up", 13], ["down", 10], ["left", 12], ["right", 11]];
+const PRESS_DEPTH = 0.1, STICK_TILT = 0.3, DPAD_TILT = 0.12, TRIGGER_SWING = 0.35, PAD_HALF = 1.45;
+
+function pivotFor(name, box) {
+  const c = box.getCenter(new THREE.Vector3());
+  if (name.startsWith("stick_")) return new THREE.Vector3(c.x, box.min.y - 1.0, c.z);
+  if (name.startsWith("trigger_")) return new THREE.Vector3(c.x, box.max.y, box.min.z);
+  return c;
+}
+function addFinger(padPivot) {
+  const mesh = padPivot.children[0], box = new THREE.Box3().setFromObject(mesh), c = box.getCenter(new THREE.Vector3()), ray = new THREE.Raycaster();
+  const surface = (x, z) => { ray.set(new THREE.Vector3(x, box.max.y + 5, z), DOWN); return ray.intersectObject(mesh, false)[0]?.point; };
+  const o = surface(c.x, c.z), px = surface(c.x + 1, c.z), pz = surface(c.x, c.z - 1);
+  if (!o || !px || !pz) return undefined;
+  const ax = px.clone().sub(o).normalize(), ay = pz.clone().sub(o).normalize(), n = new THREE.Vector3().crossVectors(ax, ay).normalize();
+  const frame = new THREE.Group(); frame.matrix.makeBasis(ax, ay, n).setPosition(padPivot.worldToLocal(o.clone())); frame.matrixAutoUpdate = false;
+  const finger = new THREE.Mesh(new THREE.SphereGeometry(0.22, 16, 12), new THREE.MeshBasicMaterial({ color: 0xffb547 }));
+  finger.visible = false; frame.add(finger); padPivot.add(frame); return finger;
+}
+new GLTFLoader().setMeshoptDecoder(MeshoptDecoder).loadAsync("./models/steam-controller.glb").then(gltf => {
+  /* measure the parts with the model unrotated (world space = model space), then put it back */
+  const pose = model.quaternion.clone(); model.quaternion.identity();
+  model.add(gltf.scene); model.updateMatrixWorld(true);
+  const meshes = []; gltf.scene.traverse(o => { if (o.isMesh && o.name.startsWith("part_")) meshes.push(o); else if (o.isMesh) bodyMats.push(o.material); });
+  const dpadBox = new THREE.Box3(); for (const m of meshes) if (m.name.startsWith("part_dpad_")) dpadBox.expandByObject(m);
+  for (const mesh of meshes) {
+    const name = mesh.name.slice(5), material = mesh.material.clone(); mesh.material = material;
+    const box = new THREE.Box3().setFromObject(mesh), pivot = new THREE.Group();
+    pivot.position.copy(name.startsWith("dpad_") ? dpadBox.getCenter(new THREE.Vector3()) : pivotFor(name, box));
+    mesh.parent.add(pivot); pivot.updateMatrixWorld(true); pivot.attach(mesh);
+    parts.set(name, { pivot, material, rest: pivot.position.clone() });
   }
+  for (const s of ["l", "r"]) { const p = parts.get("pad_" + s); if (p) fingers[s] = addFinger(p.pivot); }
+  bodyMats = [...new Set(bodyMats)];
+  model.quaternion.copy(pose);
+  ready = true; $("#loading").remove();
+}).catch(e => { $("#loading").textContent = "could not load the 3D model: " + e.message; });
+
+/* ---------- input state ---------- */
+const st = { btn: 0, lt: 0, rt: 0, ls: [0, 0], rs: [0, 0], lp: [0, 0, 0], rp: [0, 0, 0] };
+let devs = [], ctlDev = null, lastTs = null;
+let rawOk = false, rawFresh = 0, rawN = 0;
+const rawLive = () => rawOk && $("#src").value === "raw" && performance.now() - rawFresh < 300;
+function onReport(e) {
+  if (e.reportId !== 0x42) return; if (!ctlDev) ctlDev = e.device; if (e.device !== ctlDev) return;
+  if (rawLive()) return;
+  const d = e.data; if (d.byteLength < 51) return;
+  const g = o => d.getInt16(o, true);
+  st.btn = d.getUint32(1, true); st.lt = g(5) / 32767; st.rt = g(7) / 32767; st.ls = [g(9) / 32767, g(11) / 32767]; st.rs = [g(13) / 32767, g(15) / 32767];
+  st.lp = [g(17) / 32767, g(19) / 32767, d.getUint16(21, true) / 32767]; st.rp = [g(23) / 32767, g(25) / 32767, d.getUint16(27, true) / 32767];
+  const ts = d.getUint32(29, true); let dt = lastTs === null ? 0.001 : ((ts - lastTs) >>> 0) / 1e6; lastTs = ts; if (!(dt > 0 && dt < 0.05)) dt = 0.001;
+  /* report: accel x/y/z at 33/35/37, gyro x/y/z at 39/41/43 (0.06103 deg/s) */
+  gyroStep(g(39) * 0.06103, g(41) * 0.06103, g(43) * 0.06103, dt);
+  levelStep([g(33), g(35), g(37)]);
 }
-$("#connect").onclick=async()=>{
-  try{ const sel=await navigator.hid.requestDevice({filters:[{vendorId:0x28de}]});
-    for(const d of sel){ if(!d.opened) await d.open(); if(!devs.includes(d)){ devs.push(d); d.addEventListener("inputreport",onReport); } }
-    $("#status").innerHTML=devs.length?'<span class="ok">connected</span>':"no device selected"; setTimeout(recenter,300);
-  }catch(e){ $("#status").innerHTML=`<span class="err">${e.message}</span>`; } };
-navigator.hid&&navigator.hid.getDevices().then(ds=>ds.filter(d=>d.vendorId===0x28de).forEach(async d=>{ try{ if(!d.opened) await d.open(); devs.push(d); d.addEventListener("inputreport",onReport); $("#status").innerHTML='<span class="ok">connected</span>'; }catch(e){} }));
+function addDev(d) { if (!devs.includes(d)) { devs.push(d); d.addEventListener("inputreport", onReport); } }
+$("#connect").onclick = async () => {
+  try { const sel = await navigator.hid.requestDevice({ filters: [{ vendorId: 0x28de }] });
+    for (const d of sel) { if (!d.opened) await d.open(); addDev(d); }
+    $("#status").innerHTML = devs.length ? '<span class="ok">connected</span>' : "no device selected"; setTimeout(recenter, 300);
+  } catch (e) { $("#status").innerHTML = `<span class="err">${e.message}</span>`; } };
+navigator.hid && navigator.hid.getDevices().then(ds => ds.filter(d => d.vendorId === 0x28de).forEach(async d => { try { if (!d.opened) await d.open(); addDev(d); $("#status").innerHTML = '<span class="ok">connected</span>'; } catch (e) {} }));
 /* optional: gyro on without Steam (same as the report meter) */
-setInterval(async()=>{ if(!$("#imuOn").checked) return; for(const d of devs){ if(!d.collections.some(c=>c.featureReports&&c.featureReports.length)) continue;
-  const b=new Uint8Array(63); b[0]=0x87; b[1]=3; b[2]=48; b[3]=0x1C; try{ await d.sendFeatureReport(1,b); }catch(e){} } },2000);
+setInterval(async () => { if (!$("#imuOn").checked) return; for (const d of devs) { if (!d.collections.some(c => c.featureReports && c.featureReports.length)) continue;
+  const b = new Uint8Array(63); b[0] = 0x87; b[1] = 3; b[2] = 48; b[3] = 0x1C; try { await d.sendFeatureReport(1, b); } catch (e) {} } }, 2000);
 
 /* ---------- native source: the controller's physical state, polled (sc26re v51+) ---------- */
-const pathTag=p=>{ let t=0xA5; for(const c of p) t=((t<<1)^(t>>7)^c.charCodeAt(0))&255; return t; };
-function pathCmd(op,path,data=[]){ const p=new TextEncoder().encode(path), buf=new Uint8Array(63); buf[0]=op; buf[1]=p.length+1+data.length; buf.set(p,2); buf.set(data,2+p.length+1); return buf; }
-const featDev=()=>devs.find(d=>d.collections.some(c=>c.featureReports&&c.featureReports.length));
-async function readPath(path){ const d=featDev(); if(!d) throw new Error("no device"); const tag=pathTag(path);
-  await d.sendFeatureReport(1,pathCmd(0xED,path));
-  for(let k=0;k<6;k++){ const r=new Uint8Array((await d.receiveFeatureReport(1)).buffer); const o=r[0]===0xED?0:(r[1]===0xED?1:-1);
-    if(o>=0){ const data=r.slice(o+2,o+2+r[o+1]); if(data.length&&data[0]===tag) return data.slice(1); throw new Error("other reply"); } }
-  throw new Error("no reply"); }
-let rawOk=false, rawBusy=false, rawRate=0, rawN=0;
-setInterval(()=>{ rawRate=rawN; rawN=0; if(rawOk&&$("#src").value==="raw") $("#status").innerHTML=`<span class="ok">connected · native ${rawRate}/s</span>`; },1000);
-async function rawLoop(){
-  if(rawBusy) return; rawBusy=true;
-  for(;;){
-    if(!devs.length||$("#src").value!=="raw"){ await new Promise(r=>setTimeout(r,200)); continue; }
-    let b; try{ b=await readPath("sc26re/raw"); }catch(e){ await new Promise(r=>setTimeout(r,20)); continue; }
-    if(!b||b.length<40){ rawOk=false; await new Promise(r=>setTimeout(r,1000)); continue; }
-    rawOk=true; rawN++;
-    const dv=new DataView(b.buffer,b.byteOffset,40), g=i=>dv.getInt16(i,true);
-    st.btn=dv.getUint32(0,true); st.lt=g(4)/32767; st.rt=g(6)/32767; st.ls=[g(8)/32767,g(10)/32767]; st.rs=[g(12)/32767,g(14)/32767];
-    st.lp=[g(16)/32767,g(18)/32767,dv.getUint16(20,true)/32767]; st.rp=[g(22)/32767,g(24)/32767,dv.getUint16(26,true)/32767];
-    if($("#useGyro").checked){
-      const k=0.01*Math.PI/180, sP=$("#invP").checked?-1:1, sY=$("#invY").checked?-1:1, sR=$("#invR").checked?-1:1;
-      const w=[g(28)*k*sP, g(32)*k*sR, g(30)*k*sY], a=Math.hypot(...w);
-      if(a>0) q=qnorm(qmul(q,qaxis(w.map(v=>v/a),a)));
-      if($("#level").checked) levelStep([g(34),g(38),g(36)]);
+const pathTag = p => { let t = 0xA5; for (const c of p) t = ((t << 1) ^ (t >> 7) ^ c.charCodeAt(0)) & 255; return t; };
+function pathCmd(op, path) { const p = new TextEncoder().encode(path), buf = new Uint8Array(63); buf[0] = op; buf[1] = p.length + 1; buf.set(p, 2); return buf; }
+const featDev = () => devs.find(d => d.collections.some(c => c.featureReports && c.featureReports.length));
+/* The settings channel is shared: with the remapper page open at the same time a reply can be
+ * the other page's. Ask again instead of giving up. */
+async function readPath(path) {
+  const d = featDev(); if (!d) throw new Error("no device"); const tag = pathTag(path);
+  for (let tries = 0; tries < 4; tries++) {
+    await d.sendFeatureReport(1, pathCmd(0xED, path));
+    for (let k = 0; k < 4; k++) {
+      const r = new Uint8Array((await d.receiveFeatureReport(1)).buffer); const o = r[0] === 0xED ? 0 : (r[1] === 0xED ? 1 : -1);
+      if (o < 0) continue;
+      const data = r.slice(o + 2, o + 2 + r[o + 1]);
+      if (data.length && data[0] === tag) return data.slice(1);
+      break; /* another request's reply: send ours again */
     }
   }
+  throw new Error("no reply");
 }
-rawLoop();
-/* mouse drag turns the view */
-{ let down=null; cv.addEventListener("pointerdown",e=>{ down=[e.clientX,e.clientY]; cv.setPointerCapture(e.pointerId); });
-  cv.addEventListener("pointermove",e=>{ if(!down) return; const dx=e.clientX-down[0], dy=e.clientY-down[1]; down=[e.clientX,e.clientY];
-    dragQ=qnorm(qmul(qaxis([0,1,0],dx*0.01),qmul(qaxis([1,0,0],dy*0.01),dragQ))); });
-  cv.addEventListener("pointerup",()=>down=null); }
+setInterval(() => { const n = rawN; rawN = 0; if (!devs.length) return;
+  $("#status").innerHTML = rawLive() ? `<span class="ok">connected · native ${n}/s</span>` : $("#src").value === "raw" && rawOk ? '<span class="warn">connected · native reads blocked, showing what Steam receives</span>' : '<span class="ok">connected</span>'; }, 1000);
+(async function rawLoop() {
+  let fails = 0;
+  for (;;) {
+    if (!devs.length || $("#src").value !== "raw") { await new Promise(r => setTimeout(r, 200)); continue; }
+    let b; try { b = await readPath("sc26re/raw"); fails = 0; } catch (e) { if (++fails > 50) rawOk = false; await new Promise(r => setTimeout(r, 10)); continue; }
+    if (!b || b.length < 40) { rawOk = false; await new Promise(r => setTimeout(r, 1000)); continue; }
+    rawOk = true; rawFresh = performance.now(); rawN++;
+    const dv = new DataView(b.buffer, b.byteOffset, 40), g = i => dv.getInt16(i, true);
+    st.btn = dv.getUint32(0, true); st.lt = g(4) / 32767; st.rt = g(6) / 32767; st.ls = [g(8) / 32767, g(10) / 32767]; st.rs = [g(12) / 32767, g(14) / 32767];
+    st.lp = [g(16) / 32767, g(18) / 32767, dv.getUint16(20, true) / 32767]; st.rp = [g(22) / 32767, g(24) / 32767, dv.getUint16(26, true) / 32767];
+    /* gyro integrated since the last read, 0.01 deg about x / y / z; accel x / y / z */
+    gyroStep(g(28) * 0.01, g(30) * 0.01, g(32) * 0.01, 1);
+    levelStep([g(34), g(36), g(38)]);
+  }
+})();
+
+/* mouse drag turns the view, double-click resets it */
+{ let down = null; const cv = renderer.domElement;
+  cv.addEventListener("pointerdown", e => { down = [e.clientX, e.clientY]; cv.setPointerCapture(e.pointerId); });
+  cv.addEventListener("pointermove", e => { if (!down) return; const dx = e.clientX - down[0], dy = e.clientY - down[1]; down = [e.clientX, e.clientY];
+    drag = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), dx * 0.01).multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), dy * 0.01)).multiply(drag); });
+  cv.addEventListener("pointerup", () => down = null);
+  cv.addEventListener("dblclick", () => drag.identity()); }
+
+/* ---------- pose the parts ---------- */
+const BLACK = new THREE.Color(0);
+const bit = b => (st.btn & (1 << b)) !== 0;
+function glow(name, color, k) { const p = parts.get(name); if (!p) return; p.material.emissive.copy(color || BLACK); p.material.emissiveIntensity = color ? k : 0; }
+function pressPart(name, dir, depth) { const p = parts.get(name); if (p) p.pivot.position.copy(p.rest).addScaledVector(dir, depth); }
+function poseParts() {
+  const HI = new THREE.Color($("#hiCol").value), TOUCH = new THREE.Color($("#touchCol").value);
+  for (const [name, b, dir] of PRESS_PARTS) { const on = bit(b); pressPart(name, dir, on ? PRESS_DEPTH : 0); glow(name, on ? HI : null, 0.8); }
+  const arm = Object.fromEntries(DPAD.map(([a, b]) => [a, bit(b)]));
+  const tx = ((arm.down ? 1 : 0) - (arm.up ? 1 : 0)) * DPAD_TILT, tz = ((arm.left ? 1 : 0) - (arm.right ? 1 : 0)) * DPAD_TILT;
+  for (const [a] of DPAD) { parts.get("dpad_" + a)?.pivot.rotation.set(tx, 0, tz); glow("dpad_" + a, arm[a] ? HI : null, 0.8); }
+  for (const s of ["l", "r"]) {
+    const L = s === "l";
+    const stick = parts.get("stick_" + s);
+    if (stick) { const [sx, sy] = L ? st.ls : st.rs, clicked = bit(L ? 15 : 5), touched = bit(L ? 24 : 20);
+      stick.pivot.rotation.set(-sy * STICK_TILT, 0, -sx * STICK_TILT);
+      stick.pivot.position.copy(stick.rest).addScaledVector(DOWN, clicked ? PRESS_DEPTH : 0);
+      glow("stick_" + s, clicked ? HI : touched ? TOUCH : null, clicked ? 0.8 : 0.45); }
+    const pd = L ? st.lp : st.rp, touched = bit(L ? 25 : 21), clicked = bit(L ? 26 : 22), pp = parts.get("pad_" + s);
+    if (pp) { pp.pivot.position.copy(pp.rest).addScaledVector(DOWN, clicked ? PRESS_DEPTH * 0.5 : 0); glow("pad_" + s, clicked ? HI : touched ? TOUCH : null, clicked ? 0.6 : 0.35); }
+    const f = fingers[s];
+    if (f) { f.visible = touched; f.position.set(pd[0] * PAD_HALF, pd[1] * PAD_HALF, 0.08); f.scale.setScalar(1 + pd[2] * 2.7); }
+    const tr = parts.get("trigger_" + s);
+    if (tr) { const pull = Math.max(0, L ? st.lt : st.rt), tc = bit(L ? 27 : 23); tr.pivot.rotation.x = -pull * TRIGGER_SWING; glow("trigger_" + s, tc ? HI : pull > 0.02 ? TOUCH : null, 0.3 + pull * 0.5); }
+  }
+  /* grips: the back buttons' side glows softly while the grip is held */
+  for (const [g, list] of [[29, ["back_l4", "back_l5"]], [28, ["back_r4", "back_r5"]]]) if (bit(g)) for (const n of list) if (!bit({ back_l4: 17, back_l5: 18, back_r4: 7, back_r5: 8 }[n])) glow(n, TOUCH, 0.25);
+}
 
 /* ---------- render ---------- */
-function frame(){
-  const W=cv.clientWidth*devicePixelRatio, H=cv.clientHeight*devicePixelRatio; if(cv.width!==W||cv.height!==H){ cv.width=W; cv.height=H; }
-  gl.viewport(0,0,W,H); const bg=hex($("#bg").value); gl.clearColor(bg[0],bg[1],bg[2],1); gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
-  const eye=[0,0,1100/(+$("#zoom").value/100)];
-  const VP=mmul(mpersp(0.5,W/H,10,5000),mt(-eye[0],-eye[1],-eye[2]));
-  gl.uniformMatrix4fv(loc.VP,false,VP); gl.uniform3fv(loc.eye,eye);
-  const tiltQ=qaxis([1,0,0],-(+$("#tilt").value)*Math.PI/180);
-  const R=qmul(dragQ,qmul(tiltQ,qmul(qRef,q)));
-  const base=mq(R), body=hex($("#bodyCol").value), hi=hex($("#hiCol").value);
-  const xr=$("#xray").checked;
-  for(const pass of [0,1]){
-  if(pass===1){ if(!xr) break; gl.clear(gl.DEPTH_BUFFER_BIT); gl.enable(gl.DEPTH_TEST); gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA,gl.ONE_MINUS_SRC_ALPHA); }
-  else { gl.enable(gl.DEPTH_TEST); gl.disable(gl.BLEND); }
-  for(const pt of PARTS){
-    if(xr&&!!pt.xray!==(pass===1)) continue;
-    let local=mt(pt.x,pt.y,0), extra=m4(), col=pt.col?hex(pt.col):mix(body,[0.55,0.6,0.7],pt.kind==="body"?0:0.35), on=pt.bit!==undefined&&(st.btn&(1<<pt.bit));
-    if(pt.kind==="stick"){ const s=st[pt.an]; extra=mq(qnorm(qmul(qaxis([0,1,0],s[0]*0.35),qaxis([1,0,0],-s[1]*0.35)))); local=mmul(local,mt(0,0,T)); extra=mmul(extra,mt(0,0,-T));
-      if(pt.cap!==undefined&&(st.btn&(1<<pt.cap))) col=mix(col,hi,0.75); }
-    if(pt.kind==="pad"){ local=mmul(local,mq(qaxis([0,0,1],pt.rot))); const p=st[pt.an]; if(p[2]>0.02) col=mix(col,hi,Math.min(0.5,p[2])); }
-    if(pt.kind==="dot"){ const p=st[pt.an], touched=st.btn&(1<<(pt.an==="lp"?25:21)); if(!touched&&!p[0]&&!p[1]) continue;
-      local=mmul(local,mq(qaxis([0,0,1],pt.rot))); local=mmul(local,mt(p[0]*46,p[1]*46,0)); local=mmul(local,ms(1+p[2]*1.2)); local[14]=0; }
-    if(pt.kind==="trigger"){ const v=pt.side?st.rt:st.lt; local=mmul(local,mt(0,-v*10,0)); if(v>0.02) col=mix(col,hi,Math.min(1,v)); }
-    if(pt.kind==="grip"&&on) col=hi;
-    if(pt.kind==="button"&&on) col=hi;
-    if(pt.kind==="body") col=body;
-    const M=mmul(base,mmul(local,extra));
-    let alpha=1;
-    if(pass===1){ const act=on||(pt.kind==="trigger"&&(pt.side?st.rt:st.lt)>0.02); alpha=act?0.95:0.35; if(!act) col=mix(col,[0.75,0.8,0.9],0.5); }
-    gl.uniformMatrix4fv(loc.M,false,M); gl.uniform3fv(loc.col,col); gl.uniform1f(loc.alpha,alpha);
-    gl.bindBuffer(gl.ARRAY_BUFFER,pt.pb); gl.enableVertexAttribArray(loc.p); gl.vertexAttribPointer(loc.p,3,gl.FLOAT,false,0,0);
-    gl.bindBuffer(gl.ARRAY_BUFFER,pt.nb); gl.enableVertexAttribArray(loc.n); gl.vertexAttribPointer(loc.n,3,gl.FLOAT,false,0,0);
-    gl.drawArrays(gl.TRIANGLES,0,pt.cnt);
-  }
-  }
+let xrayNow = null;
+function frame() {
   requestAnimationFrame(frame);
+  renderer.setClearColor($("#bg").value, 1);
+  document.body.style.background = $("#bg").value;
+  if (ready) {
+    poseParts();
+    const xr = $("#xray").checked;
+    if (xr !== xrayNow) { xrayNow = xr; for (const m of bodyMats) { m.transparent = xr; m.opacity = xr ? 0.3 : 1; m.depthWrite = !xr; m.needsUpdate = true; } }
+  }
+  /* controller turn since the last recenter, in the controller's own frame, moved into model space (x, y, z) -> (x, z, -y) */
+  const rel = qmul([qRef[0], -qRef[1], -qRef[2], -qRef[3]], q);
+  const relM = new THREE.Quaternion(rel[1], rel[3], -rel[2], rel[0]);
+  const tilt = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), -(+$("#tilt").value) * Math.PI / 180);
+  model.quaternion.copy(drag).multiply(tilt).multiply(FRONT).multiply(relM);
+  const dist = 34 / (+$("#zoom").value / 100);
+  camera.position.set(0, 0, dist); camera.lookAt(0, 0, 0);
+  renderer.render(scene, camera);
 }
 requestAnimationFrame(frame);
+/* test hook (#debug): turn the controller from the console / a test */
+if (location.hash === "#debug") window.__ov = { st, gyroStep, recenter, fingers, get raw() { return [rawOk, rawFresh, performance.now(), rawN]; }, get q() { return q; }, set q(v) { q = v; } };
 </script>
 </body>
 </html>
