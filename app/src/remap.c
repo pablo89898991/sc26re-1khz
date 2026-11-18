@@ -921,6 +921,36 @@ static void send_mouse_locked(void)
 
 static bool kbd_flush; /* the "all keys up" report still has to go out */
 
+/* diagnostics (sc26re/rmp_diag): keyboard reports handed to the transport */
+static uint16_t diag_kbd_ok, diag_kbd_fail;
+static int8_t diag_kbd_err;
+
+static int send_kbd(const uint8_t *r)
+{
+	int e = transport_send_input_report(0x41, r, 8);
+
+	if(e == 0)
+	{
+		diag_kbd_ok++;
+	}
+	else
+	{
+		diag_kbd_fail++;
+		diag_kbd_err = (int8_t)CLAMP(e, -128, 127);
+	}
+	return e;
+}
+
+void remap_diag(uint8_t *out)
+{
+	sys_put_le16(diag_kbd_ok, &out[0]);
+	sys_put_le16(diag_kbd_fail, &out[2]);
+	out[4] = (uint8_t)diag_kbd_err;
+	out[5] = transport_link_kind();
+	out[6] = kbd_valid ? 1U : 0U;
+	out[7] = 0;
+}
+
 static uint8_t kbd_owed[8]; /* releases held back for the radio (report layout) */
 
 /* is a key / modifier whose release is held back wanted again? */
@@ -1040,7 +1070,7 @@ static void refresh_outputs(void)
 		return;
 	}
 	t_ref = now;
-	(void)transport_send_input_report(0x41, kbd_valid ? last_kbd : zero, 8);
+	(void)send_kbd(kbd_valid ? last_kbd : zero);
 	mouse_refresh = true;
 }
 
@@ -1050,7 +1080,7 @@ static void flush_outputs(void)
 {
 	static const uint8_t zero[8];
 
-	if(kbd_flush && transport_send_input_report(0x41, zero, sizeof(zero)) == 0)
+	if(kbd_flush && send_kbd(zero) == 0)
 	{
 		kbd_flush = false;
 		out_change_ms = k_uptime_get();
@@ -1094,7 +1124,7 @@ static void release_all(void)
 	}
 	if(kbd_valid && memcmp(last_kbd, zero, sizeof(zero)) != 0)
 	{
-		if(transport_send_input_report(0x41, zero, sizeof(zero)) != 0)
+		if(send_kbd(zero) != 0)
 		{
 			kbd_flush = true; /* the radio queue was full: retried by flush_outputs() */
 		}
@@ -2260,6 +2290,16 @@ void remap_process(struct controller_report *r, float dt)
 		/* only what is mapped reaches Steam: unbound buttons and touch sensors
 		 * are dropped, trackpads left "to Steam" too */
 		hide |= (BIT(30) - 1U) & ~bound_mask;
+		/* the analog triggers too (they have no "to Steam" mode): only a
+		 * "trigger full" action from a binding still pulls them */
+		if(!(stick_out & BIT(8)))
+		{
+			r->trigger_left = 0;
+		}
+		if(!(stick_out & BIT(9)))
+		{
+			r->trigger_right = 0;
+		}
 		for(int j = 0; j < 2; ++j)
 		{
 			if(analog_cfg(p, 2 + j)->mode == REMAP_ANALOG_PASS)
@@ -2309,7 +2349,7 @@ void remap_process(struct controller_report *r, float dt)
 
 			memcpy(rel, last_kbd, sizeof(rel));
 			strip_keys(rel, kbd_owed);
-			if(transport_send_input_report(0x41, rel, sizeof(rel)) == 0)
+			if(send_kbd(rel) == 0)
 			{
 				memcpy(last_kbd, rel, sizeof(rel));
 			}
@@ -2348,7 +2388,7 @@ void remap_process(struct controller_report *r, float dt)
 		}
 		if(!kbd_valid || memcmp(kbd, last_kbd, sizeof(kbd)) != 0)
 		{
-			if(transport_send_input_report(0x41, kbd, sizeof(kbd)) == 0)
+			if(send_kbd(kbd) == 0)
 			{
 				if(memcmp(kbd, last_kbd, sizeof(kbd)) != 0)
 				{

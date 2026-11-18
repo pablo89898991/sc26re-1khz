@@ -143,6 +143,7 @@ static int tsend(uint8_t id, const uint8_t *d, size_t len)
 
 static struct qrep stk[8];
 static int stk_n;
+uint8_t transport_link_kind(void) { return tmode == 0 ? 0 : (tmode == 1 ? 2 : 1); }
 /* as transport.c: ms since the mouse / keyboard queue emptied, USB: always */
 int32_t transport_input_idle_ms(void)
 {
@@ -349,6 +350,7 @@ int sim_feature(const uint8_t *req, uint8_t *rsp)
 		if(strcmp(path, "sc26re/awake") == 0) { cur[0] = 1; len = 1; ok = true; } /* meter keep-alive, as valve_settings.c */
 		else if(strcmp(path, "sc26re/raw") == 0) { remap_raw_read(cur); len = 40; ok = true; }
 		else if(strcmp(path, "sc26re/rmp_out") == 0) { remap_monitor(cur); len = 30; ok = true; }
+		else if(strcmp(path, "sc26re/rmp_diag") == 0) { remap_diag(cur); len = 8; ok = true; }
 		else if(remap_path(path)) ok = remap_read(path, cur, 60, &len);
 		else if(sc26re_cfg_path(path)) ok = sc26re_cfg_read(path, cur, 60, &len);
 		if(ok) { rsp[2] = tag; rsp[1] = (uint8_t)(len + 1); }

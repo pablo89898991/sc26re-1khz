@@ -495,6 +495,14 @@ def pad_single_button():
     s = fresh(p); ev = Events(s.run(400, RP_TOUCH=1, rpx=5000) + s.run(100, RP_TOUCH=0, rpx=0))
     assert ev.taps(key("b")) == 1 and ev.taps(key("c")) == 1 and ev.taps(key("a")) == 0, ev
 
+@test
+def block_unbound_hides_trigger_analog():
+    p = Profile(); p.flags(PF_BLOCK); p.bind("RT_CLICK", MOUSE_R); p.bind("A", TRIG_L)
+    s = fresh(p); s.run(30, tr=20000, tl=25000)
+    assert s.out["tr"] == 0 and s.out["tl"] == 0, (s.out["tl"], s.out["tr"])
+    s.run(20, A=1); assert s.out["tl"] >= 32000, "a 'trigger full' action still works"
+    s = fresh(Profile()); s.run(20, tr=20000); assert s.out["tr"] == 20000, "without the option the trigger passes"
+
 if __name__ == "__main__":
     only = sys.argv[1:]; ok = fail = 0
     for t in TESTS:

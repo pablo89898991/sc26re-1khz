@@ -160,6 +160,24 @@ __weak int32_t transport_ble_input_idle_ms(void)
 
 static bool transport_usb_reports_suppressed(void);
 
+/* which link the mouse / keyboard reports take: 0 USB, 1 Bluetooth, 2 Puck (ESB), 3 none */
+uint8_t transport_link_kind(void)
+{
+	if(IS_ENABLED(CONFIG_IBEX_USB_HID) && !transport_usb_reports_suppressed() && transport_usb_configured())
+	{
+		return 0U;
+	}
+	if(IS_ENABLED(CONFIG_IBEX_BLE) && radio_personality_get() == RADIO_PERSONALITY_BLE)
+	{
+		return 1U;
+	}
+	if(IS_ENABLED(CONFIG_IBEX_ESB) && radio_personality_get() == RADIO_PERSONALITY_ESB)
+	{
+		return 2U;
+	}
+	return 3U;
+}
+
 /* ms since every mouse / keyboard report left the radio queue (USB: always) */
 int32_t transport_input_idle_ms(void)
 {
