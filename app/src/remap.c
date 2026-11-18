@@ -1578,6 +1578,28 @@ void remap_process(struct controller_report *r, float dt)
 		r->buttons &= ~dp_hide;
 		raw &= ~dp_hide;
 	}
+	/*
+	 * The Steam button: while the remapper is on, Steam never sees it (bind it
+	 * to "Pad Steam" to give it back). The bindings, Steam + D-pad and the
+	 * power-off hold read the physical button. A press that started hidden
+	 * stays hidden until it is let go, even if the remapper turns off meanwhile.
+	 */
+	{
+		static bool steam_hidden;
+
+		if(!(raw & BIT(CONTROLLER_BUTTON_STEAM)))
+		{
+			steam_hidden = false;
+		}
+		else if(remap_enabled())
+		{
+			steam_hidden = true;
+		}
+		if(steam_hidden)
+		{
+			r->buttons &= ~BIT(CONTROLLER_BUTTON_STEAM);
+		}
+	}
 	profile_changed();
 	if(shutdown_state != 0U)
 	{
@@ -1771,6 +1793,10 @@ void remap_process(struct controller_report *r, float dt)
 				gates[j] = zone_gate[z];
 				center_on[j] = z == 4;
 			}
+		}
+		if(an->mode == REMAP_ANALOG_SINGLE)
+		{
+			center_on[j] = act; /* the whole pad is one button */
 		}
 		/* radial menu: the slice under the finger is chosen, it fires when the
 		 * finger leaves (or on the click); the centre cancels */
@@ -2232,8 +2258,8 @@ void remap_process(struct controller_report *r, float dt)
 	if(p->flags & REMAP_PF_BLOCK_UNBOUND)
 	{
 		/* only what is mapped reaches Steam: unbound buttons and touch sensors
-		 * are dropped, trackpads left "to Steam" too (Steam button stays) */
-		hide |= (BIT(30) - 1U) & ~bound_mask & ~BIT(CONTROLLER_BUTTON_STEAM);
+		 * are dropped, trackpads left "to Steam" too */
+		hide |= (BIT(30) - 1U) & ~bound_mask;
 		for(int j = 0; j < 2; ++j)
 		{
 			if(analog_cfg(p, 2 + j)->mode == REMAP_ANALOG_PASS)

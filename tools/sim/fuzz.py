@@ -114,7 +114,8 @@ def extra_checks(r, seed, found):
         if s.state["buttons"] & (1 << 16): s.state["buttons"] &= ~((1 << 10) | (1 << 11) | (1 << 12) | (1 << 13))
         e = s.run(r.choice([1, 5, 30]))
         if e.kbd() or e.mouse(): found.append((seed, "empty", 0, "empty profile but output %s" % e[:2])); break
-        if s.out != s.state: found.append((seed, "empty", 0, "empty profile changes the pad report %s" % {k: (s.state[k], s.out[k]) for k in s.out if s.out[k] != s.state[k]})); break
+        want = dict(s.state); want["buttons"] &= ~(1 << 16)  # the Steam button is hidden while the remapper is on
+        if s.out != want: found.append((seed, "empty", 0, "empty profile changes the pad report %s" % {k: (want[k], s.out[k]) for k in s.out if s.out[k] != want[k]})); break
 
 SIMPLE_ACTS = [key(c) for c in "abcdw"] + [0xE1, MOUSE_L, MOUSE_R, WHEEL_UP, MOVE_UP]
 

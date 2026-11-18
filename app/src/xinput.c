@@ -29,6 +29,7 @@
 #include "haptics.h"
 #include "sc26re_cfg.h"
 #include "xinput.h"
+#include "remap.h"
 
 LOG_MODULE_REGISTER(xinput, LOG_LEVEL_INF);
 
@@ -352,7 +353,8 @@ void xinput_send(const struct controller_report *r, uint32_t extra)
 	{
 		rep[3] |= 0x04;
 	}
-	if(xinput_guide_tap(mirror ? r->buttons : 0U, k_uptime_get()))
+	/* the physical Steam button: the remapper hides it from the pad report */
+	if(xinput_guide_tap(mirror ? remap_raw_buttons() : 0U, k_uptime_get()))
 	{
 		rep[3] |= 0x04;
 	}

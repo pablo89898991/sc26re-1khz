@@ -124,7 +124,7 @@ def block_unbound():
     p = Profile(); p.flags(PF_BLOCK); p.bind("A", key("a"))
     s = fresh(p)
     s.run(10, B=1, X=1); assert not s.out_btn("B") and not s.out_btn("X")
-    s.run(10, STEAM=1); assert s.out_btn("STEAM")
+    s.run(10, STEAM=1); assert not s.out_btn("STEAM"), "the Steam button never reaches Steam while the remapper is on"
 
 # ---------------- sticks
 @test

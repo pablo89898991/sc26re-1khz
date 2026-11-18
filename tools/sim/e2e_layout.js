@@ -61,6 +61,13 @@ const FIELDS = {
     const before = (await bytes())[bo]; await pg.click(`#editor [data-bit="${bit}"]`).catch(() => {}); await sleep(20);
     const after = (await bytes())[bo]; checked++; if (((before ^ after) & bit) === 0) fails.push(`binding mode bit ${bit} not at +0`);
   }
+  // timing sliders in the binding editor (the profile's times)
+  for (const [bit, id, off, v] of [[1, 'bhold', 118, 555], [2, 'bdbl', 120, 222], [32, 'bturbo', 122, 66]]) {
+    if (!((await bytes())[bo] & bit)) { await pg.click(`#editor [data-bit="${bit}"]`); await sleep(30); }
+    const n = await pg.$(`#${id}_n`); if (!n) { fails.push('binding editor: no ' + id + ' slider'); continue; }
+    await n.fill(String(v)); await n.dispatchEvent('change'); await sleep(10); checked++;
+    if (u16(await bytes(), off) !== v) fails.push(`binding editor ${id} not at ${off}`);
+  }
   await pg.selectOption('#editor [data-gi="0:2"]', '9'); checked++; if ((await bytes())[bo + 1 + 2] !== 9) fails.push('binding action group 0 slot 2 not at +3');
   await pg.selectOption('#bhap', '2'); checked++; if (((await bytes())[bo + 13] & 3) !== 2) fails.push('binding haptic not at +13 bits 0-1');
   await pg.selectOption('#bchord', { index: 3 }); const ch = await pg.$eval('#bchord', e => +e.value); checked++;

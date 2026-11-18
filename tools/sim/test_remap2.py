@@ -455,6 +455,46 @@ def regress_power_off_lets_go():
         s.lib.remap_power_off(); s.run(60)
         h = s.host(); assert h["kbd"] == bytes(8) and h["mb"] == 0, (tr, h)
 
+@test
+def steam_button_hidden_while_remapper_on():
+    s = fresh(Profile()); s.run(20, STEAM=1)
+    assert not s.out_btn("STEAM"), "unbound Steam button reached Steam"
+    s.run(20, STEAM=0); s.cfg("remap_on", 0); s.run(20, STEAM=1)
+    assert s.out_btn("STEAM"), "remapper off: Steam must see it"
+    s.run(20, STEAM=0)
+    p = Profile(); p.bind("STEAM", PAD + 16); s = fresh(p); s.run(20, STEAM=1)
+    assert s.out_btn("STEAM"), "bound to Pad Steam: given back"
+    p = Profile(); p.bind("STEAM", key("k")); s = fresh(p); e = s.run(20, STEAM=1)
+    assert not s.out_btn("STEAM") and e.kbd()[-1] == (key("k"),), "bound to a key"
+    # a press that began hidden stays hidden when the remapper turns off meanwhile
+    s = fresh(Profile()); s.run(20, STEAM=1); s.cfg("remap_on", 0); s.run(20)
+    assert not s.out_btn("STEAM"), "Steam saw the rest of a hidden press"
+    s.run(20, STEAM=0); s.run(20, STEAM=1); assert s.out_btn("STEAM")
+    # empty profile slot: still hidden; Steam + D-pad still switches
+    s = Sim(); s.upload(0, Profile()); s.cfg("remap_profile", 0); s.cfg("remap_on", 1); s.run(5)
+    s.run(20, STEAM=1, DLEFT=1); assert s.cfg_get("remap_profile") == 3 and not s.out_btn("STEAM") and not s.out_btn("DLEFT")
+    s.run(20, DLEFT=0); s.run(50); assert not s.out_btn("STEAM"), "empty profile: Steam still hidden"
+
+@test
+def pad_single_button():
+    for side, (touch, click, kx, ky, kp, center) in enumerate([("LP_TOUCH", "LP_CLICK", "lpx", "lpy", "lpp", "LP_CENTER"), ("RP_TOUCH", "RP_CLICK", "rpx", "rpy", "rpp", "RP_CENTER")]):
+        g = 2 + side
+        for act, flags in (("touch", 0), ("click", AF_CLICK), ("press", AF_PRESS)):
+            p = Profile(); p.analog(g, 11, flags=flags, press=5000); p.bind(center, key("j"))
+            s = fresh(p)
+            e = s.run(30, **{touch: 1, kx: 25000, ky: -20000, kp: 3000})
+            on_touch = bool(e.kbd()) and e.kbd()[-1] == (key("j"),)
+            assert on_touch == (act == "touch"), (side, act, "touch", e.kbd())
+            assert not s.out_btn(touch) and s.out[kx] == 0, "pad hidden from Steam"
+            e = s.run(30, **{click: 1, kp: 30000})
+            assert held(s) == (key("j"),), (side, act, "click / firm press", held(s))
+            if act == "click": assert not s.out_btn(click), "click consumed"
+            s.run(30, **{touch: 0, click: 0, kx: 0, ky: 0, kp: 0}); assert held(s) == ()
+    # long press / release press work on the whole pad
+    p = Profile(); p.analog(3, 11); p.bind("RP_CENTER", key("a"), key("b"), key("c"), mode=M_HOLD | M_RELEASE)
+    s = fresh(p); ev = Events(s.run(400, RP_TOUCH=1, rpx=5000) + s.run(100, RP_TOUCH=0, rpx=0))
+    assert ev.taps(key("b")) == 1 and ev.taps(key("c")) == 1 and ev.taps(key("a")) == 0, ev
+
 if __name__ == "__main__":
     only = sys.argv[1:]; ok = fail = 0
     for t in TESTS:

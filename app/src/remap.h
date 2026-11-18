@@ -77,6 +77,7 @@ enum
 #define REMAP_ANALOG_SWIPE 8    /* trackpads: swipes fire the 4 directions */
 #define REMAP_ANALOG_GRID 9     /* trackpads: 3 x 3 zones (8 directions + centre), each its own binding */
 #define REMAP_ANALOG_RADIAL 10  /* trackpads: radial menu, 2..10 slices (speed), fires on lift (or click) */
+#define REMAP_ANALOG_SINGLE 11  /* trackpads: the whole pad is one button (the centre source), touch / click / pressure */
 
 #define REMAP_PF_BLOCK_UNBOUND 0x01 /* inputs without a binding send nothing to Steam */
 #define REMAP_PF_GYRO 0x02          /* the profile's own gyro settings replace the global ones */

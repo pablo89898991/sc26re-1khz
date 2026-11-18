@@ -99,13 +99,13 @@
 <body>
 <div class="top">
   <div class="topin">
-    <div class="brand">SC2 <span class="hz">Remapper</span> <span class="note" id="pagever" title="page version — if it is older than expected, press Ctrl+F5">p.2026-11-18h</span></div>
+    <div class="brand">SC2 <span class="hz">Remapper</span> <span class="note" id="pagever" title="page version — if it is older than expected, press Ctrl+F5">p.2026-11-18i</span></div>
     <button class="primary" id="connect">Connect controller</button>
     <span id="status" class="chip">not connected</span>
     <span class="grow"></span>
     <button id="onoff" class="sw" title="On the controller: LB + RB + Menu">Remapper <b>?</b></button>
     <button id="gmOn" class="sw" title="On the controller: LB + RB + View">Gyro mouse <b>?</b></button>
-    <label class="note" id="padoutL" hidden title="Xbox 360 = the game sees an Xbox controller (XInput) over the USB cable; Steam keeps the Steam button. Takes effect after the controller is turned off and on.">Pad output <select id="padout"><option value="0">Steam Controller</option><option value="1">Xbox 360 only (USB)</option><option value="2">Steam + Xbox 360 (USB)</option></select></label>
+    <label class="note" id="padoutL" hidden title="Xbox 360 = the game sees an Xbox controller (XInput) over the USB cable. Takes effect after the controller is turned off and on.">Pad output <select id="padout"><option value="0">Steam Controller</option><option value="1">Xbox 360 only (USB)</option><option value="2">Steam + Xbox 360 (USB)</option></select></label>
     <label class="note" id="xiguideL" hidden title="Xbox 360 only: tapping the Steam button on its own presses the Xbox Guide button (Windows: Game Bar). Steam + another button (profiles, power) never does. Any input can also be bound to the action 'Xbox Guide'."><input type="checkbox" id="xiguide"> Steam = Xbox Guide</label>
   </div>
 </div>
@@ -125,7 +125,7 @@
         <button class="ghost" id="profset">Profile settings…</button>
         <span id="dirty" class="chip warn" style="display:none">unsaved changes</span>
         <label class="note" title="LED colour while this profile is active (untick = leave the LED as it is)"><input type="checkbox" id="pledOn"> LED <input type="color" id="pled" value="#4da3ff" style="width:34px;height:22px;padding:0;border:0;background:none;vertical-align:middle"></label>
-        <label class="note" title="Inputs without a binding (buttons, touch sensors, trackpads left “to Steam”) send nothing to Steam or the game. Sticks in Analog mode and the Steam button still work."><input type="checkbox" id="block"> unbound inputs do nothing</label>
+        <label class="note" title="Inputs without a binding (buttons, touch sensors, trackpads left “to Steam”) send nothing to Steam or the game. Sticks in Analog mode still work. (The Steam button never reaches Steam while the remapper is on — bind it to Pad Steam to give it back.)"><input type="checkbox" id="block"> unbound inputs do nothing</label>
         <span class="grow"></span>
         <button id="read" class="ghost">Reload</button>
         <button id="export" class="ghost">Export</button>
@@ -227,7 +227,9 @@
       <h3>Profile extras</h3>
       <p><b>LED</b> next to the profile name: the controller’s LED takes that colour while the profile is active (and goes back when you switch away or turn the remapper off). <b>Gyro per profile</b>: on the gyro page choose “Settings for: this profile only”, tick “uses its own gyro settings” and set mouse / joystick, activation, ratchet, sensitivity, curves and quick turns for this profile; “turn the gyro on with this profile” switches the gyro output on when the profile becomes active. <b>Ratchet</b>: while its button is held the gyro stops moving, so you can re-centre your hands. Under the picture the <b>Output</b> line shows live what the remapper sends: keys, mouse buttons and movement, wheel, pad / Xbox buttons and active mode shifts.</p>
       <h3>Unbound inputs do nothing</h3>
-      <p>Per profile: when ticked, Steam and the game only get what the profile maps — every input without a binding (buttons, touch sensors, trackpads left “to Steam”) is dropped. Sticks set to Analog and the Steam button still work.</p>
+      <p>Per profile: when ticked, Steam and the game only get what the profile maps — every input without a binding (buttons, touch sensors, trackpads left “to Steam”) is dropped. Sticks set to Analog still work.</p>
+      <h3>Steam button</h3>
+      <p>While the remapper is on, Steam does not see the Steam button, so it never opens Steam’s menu in the middle of a game. Bind it to <b>Pad Steam</b> in a profile to give it back to Steam, or to anything else. Steam + D-pad (choose the profile) and holding it to power off always work.</p>
       <h3>Outer ring</h3>
       <p>Sticks and trackpads have an outer ring: its binding fires while the stick / finger is beyond the radius you set (or inside it, with invert) — e.g. sprint when the stick is pushed all the way.</p>
       <h3>Triggers</h3>
@@ -306,13 +308,14 @@ const RAWBTN=[[0,"A"],[1,"B"],[2,"X"],[3,"Y"],[19,"LB"],[9,"RB"],[27,"LT click"]
 const SHBTN=[[0,"— none —"],...RAWBTN.map(([v,n])=>[v+1,n])];
 const shName=g=>(SHBTN.find(([v])=>v===shBtn(g))||[0,"?"])[1];
 const MODES_STICK=[[0,"Analog (to Steam)"],[1,"D-pad 4-way"],[2,"D-pad 8-way"],[3,"Mouse"],[4,"Scroll"],[7,"Flick stick"]];
-const MODES_PAD=[[0,"To Steam (not remapped)"],[1,"D-pad 4-way"],[2,"D-pad 8-way"],[9,"9 zones (grid)"],[5,"Gates (4 corners)"],[3,"Mouse"],[6,"Joystick"],[7,"Flick stick"],[4,"Scroll wheel (circle)"],[8,"Directional swipe"],[10,"Radial menu"]];
+const MODES_PAD=[[0,"To Steam (not remapped)"],[1,"D-pad 4-way"],[2,"D-pad 8-way"],[9,"9 zones (grid)"],[5,"Gates (4 corners)"],[3,"Mouse"],[6,"Joystick"],[7,"Flick stick"],[4,"Scroll wheel (circle)"],[8,"Directional swipe"],[10,"Radial menu"],[11,"Single button (whole pad)"]];
 const modeNameL=(an,L)=>((isPad(an)?MODES_PAD:MODES_STICK).find(([v])=>v===prof[cur][aOffL(an,L)])||[0,"?"])[1];
 const modeName=an=>modeNameL(an,0)+(shBtn(GRP_OF_AN[an])?` <em>⇧ ${shName(GRP_OF_AN[an])}:</em> ${modeNameL(an,1)}`:"");
 const HAPT=[[0,"off"],[1,"tick (light)"],[2,"click"],[3,"strong"]];
 /* sub-inputs of a stick / pad mode: [source, label] */
 function subSources(an,L){ const o=L===undefined?aOff(an):aOffL(an,L), b=prof[cur], m=b[o], pad=isPad(an), base={ls:30,rs:34,lp:38,rp:42}[an], out=[];
   const gt=an==="lp"?46:50, ctr=an==="lp"?64:65;
+  if(pad&&m===11) return [[ctr,"Whole pad"]];
   if(pad&&m===10){ const RS=an==="lp"?[38,47,41,49,39,48,40,46,64,54]:[42,51,45,53,43,52,44,50,65,56]; const n=Math.max(2,Math.min(10,U16(o+6)||8));
     return RS.slice(0,n).map((x,i)=>[x,`Slice ${i+1} (${Math.round(i*360/n)}°)`]); }
   if(pad&&m===9) return [[gt,"↖ top-left"],[base,"↑ top"],[gt+1,"↗ top-right"],[base+2,"← left"],[ctr,"• centre"],[base+3,"→ right"],[gt+2,"↙ bottom-left"],[base+1,"↓ bottom"],[gt+3,"↘ bottom-right"],[60+AIDX[an],"Outer ring"]];
@@ -551,6 +554,7 @@ function editor(){
       h+=`<div class="gridwrap">${gridSvg(j)}<div>${slider("gl",G(0),-99,99,0.5,"Left line","%","zones 1·4·7 end here")}${slider("gr",G(1),-99,99,0.5,"Right line","%","zones 3·6·9 start here")}${slider("gt",G(2),-99,99,0.5,"Top line","%","zones 1·2·3 above")}${slider("gb",G(3),-99,99,0.5,"Bottom line","%","zones 7·8·9 below")}</div></div>
         <p class="note">Move the red lines to make each zone bigger or smaller; every zone has its own binding below. Same layout for the normal and shifted mode.</p>`;
     }
+    if(pad&&m===11) h+=`<p class="note wrap">The whole pad is one button: bind it below. Choose above whether it fires on touch, on click or on a firm press; long / double / start / release press and the rest work as on any button.</p>`;
     if(m===7){
       h+=pct("dzi",P(2)||80,20,100,"Flick threshold","how far before it flicks");
       h+=slider("asp",sp,0,500,1,"Flick time","ms","0 = instant");
@@ -583,7 +587,7 @@ function editor(){
       h+=slider("rot",((b[o+9]<<24)>>24),-90,90,1,"Rotation","°","turns the input (e.g. a trackpad under an angle)");
     }
     if(!pad&&(m===0||m===3)) h+=`<div class="row2"><label>Curve presets</label><span>${[["Linear",1],["Wide",0.8],["Aggressive",0.6],["Relaxed",1.5],["Precise",2]].map(([n,v])=>`<button class="ghost cpre" data-v="${v}">${n}</button>`).join(" ")}</span></div>`;
-    if(!(pad&&m===0)) h+=pct("ring",P(12),0,100,"Outer ring",`its binding (“Outer ring” below) fires ${b[o+1]&2?"inside":"beyond"} this radius; 0 = off`)+
+    if(!(pad&&(m===0||m===11))) h+=pct("ring",P(12),0,100,"Outer ring",`its binding (“Outer ring” below) fires ${b[o+1]&2?"inside":"beyond"} this radius; 0 = off`)+
       `<div class="row2"><label></label><label class="note"><input type="checkbox" id="rinv"${b[o+1]&2?" checked":""}> invert — fire inside the radius (inner ring, e.g. walk)</label></div>`;
     ed.innerHTML=`<h4>${ANAME[an]}${useShift(g)?" <em>⇧ shifted</em>":""}</h4>${shiftBar(g)}
       <div class="row2"><label>Mode</label><select id="amode">${(pad?MODES_PAD:MODES_STICK).map(([v,n])=>`<option value="${v}">${n}</option>`).join("")}</select></div>
@@ -636,9 +640,13 @@ function editor(){
   ed.innerHTML=`${back?`<a href="#" id="back" class="note">← ${back==="dp"?"D-pad":ANAME[back]}</a>`:""}<h4>${SRCNAME[s]||"input "+s}${useShift(g)?" <em>⇧ shifted</em>":""}<span class="live" id="lvsel"></span></h4>
     ${par||back==="dp"?"":shiftBar(g)}
     ${trig}
-    <div class="modes" style="margin:6px 0">${[[1,"long press (hold)","second set after 0.25 s held"],[2,"double press","second set on a quick second press"],[8,"start press","the first set is tapped the moment you press, not held"],[16,"release press",(par?"tapped when the finger leaves / the click ends (not when sliding to another zone)":"tapped when you let go")],[4,"toggle","each press switches the first set on / off"],[32,"turbo","the first set repeats while held (profile turbo rate)"],[64,"cycle","each press taps the next set in turn: press → hold → double/release"]].map(([bit,n,t])=>`<label title="${t}"><input type="checkbox" data-bit="${bit}"${m&bit?" checked":""}> ${n}</label>`).join("")}</div>
+    <div class="modes" style="margin:6px 0">${[[1,"long press (hold)",`second set after ${((U16(118)||250)/1000).toFixed(2)} s held`],[2,"double press",`second set on a second press within ${U16(120)||250} ms`],[8,"start press","the first set is tapped the moment you press, not held"],[16,"release press",(par?"tapped when the finger leaves / the click ends (not when sliding to another zone)":"tapped when you let go")],[4,"toggle","each press switches the first set on / off"],[32,"turbo","the first set repeats while held (profile turbo rate)"],[64,"cycle","each press taps the next set in turn: press → hold → double/release"]].map(([bit,n,t])=>`<label title="${t}"><input type="checkbox" data-bit="${bit}"${m&bit?" checked":""}> ${n}</label>`).join("")}</div>
     ${[0,1,2].filter(x=>x===0||(x===1&&(m&1))||(x===2&&(m&18))).map(x=>`<div class="grp"><span>${[m&8?"start":"press","hold",m&16?"release":"double"][x]}</span>${[0,1,2,3].map(i=>`<select data-gi="${x}:${i}">${OPTS}</select>`).join("")}</div>`).join("")}
     ${[0,1,2].some(x=>[0,1,2,3].some(i=>b[bo+1+x*4+i]>=0x76&&b[bo+1+x*4+i]<=0x79))?slider("mvs",U16(38)||1000,50,10000,10,"Mouse move speed","counts / s","for every “Mouse move” action in this profile"):""}
+    ${m&1?slider("bhold",U16(118)||250,100,1000,10,"Long press time","ms","how long to hold (same for every long press in this profile)"):""}
+    ${m&2?slider("bdbl",U16(120)||250,100,600,10,"Double press window","ms","time for the second press (whole profile)"):""}
+    ${m&32?slider("bturbo",U16(122)||100,20,1000,5,"Turbo period","ms",`${(1000/(U16(122)||100)).toFixed(1)} presses per second (whole profile)`):""}
+    ${s===16?`<p class="note wrap">While the remapper is on, Steam does not see this button. Bind it to <b>Pad Steam</b> to give it back to Steam. Steam + D-pad (profiles) and holding it to power off work as always.</p>`:""}
     <div class="row2"><label>Chord</label><select id="bchord">${SHBTN.map(([v,n])=>`<option value="${v}">${v?"only while "+n+" is held":"— none (always) —"}</option>`).join("")}</select><small>chorded press: fires only together with that button</small></div>
     <div class="row2"><label>Haptics</label><select id="bhap">${HAPT.map(([v,n])=>`<option value="${v}">${n}</option>`).join("")}</select><small>when it fires</small></div>
     <div class="tools" style="margin-top:4px"><button class="ghost" id="bcopy">Copy binding</button><button class="ghost" id="bpaste"${bindClip?"":" disabled"}>Paste</button></div>
@@ -653,6 +661,7 @@ function editor(){
   $("#bchord").value=String(b[bo+13]>>2); $("#bchord").onchange=e=>{ b[bo+13]=(b[bo+13]&3)|(+e.target.value<<2); setDirty(); render(); };
   $("#bcopy").onclick=()=>{ bindClip=b.slice(bo,bo+14); $("#bpaste").disabled=false; };
   $("#bpaste").onclick=()=>{ if(bindClip){ b.set(bindClip,bo); setDirty(); render(); } };
+  wireSl("bhold",v=>setU16(118,Math.round(v))); wireSl("bdbl",v=>setU16(120,Math.round(v))); wireSl("bturbo",v=>setU16(122,Math.round(v)));
   wireSl("tsp",v=>setU16(18+2*tt,Math.round(v*100)));
   if($("#tmode")){ $("#tmode").value=String(b[104+tt]); $("#tmode").onchange=e=>{ b[104+tt]=+e.target.value; setDirty(); render(); }; }
   wireSl("thip",v=>setU16(106+2*tt,Math.round(v)));
