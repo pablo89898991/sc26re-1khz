@@ -93,6 +93,14 @@ class Sim:
         shutil.copy(os.path.join(HERE, os.environ.get("SIMLIB", "libsim.so")), so)
         self.lib = ctypes.CDLL(so)
         os.unlink(so)
+        # long runs create thousands of controllers: unload the oldest copies
+        import _ctypes
+        Sim._libs = getattr(Sim, "_libs", [])
+        Sim._libs.append(self.lib)
+        while len(Sim._libs) > 64:
+            old = Sim._libs.pop(0)
+            try: _ctypes.dlclose(old._handle)
+            except OSError: pass
         self.lib.sim_events.restype = ctypes.c_char_p
         self.lib.sim_time.restype = ctypes.c_int64
         self.lib.sim_xbox_buttons.restype = ctypes.c_uint32

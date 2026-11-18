@@ -4,9 +4,28 @@ import random, sys, json
 import fuzz
 from simlib import *
 
+PAGE = True  # page actions in the middle of play (remapper switch, profile choice, profile save)
+
+def page_action(r, s):
+    k = r.random()
+    if k < .35: s.cfg("remap_on", r.randrange(2))
+    elif k < .65: s.cfg("remap_profile", r.randrange(4))
+    else:
+        import fuzz as _f
+        slot = r.randrange(4)
+        p = _f.rnd_profile(r, "pg")
+        b = p.b
+        for o in range(0, len(b), 40):
+            s.feature(0xEE, "sc26re/rmp/%d/%x" % (slot, o), b[o:o + 40])
+            if r.random() < .3: s.run(r.choice([1, 3, 8]))  # the page sends while the game runs
+        if r.random() < .9: s.feature(0xEF, "sc26re/rmp/%d" % slot)  # (sometimes cut off)
+
 def complex_input(r, s, prof):
     """bursts of fast presses, presses timed around the hold / double windows, combos, shift and layer buttons mid-press"""
     st = s.state
+    if PAGE and r.random() < .01:
+        page_action(r, s)
+        return [({}, 1)]
     kind = r.random()
     if kind < .25:      # rapid burst on one button
         b = r.choice([0, 1, 2, 3, 7, 8, 17, 18, 5, 15])

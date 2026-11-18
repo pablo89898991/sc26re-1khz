@@ -80,6 +80,7 @@ BUILD_ASSERT(SC26RE_CFG_COUNT < 256, "gyro keys are bytes");
 static uint32_t mon_pad;
 static int32_t mon_dx, mon_dy, mon_wheel;
 static bool profile_dirty[REMAP_PROFILES];
+static volatile bool reload_pending; /* a profile was replaced by COMMIT: start clean */
 
 struct src_state
 {
@@ -91,6 +92,7 @@ struct src_state
 	int64_t t_up;
 	int64_t pulse_until; /* group 0 pulsed (tap) until */
 	int8_t pulse_group;
+	uint8_t pulse_more;    /* taps that came while one was still held: played after it */
 	int64_t release_until; /* release press: group 2 tapped until */
 	uint8_t cycle;         /* cycle: next set */
 	bool block;            /* held when the profile changed: ignored until released */
@@ -453,8 +455,23 @@ static void activate(const struct remap_binding *b, int g, int8_t *slot, int s)
 	}
 }
 
+#define REPEAT_GAP_MS 10 /* key up between queued taps */
+#define REPEAT_TAP_MS 20
+
 static void pulse(const struct remap_binding *b, struct src_state *ss, int s, int64_t now)
 {
+	if(now < ss->pulse_until + REPEAT_GAP_MS && ss->pulse_group == 0)
+	{
+		/* a tap while the last one is still down (fast wheel / swipes / radial):
+		 * one-shot actions and the haptic now, the key press queued so the PC
+		 * sees separate presses instead of one long one */
+		fire(b, 0, s);
+		if(ss->pulse_more < 8U)
+		{
+			ss->pulse_more++;
+		}
+		return;
+	}
 	ss->pulse_group = 0;
 	ss->pulse_until = now + TAP_MS;
 	fire(b, 0, s);
@@ -579,6 +596,13 @@ static void run_source(const struct remap_binding *b, struct src_state *s, bool 
 		{
 			s->waiting_double = false;
 			activate(b, 2, &s->held_group, src); /* second press: group 2 while held */
+		}
+		else if(s->waiting_double)
+		{
+			/* pressed again just after the window: the first press still
+			 * counts as its own single press */
+			s->waiting_double = false;
+			pulse(b, s, src, now);
 		}
 	}
 	else if(!down && s->down)
@@ -837,6 +861,8 @@ static void release_all(void)
 	static const uint8_t zero[8];
 
 	mouse_pend = 0U;
+	mon_pad = 0U;            /* the output monitor shows nothing held either */
+	memset(shifted, 0, sizeof(shifted));
 	memset(st, 0, sizeof(st));
 	for(size_t i = 0; i < REMAP_SRC_COUNT; ++i)
 	{
@@ -1080,7 +1106,7 @@ void remap_monitor(uint8_t *out)
 	const struct remap_profile *p = active();
 	uint8_t sh = 0;
 
-	for(int g = 0; g < REMAP_SHIFT_GROUPS; ++g)
+	for(int g = 0; g < REMAP_SHIFT_GROUPS && remap_enabled(); ++g)
 	{
 		sh |= shifted[g] ? (uint8_t)BIT(g) : 0U;
 	}
@@ -1306,10 +1332,22 @@ void remap_process(struct controller_report *r, float dt)
 		raw &= ~dp_hide;
 	}
 	profile_changed();
-	if(!remap_enabled())
 	{
-		flush_outputs();
-		return;
+		/* turned off by any path (LB+RB+Menu, the page's switch = a plain
+		 * setting write): let go of everything once */
+		static bool was_on;
+
+		if(!remap_enabled())
+		{
+			if(was_on)
+			{
+				release_all();
+				was_on = false;
+			}
+			flush_outputs();
+			return;
+		}
+		was_on = true;
 	}
 	p = active();
 	if(p->magic != REMAP_MAGIC || p->version != REMAP_VERSION)
@@ -1320,11 +1358,13 @@ void remap_process(struct controller_report *r, float dt)
 		return;
 	}
 	{
-		/* another profile (switch action, Steam + D-pad): start from nothing held */
+		/* another profile (switch action, Steam + D-pad) or this one saved
+		 * again from the page: start from nothing held */
 		static const struct remap_profile *last_active;
 
-		if(p != last_active)
+		if(p != last_active || reload_pending)
 		{
+			reload_pending = false;
 			if(last_active != NULL)
 			{
 				release_all();
@@ -1795,6 +1835,12 @@ void remap_process(struct controller_report *r, float dt)
 				out_action(b->act[ss->held_group][i], keys, &nk, &mods, &pad);
 			}
 		}
+		if(ss->pulse_more && now >= ss->pulse_until + REPEAT_GAP_MS)
+		{
+			ss->pulse_more--;
+			ss->pulse_group = 0;
+			ss->pulse_until = now + REPEAT_TAP_MS;
+		}
 		if(now < ss->pulse_until)
 		{
 			for(size_t i = 0; i < 4; ++i)
@@ -2045,6 +2091,16 @@ bool remap_read(const char *path, uint8_t *buf, size_t capacity, size_t *len)
 	return true;
 }
 
+/*
+ * Saving a profile from the page comes in 40-byte pieces. They go to a staging
+ * copy; the profile in use changes only on COMMIT, all at once. Writing straight
+ * into the live profile ran the remapper on half-old, half-new bindings during
+ * the upload (seconds over the Puck) and left that mix behind when an upload
+ * was cut off.
+ */
+static struct remap_profile staging;
+static int8_t staging_p = -1;
+
 int remap_stage(const char *path, const uint8_t *value, size_t len)
 {
 	int p, o;
@@ -2054,12 +2110,12 @@ int remap_stage(const char *path, const uint8_t *value, size_t len)
 		return -EINVAL;
 	}
 	len = MIN(len, sizeof(struct remap_profile) - (size_t)o);
-	if(p == sc26re_cfg_get(SC26RE_CFG_REMAP_PROFILE) && remap_enabled())
+	if(staging_p != p)
 	{
-		release_all();
+		staging = profiles[p];
+		staging_p = (int8_t)p;
 	}
-	memcpy((uint8_t *)&profiles[p] + o, value, len);
-	profile_dirty[p] = true;
+	memcpy((uint8_t *)&staging + o, value, len);
 	return 0;
 }
 
@@ -2071,6 +2127,12 @@ int remap_commit(const char *path)
 	if(parse_path(path, &p, &o) != 0)
 	{
 		return -EINVAL;
+	}
+	if(staging_p == p)
+	{
+		profiles[p] = staging;
+		staging_p = -1;
+		reload_pending = true;
 	}
 	snprintf(key, sizeof(key), "user/remap/%d", p);
 	profile_dirty[p] = false;
@@ -2123,3 +2185,12 @@ void remap_init(void)
 	}
 	(void)settings_load_subtree_direct("user/remap", load_cb, NULL);
 }
+
+#ifdef SC26RE_SIM
+/* host simulator only: look at the staging copy */
+const uint8_t *remap_sim_staging(int *p)
+{
+	*p = staging_p;
+	return (const uint8_t *)&staging;
+}
+#endif

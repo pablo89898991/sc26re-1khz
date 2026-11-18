@@ -171,10 +171,10 @@ void sim_host(int32_t *out)
 int haptics_play_feedback(uint8_t level, uint8_t channels) { ev("H %u %u", level, channels); return 0; }
 int haptics_play_beep(uint16_t f, uint16_t ms) { ev("B %u %u", f, ms); return 0; }
 static struct rgbw_color led;
-void rgbw_led_set(struct rgbw_color c) { led = c; ev("L"); }
+void rgbw_led_set(struct rgbw_color c) { led = c; ev("L %u %u %u", c.r, c.g, c.b); }
 struct rgbw_color rgbw_led_get(void) { return led; }
 static bool gm_on;
-void gyro_mouse_set_enabled(bool on) { gm_on = on; ev("G %d", on); }
+void gyro_mouse_set_enabled(bool on) { gm_on = on; (void)sc26re_cfg_set(SC26RE_CFG_GM_ENABLED, on ? 1 : 0, false); ev("G %d", on); } /* as gyro_mouse.c */
 int32_t gyro_mouse_counts_per_360(void) { return 16364; }
 void imu_raw_take(int16_t a[3], int16_t b[3]) { memset(a, 0, 6); memset(b, 0, 6); }
 void ibex_settings_notify(uint8_t id) { (void)id; }
@@ -307,3 +307,14 @@ int sim_gyro_fsr(void)
 	}
 	return v;
 }
+
+/* profile gyro value k (index in remap_gyro_keys) the gyro code would see: -32768 = global */
+int sim_gyro_key(int k)
+{
+	int16_t v;
+
+	return remap_gyro_value(remap_gyro_keys[k], &v) ? v : -32768;
+}
+void sim_led(uint8_t *out) { out[0] = led.r; out[1] = led.g; out[2] = led.b; }
+const uint8_t *remap_sim_staging(int *p);
+int sim_staging(uint8_t *out) { int p; const uint8_t *b = remap_sim_staging(&p); memcpy(out, b, 2056); return p; }

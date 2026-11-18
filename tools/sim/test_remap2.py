@@ -287,6 +287,51 @@ def regress_bt_no_mouse_backlog():
     late = [e for e in t if " HM " in e and int(e.split()[0]) > stop + 500 and (int(e.split()[3]) or int(e.split()[4]))]
     assert not late, late[:3]
 
+@test
+def regress_upload_while_playing():
+    old = Profile("old"); old.bind("A", key("a")); old.analog(0, DPAD8, dz_in=3000); old.bind("LS_UP", key("w"))
+    new = Profile("new"); new.bind("A", key("x")); new.analog(0, MOUSE, speed=1000)
+    s = fresh(old); s.run(20, A=1, lsy=30000); s.log = []
+    for o in range(0, 1000, 40):  # upload cut off half way: nothing changes, no key spam
+        s.feature(0xEE, "sc26re/rmp/0/%x" % o, new.b[o:o + 40]); s.run(10)
+    assert Events(s.log).taps(key("a")) == 0 and held(s) == {key("a"), key("w")} or held(s) == (key("a"), key("w")) or set(held(s)) == {key("a"), key("w")}, held(s)
+    for o in range(0, Profile.SIZE, 40): s.feature(0xEE, "sc26re/rmp/0/%x" % o, new.b[o:o + 40])
+    s.feature(0xEF, "sc26re/rmp/0"); s.run(30)
+    assert held(s) == (), held(s)                 # the held A of the old profile is let go
+    s.run(30, A=0); s.run(30, A=1); assert held(s) == (key("x"),), held(s)
+
+@test
+def regress_double_press_just_after_window():
+    p = Profile(); p.times(dbl=250); p.bind("A", key("a"), (), key("c"), mode=M_DOUBLE)
+    s = fresh(p); ev = Events()
+    ev += s.run(30, A=1); ev += s.run(251, A=0); ev += s.run(30, A=1); ev += s.run(400, A=0)
+    assert ev.taps(key("a")) == 2 and ev.taps(key("c")) == 0, ev
+
+@test
+def regress_fast_wheel_separate_key_presses():
+    p = Profile(); p.analog(3, SCROLL, speed=45, dz_in=2000); p.bind("RP_CW", key("q"))
+    s = fresh(p); s.log = []
+    for d in range(0, 361, 3):
+        a = math.radians(90 - d); s.run(2, RP_TOUCH=1, rpx=int(25000 * math.cos(a)), rpy=int(25000 * math.sin(a)))
+    s.run(600, RP_TOUCH=0)
+    assert Events(s.log).taps(key("q")) == 8, Events(s.log).taps(key("q"))
+
+@test
+def regress_off_from_the_page_releases():
+    p = Profile(); p.bind("A", key("a")); p.bind("B", MOUSE_L)
+    for tr in (None, (1, 1, 30, 15), (2, 0, 10, 30)):
+        s = Sim()
+        if tr: s.transport(*tr)
+        s.use(p); s.run(5); s.run(20, A=1, B=1); s.cfg("remap_on", 0); s.run(500)
+        h = s.host(); assert h["kbd"] == bytes(8) and h["mb"] == 0, (tr, h)
+
+@test
+def regress_monitor_not_stale():
+    p = Profile(); p.bind("L4", PAD + 0); p.shift(0, BTN["LB"])
+    s = fresh(p); s.run(20, L4=1, LB=1)
+    s.run(20, STEAM=1, DLEFT=1); s.run(20, STEAM=0, DLEFT=0); s.run(20, L4=0, LB=0)
+    m = s.read("sc26re/rmp_out"); assert m[2] == 0 and m[12:16] == bytes(4), m.hex()
+
 if __name__ == "__main__":
     only = sys.argv[1:]; ok = fail = 0
     for t in TESTS:

@@ -1,2 +1,6 @@
 libsim.so
 libsim_asan.so
+libsim_cov.so
+*.gcda
+*.gcno
+*.gcov
