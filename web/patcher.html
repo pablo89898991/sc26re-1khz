@@ -286,6 +286,11 @@
     <div class="help" id="h_puck"><b>How the Puck paces the link.</b> Each connected slot runs a loop that waits on its event object for up to <b>99 ticks (&asymp;3 ms)</b> and then polls the controller once; the poll itself (radio + handing the report to USB) takes about 1 ms, which gives the stock ~240 reports/s. This patch shortens that wait at all its call sites and sets the slot HID endpoints from 2 ms to 1 ms (the 2 ms interval alone caps the link at 500 Hz). Sites are found by code structure (the timed waits on the same event-wait function that the loop also calls with K_FOREVER, and the 4-endpoint HID slot interfaces), not by fixed addresses, so other Puck versions work as long as that structure is unchanged; if it isn&rsquo;t found the patcher refuses instead of guessing.<br><br>
     <b>Measured</b> (controller on sc26re 1k v5+, which builds ~1000 reports/s and always hands the Puck the newest): stock 240 &middot; 1 ms 516 &middot; 0.5 ms 680 &middot; max 828 reports/s, link stable, haptics OK. <b>The stock controller firmware gains little</b>: it only produces ~250 distinct reports/s over the Puck. With several controllers on one Puck the slots share the radio.<br><br>
     <b>Flashing the Puck</b> (sc26re <code>flash.py</code>, needs <code>pip install hidapi pyserial</code>): <code>python flash.py list</code> &rarr; <code>python flash.py enter-bl --serial &lt;puck&gt;</code> &rarr; <code>python flash.py bl-flash --firmware &lt;file&gt; --serial &lt;puck&gt;</code>. Keep the stock file to flash back. Steam keeps the patched Puck because the firmware&rsquo;s build stamp is unchanged.</div>
+    <h3>Remapper support</h3>
+    <label class="chkrow"><input type="checkbox" id="pkbd" checked><span>Full keyboard <span class="tag rec">needed for keyboard binds</span></span><button type="button" class="info" data-help="h_pkbd">i</button></label>
+    <div class="help" id="h_pkbd">The stock Puck checks every keyboard report from the controller and passes it to the PC only when its keys are Enter, Esc, Tab or the arrows with no Shift / Ctrl / Alt (the keys of the controller&rsquo;s desktop mode). Everything else is dropped, so keyboard binds of the on-controller remapper never reach the PC over the Puck (they work over the cable and Bluetooth). This patch skips that check (one instruction). Located by code structure; untick to put the stock check back.</div>
+    <label class="chkrow"><input type="checkbox" id="pmouse" checked><span>Mouse with 5 buttons <span class="tag rec">middle, back, forward</span></span><button type="button" class="info" data-help="h_pmouse">i</button></label>
+    <div class="help" id="h_pmouse">The Puck tells the PC its mouse has only a left and a right button, so middle / back / forward clicks from the remapper are ignored over the Puck. This changes 3 bytes of the Puck&rsquo;s HID report descriptor (2 buttons + 6 padding bits &rarr; 5 buttons + 3 padding bits): same length, same report. Unplug and replug the Puck after flashing so the PC reads the new descriptor. Untick to restore the stock 2 buttons.</div>
     <button id="pgo" class="btn" disabled style="width:100%;margin-top:14px;padding:12px">Load a Puck firmware file first</button>
     <div id="plog"></div>
   </div>
@@ -838,6 +843,43 @@ function puckLocate(b) {
   if (!r.ifaces.length) r.issues.push("slot HID endpoints not found");
   return r;
 }
+/* Remapper support (sc26re on-controller remapper):
+   kbd   — the Puck forwards a keyboard report (0x41) only if its keys are Enter / Esc / Tab /
+           arrows with no modifier (the lizard keys). Site: after the report-size check
+           "adds r0,#1 ; cmp r2,r0 ; bne" comes "adds r0,r6,#4 ; add.w ip,r6,#10 ; ldrb r3,[r0,#1]! ;
+           cmp r3,#0x2b" (the key loop), then "ldrb r3,[r6,#4] ; cbnz ; ldrb r3,[r6,#3] ; cbnz" and the send.
+           Patch: the first loop instruction becomes "b <send>".
+   mouse — the Puck's mouse (0x40) has 2 buttons + 6 bits padding; 5 buttons + 3 bits keeps
+           the same descriptor length and report size. */
+function puckFind(b, pat) { /* pat: array of byte or null (any) */
+  const r = []; for (let o = 32; o + pat.length <= b.length; o++) { let k = 0; for (; k < pat.length; k++) if (pat[k] !== null && b[o + k] !== pat[k]) break; if (k === pat.length) r.push(o); } return r; }
+function puckKbdSite(b) {
+  /* "adds rZ,rB,#4 ; add.w rY,rB,#10 ; ldrb r3,[rZ,#1]! ; cmp r3,#0x2b" (registers differ between versions) */
+  const hits = [];
+  for (let o = 32; o + 12 <= b.length; o += 2) {
+    const rB = b[o + 2], rZ = b[o + 6] & 0x0F;
+    if (!(b[o + 3] === 0xF1 && b[o + 4] === 0x0A && (b[o + 5] & 0xF0) === 0 && rB < 8 &&
+          (b[o + 6] & 0xF0) === 0x10 && b[o + 7] === 0xF8 && b[o + 8] === 0x01 && b[o + 9] === 0x3F && b[o + 10] === 0x2B && b[o + 11] === 0x2B && rZ < 8)) continue;
+    const orig = [(rB << 3) | rZ, 0x1D], patched = b[o + 1] === 0xE0;
+    if (!patched && !(b[o] === orig[0] && b[o + 1] === orig[1])) continue;
+    hits.push({ o, rB, orig, patched });
+  }
+  if (hits.length !== 1) return null;
+  const h = hits[0], l3 = 0x03 | (h.rB << 3), l4 = 0xC3 | (h.rB << 3);
+  /* the send: after "ldrb r3,[rB,#4] ; cbnz r3 ; ldrb r3,[rB,#3] ; cbnz r3" */
+  for (let o = h.o + 12; o < h.o + 80; o += 2) if (b[o] === l3 && b[o + 1] === 0x79 && (b[o + 3] & 0xFD) === 0xB9 && b[o + 4] === l4 && b[o + 5] === 0x78 && (b[o + 7] & 0xFD) === 0xB9) {
+    const off = (o + 8 - (h.o + 4)) >> 1; if (off < 0 || off > 0x3FF) return null;
+    return { o: h.o, patched: h.patched, orig: h.orig, enc: [off & 0xFF, 0xE0 | (off >> 8)] };
+  }
+  return null;
+}
+function puckMouseSite(b) {
+  const h = puckFind(b, [0x85, 0x40, 0x09, 0x01, 0xA1, 0x00, 0x05, 0x09, 0x19, 0x01, 0x29, null, 0x15, 0x00, 0x25, 0x01, 0x75, 0x01, 0x95, null, 0x81, 0x02, 0x75, null, 0x95, 0x01, 0x81, 0x01]);
+  if (h.length !== 1) return null;
+  const o = h[0], n = b[o + 11];
+  if (b[o + 19] !== n || b[o + 23] !== 8 - n || (n !== 2 && n !== 5)) return null;
+  return { o, buttons: n };
+}
 function puckInspect(b) {
   const L = puckLocate(b), rows = [], row = (k, v, st) => rows.push({ k, v, st: st || "ok" });
   row("Container", `PROTEUS (Puck) · ${L.header.sizeOk ? "size OK" : "size MISMATCH"} · CRC ${L.header.crcStored === L.header.crcActual ? "OK" : "BAD"}`, L.header.sizeOk && L.header.crcStored === L.header.crcActual ? "ok" : "bad");
@@ -845,6 +887,9 @@ function puckInspect(b) {
   else row("Poll wait", L.issues[0], "bad");
   if (L.ifaces.length) { const fs = L.ifaces[0].fs; row("Slot USB interval", `${fs} ms (${L.ifaces.length} slot interfaces)` + (fs === 2 ? " (stock, caps 500 Hz)" : " (patched)")); }
   else row("Slot USB interval", "not found", "bad");
+  const K = puckKbdSite(b), M = puckMouseSite(b);
+  row("Keyboard", K ? (K.patched ? "every key (patched)" : "only Enter / Esc / Tab / arrows (stock) — remapper keys are dropped") : "filter not found", K ? (K.patched ? "ok" : "warn") : "bad");
+  row("Mouse buttons", M ? (M.buttons === 5 ? "5: left, right, middle, back, forward (patched)" : "2: left, right (stock)") : "descriptor not found", M ? (M.buttons === 5 ? "ok" : "warn") : "bad");
   return { L, rows };
 }
 function puckPatch(src, opts) {
@@ -859,6 +904,18 @@ function puckPatch(src, opts) {
     for (const i of L.ifaces) { out[i.o + 6] = fast ? 1 : 2; out[i.o + 20] = fast ? 1 : 2; out[i.o + 13] = fast ? 4 : 5; out[i.o + 27] = fast ? 4 : 5; }
     log.push(["ok", `Slot USB interval → ${fast ? 1 : 2} ms on ${L.ifaces.length} interfaces`]);
   } else log.push(["w", "Slot USB endpoints not found — USB interval left unchanged (caps ~500 Hz)"]);
+  if (opts.kbd !== undefined) {
+    const K = puckKbdSite(out);
+    if (!K) log.push(["w", "Keyboard filter not found in this Puck version — left as it is"]);
+    else { if (opts.kbd) { out[K.o] = K.enc[0]; out[K.o + 1] = K.enc[1]; } else { out[K.o] = K.orig[0]; out[K.o + 1] = K.orig[1]; }
+      log.push(["ok", opts.kbd ? "Keyboard: every key passes (remapper)" : "Keyboard: stock filter (Enter / Esc / Tab / arrows)"]); }
+  }
+  if (opts.mouse5 !== undefined) {
+    const M = puckMouseSite(out);
+    if (!M) log.push(["w", "Mouse descriptor not found in this Puck version — left as it is"]);
+    else { const n = opts.mouse5 ? 5 : 2; out[M.o + 11] = n; out[M.o + 19] = n; out[M.o + 23] = 8 - n;
+      log.push(["ok", `Mouse: ${n} buttons` + (opts.mouse5 ? " (middle, back, forward added)" : " (stock)")]); }
+  }
   const crc = crc32(out, 32); out[8] = crc & 0xff; out[9] = (crc >>> 8) & 0xff; out[10] = (crc >>> 16) & 0xff; out[11] = (crc >>> 24) & 0xff;
   log.push(["ok", `CRC32 = 0x${crc.toString(16).padStart(8, "0")}`]);
   return { ok: true, out, log };
@@ -997,13 +1054,15 @@ pdrop.addEventListener("drop",e=>pLoad(e.dataTransfer.files[0]));
 pticks.addEventListener("input",pHint); pHint();
 document.querySelectorAll("[data-ppreset]").forEach(b=>b.addEventListener("click",()=>{pticks.value=PUCK_PRESETS[b.dataset.ppreset]; pHint();}));
 pgo.onclick=()=>{ if(!pbuf)return; plog.innerHTML="";
-  const n=Math.max(1,Math.min(255,parseInt(pticks.value,10)||1)); const r=puckPatch(pbuf,{pollTicks:n});
+  const n=Math.max(1,Math.min(255,parseInt(pticks.value,10)||1)); const kbd=$("#pkbd").checked, mouse5=$("#pmouse").checked;
+  const r=puckPatch(pbuf,{pollTicks:n,kbd,mouse5});
   if(!r.ok){ r.errors.forEach(e=>plg("✗ "+e,"bad")); return; }
   r.log.forEach(([c,m])=>plg("  "+m,c==="ok"?"ok":"w"));
-  const v=puckLocate(r.out); if(v.waitTicks!==n||v.header.crcStored!==v.header.crcActual){plg("  self-check FAILED","bad");return;}
+  const v=puckLocate(r.out), vk=puckKbdSite(r.out), vm=puckMouseSite(r.out);
+  if(v.waitTicks!==n||v.header.crcStored!==v.header.crcActual||(vk&&vk.patched!==kbd)||(vm&&(vm.buttons===5)!==mouse5)){plg("  self-check FAILED","bad");return;}
   plg("  self-check: sites re-located, CRC valid","ok");
-  const base=pname.replace(/_patched(?=\.[^.]*$|$)/,""), dot=base.lastIndexOf(".");
-  const tag=n===99?"_stock":`_poll${n}t`; const out=dot>0?(base.slice(0,dot)+tag+base.slice(dot)):(base+tag+".fw");
+  const base=pname.replace(/(_patched|_stock|_poll\w*?|_kbm|_kbd|_m5)+(?=\.[^.]*$|$)/,""), dot=base.lastIndexOf(".");
+  const tag=(n===99?"_stock":`_poll${n}t`)+(kbd&&mouse5?"_kbm":kbd?"_kbd":mouse5?"_m5":""); const out=dot>0?(base.slice(0,dot)+tag+base.slice(dot)):(base+tag+".fw");
   const a=document.createElement("a"); a.href=URL.createObjectURL(new Blob([r.out],{type:"application/octet-stream"})); a.download=out;
   document.body.appendChild(a); a.click(); setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove();},1500);
   plg(`\n✓ Downloaded ${out} — flash it with flash.py (see ⓘ).`,"ok"); pRender(r.out); };
