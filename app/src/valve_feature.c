@@ -10,6 +10,7 @@
 
 #include "analog.h"
 #include "olympus.h"
+#include "stick_test.h"
 #include "controller.h"
 #include "haptics.h"
 #include "ibex_settings_registry.h"
@@ -688,6 +689,10 @@ static int handle_feature_request(enum valve_feature_link link, const uint8_t *r
 				{
 					imu_request_full_cal();
 					return 0;
+				}
+				if(strncmp(path, "sc26re/stest/", 13) == 0)
+				{
+					return stick_test_command(path + 13);
 				}
 				if(strncmp(path, "sc26re/prs_cal/", 15) == 0)
 				{

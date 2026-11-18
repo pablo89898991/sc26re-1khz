@@ -18,6 +18,7 @@
 #include "gyro_mouse.h"
 #include "remap.h"
 #include "xinput.h"
+#include "stick_test.h"
 #include "lizard.h"
 #include "power.h"
 #include "puck_interface.h"
@@ -766,9 +767,13 @@ int main(void)
 			static int64_t remap_last_ms;
 			int64_t remap_now = k_uptime_get();
 
+			uint32_t raw_buttons = current.buttons;
+
 			remap_process(&current, remap_last_ms ? (float)(remap_now - remap_last_ms) * 0.001f : 0.001f);
 			remap_last_ms = remap_now;
 			gyro_mouse_joystick(&current);
+			/* in-game stick measurement (gyro as joystick calibration) */
+			stick_test_apply(&current, raw_buttons);
 			/* Xbox 360 output (USB, pad_out = 1): the game gets the pad there */
 			xinput_send(&current, remap_xbox_buttons());
 			xinput_neutral_pad(&current);

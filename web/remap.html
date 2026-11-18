@@ -45,6 +45,7 @@
   .mon{margin:6px auto 0;max-width:440px;font-size:12px;color:var(--muted);background:var(--panel2);border:1px solid var(--edge);border-radius:10px;padding:6px 10px;line-height:1.6}
   .mon b{color:#d7e3f5;font-weight:600} .mon .k{display:inline-block;padding:0 6px;margin:1px 2px;border-radius:6px;background:#2a3a58;color:#e8f1ff}
   .row.dim{opacity:.4}
+  .card.wide{grid-column:1 / -1} .sttable{display:grid;grid-template-columns:1fr auto 1.2fr;gap:8px 14px;align-items:center;margin:8px 0}
   .modes label{font-size:12px;color:var(--muted);margin-right:8px;white-space:nowrap}
   .live{display:inline-block;width:9px;height:9px;border-radius:50%;background:#33415c;margin-left:6px;vertical-align:middle}
   .live.on{background:#4fc98a;box-shadow:0 0 8px #4fc98a}
@@ -94,7 +95,7 @@
 <body>
 <div class="top">
   <div class="topin">
-    <div class="brand">SC2 <span class="hz">Remapper</span> <span class="note" id="pagever" title="page version — if it is older than expected, press Ctrl+F5">p.2026-11-17e</span></div>
+    <div class="brand">SC2 <span class="hz">Remapper</span> <span class="note" id="pagever" title="page version — if it is older than expected, press Ctrl+F5">p.2026-11-18a</span></div>
     <button class="primary" id="connect">Connect controller</button>
     <span id="status" class="chip">not connected</span>
     <span class="grow"></span>
@@ -179,6 +180,17 @@
           <p class="note cardnote">Teaches the controller how hard your pads read when untouched and when pressed firmly — the pressure-based click, “pressed harder than …” activation and Steam’s pad pressure all use it. Follow the steps. <b>Factory</b> clears it; the factory values come back after the controller is turned off and on.</p>
           <div class="tools"><button class="primary" id="cPrStart">Start</button><button id="cPrNext" disabled>Next</button><button id="cPrFactory" class="ghost">Factory</button></div>
           <p class="note cardnote" id="cPrStatus"></p></div>
+        <div class="card wide"><h3>Gyro → right stick: measure the game</h3>
+          <p class="note cardnote">For games without mouse support. The controller pushes the right stick by itself while you watch the camera; from that the page works out the game’s <b>dead zone</b>, <b>turn speed</b>, <b>response curve</b> and <b>acceleration</b> and sets <b>gyro as joystick</b> so the camera follows the gyro like a mouse (1:1). Steam Input’s own stick settings are measured too, so keep them as you will play.<br>
+          Each step: press its button here → switch to the game (camera free, standing still) → press <b>A</b> on the controller to start → follow the step → <b>B</b> cancels. A and B do not reach the game during a step. Look at a landmark in the middle of the screen before each turn.</p>
+          <div class="sttable">
+            <div><b>1. Dead zone</b> <span class="note">(do it 2–3 times)</span><br><span class="note">A: the stick starts pushing right very slowly — press <b>A</b> again the moment the camera starts to move.</span></div><div><button id="stDz">Measure dead zone</button></div><div id="stDzR" class="note">—</div>
+            <div><b>2. Full speed</b><br><span class="note">A: turns right at full tilt — press <b>A</b> every time the landmark comes back (4 times).</span></div><div><button id="stF">Measure 100 %</button></div><div id="stFR" class="note">—</div>
+            <div><b>3. Curve</b> <span class="note">(slower turns)</span><br><span class="note">Same as 2 at 75 % and 50 % tilt — 2 laps are enough (then B).</span></div><div><button id="st75">Measure 75 %</button> <button id="st50">Measure 50 %</button></div><div id="stCR" class="note">—</div>
+          </div>
+          <p id="stLive" class="note cardnote"></p>
+          <div id="stRes" class="note cardnote"></div>
+          <div class="tools"><button class="primary" id="stApply" disabled>Set gyro as joystick (right stick)</button><button id="stReset" class="ghost">Clear measurements</button></div></div>
         <div class="card"><h3>Touch sensors</h3>
           <p class="note cardnote">Stick touch (capsense) and grip touch (gripsense) have thresholds instead of a calibration: set them on <a href="#" id="cToCtl">Controller settings → Touch sensors</a> (higher = less sensitive). The trackpad click point (how far into the calibrated pressure a click is) is there too.</p></div>
       </div>
@@ -706,9 +718,9 @@ const GY=[
  ["gm_accel_lo","Acceleration starts at","num",[0,1000,5],1,"°/s"],
  ["gm_accel_hi","Acceleration full at","num",[1,2000,5],1,"°/s"],
  ["gj_max","Camera: full deflection at","num",[10,2000,5],1,"°/s of turning = stick fully pushed"],
- ["gj_dz","Dead zone","num",[0,200,1],1,"°/s (camera) or ° (deflection)"],
- ["gj_anti","Anti dead zone","num",[0,90,1],1,"%"],
- ["gj_curve","Response curve","num",[0.5,4,0.1],10,"1.0 = linear"],
+ ["gj_dz","Dead zone","num",[0,200,0.1],10,"°/s (camera) or ° (deflection)"],
+ ["gj_anti","Anti dead zone","num",[0,90,0.1],10,"% — set it to the game’s stick dead zone"],
+ ["gj_curve","Response curve","num",[0.2,4,0.01],100,"1.0 = linear; 1 ÷ the game’s curve"],
  ["gm_ratchet","Ratchet (pause) button","sel",BTNOPTS,1,"while held the gyro stops moving — re-centre your hands, then let go"],
  ["gm_haptic","Haptics","sel",[[0,"off"],[1,"tick (light)"],[2,"click"],[3,"strong"]],1,"when the activation button starts the mouse and on quick turns"],
 ];
@@ -953,6 +965,57 @@ setInterval(async()=>{
   const all=[...sh,...keys,...mb,...padb,...xb].map(x=>`<span class="k">${x}</span>`).join("")+mv;
   $("#mon").innerHTML=`<b>Output</b> · profile ${b[0]+1} · remapper ${b[1]===1?"on":b[1]===2?"on (empty profile)":"off"}<br>${all||"<span>nothing pressed</span>"}`;
 },150);
+
+/* ---- gyro → right stick: measure the game ---- */
+const ST={dz:[],laps:{}};
+let stPoll=null, stWhat=null;
+const stSave=()=>{ try{ localStorage.setItem("sc26re_stick_meas",JSON.stringify(ST)); }catch(e){} };
+try{ const o=JSON.parse(localStorage.getItem("sc26re_stick_meas")||"null"); if(o&&o.dz) Object.assign(ST,o); }catch(e){}
+function lapDur(l){ const d=[]; for(let i=0;i<l.length;i++) d.push(l[i]-(i?l[i-1]:0)); return d; }
+function stCompute(){
+  const out={};
+  $("#stDzR").textContent=ST.dz.length?ST.dz.map(v=>v.toFixed(1)+" %").join(" · ")+` → ${(out.dz=ST.dz.reduce((a,b)=>a+b,0)/ST.dz.length).toFixed(1)} %`:"—";
+  const sp=k=>{ const l=ST.laps[k]; if(!l||!l.length) return null; const d=lapDur(l); const steady=d.length>1?d.slice(1):d; return {first:d[0],steady:steady.reduce((a,b)=>a+b,0)/steady.length,n:d.length}; };
+  const f=sp(100);
+  if(f){ out.wmax=360000/f.steady; out.acc=f.n>1&&f.first>f.steady*1.08?2*(f.first-f.steady):0;
+    $("#stFR").innerHTML=`${(f.steady/1000).toFixed(2)} s per 360° → <b>${out.wmax.toFixed(0)} °/s</b>${f.n>1?(out.acc?` · <span class="err">acceleration ≈ ${(out.acc/1000).toFixed(1)} s</span>`:" · no acceleration"):" (do more laps to check acceleration)"}`; }
+  const cs=[];
+  for(const k of [75,50]){ const r=sp(k); if(r&&out.wmax&&out.dz!==undefined){ const u=(k-out.dz)/(100-out.dz), w=360000/r.steady/out.wmax; if(u>0&&u<1&&w>0&&w<1) cs.push(Math.log(w)/Math.log(u)); } }
+  const cl=[75,50].filter(k=>ST.laps[k]&&ST.laps[k].length).map(k=>{ const r=sp(k); return `${k} %: ${(360000/r.steady).toFixed(0)} °/s`; });
+  $("#stCR").innerHTML=cl.length?cl.join(" · ")+(cs.length?` → curve <b>${(out.c=cs.reduce((a,b)=>a+b,0)/cs.length).toFixed(2)}</b>`:""):"—";
+  if(out.c===undefined) out.c=1;
+  if(out.dz!==undefined&&out.wmax){
+    out.anti=Math.min(90,out.dz+0.3); out.curve=Math.max(0.2,Math.min(4,1/out.c)); out.max=Math.round(out.wmax);
+    $("#stRes").innerHTML=`Result: game dead zone <b>${out.dz.toFixed(1)} %</b>, full speed <b>${out.max} °/s</b>, curve <b>${out.c.toFixed(2)}</b>${cs.length?"":" (assumed linear — measure 75 % / 50 % for the real curve)"}${out.acc?`, <span class="err">acceleration ${(out.acc/1000).toFixed(1)} s — turn it off in the game (or in Steam Input) if you can: the gyro cannot undo it fully</span>`:""}.<br>
+      Gyro as joystick will be: output <b>right stick (camera)</b>, anti dead zone <b>${out.anti.toFixed(1)} %</b>, response curve <b>${out.curve.toFixed(2)}</b>, full deflection at <b>${out.max} °/s</b>, dead zone 0 — so turning the controller at X °/s turns the camera at X °/s up to ${out.max} °/s (the game’s limit).`;
+    $("#stApply").disabled=false; ST.result=out;
+  } else { $("#stRes").textContent="Measure the dead zone and the full speed first."; $("#stApply").disabled=true; }
+}
+async function stRun(cmd,what,msg){
+  try{ await send("sc26re/stest/"+cmd,0xF0); }catch(e){ $("#stLive").innerHTML=`<span class="err">${e.message}</span>`; return; }
+  stWhat=what; $("#stLive").innerHTML=msg+" — switch to the game and press <b>A</b> to start (B cancels).";
+  clearInterval(stPoll);
+  stPoll=setInterval(async()=>{
+    let b; try{ b=await read("sc26re/stest"); }catch(e){ return; }
+    if(!b||b.length<24) return;
+    const dv=new DataView(b.buffer,b.byteOffset,24), st=b[0], laps=[0,1,2,3].slice(0,b[2]).map(i=>dv.getUint32(8+i*4,true));
+    if(st===2) $("#stLive").innerHTML=what==="dz"?"running — press A when the camera moves":`running — laps: ${laps.length}`;
+    if(st>=3){ clearInterval(stPoll);
+      if(what==="dz"){ if(st===3){ ST.dz.push(dv.getUint16(4,true)/100); $("#stLive").innerHTML='<span class="ok">dead zone measured</span>'; } else $("#stLive").innerHTML='<span class="err">cancelled (or the camera did not move up to 40 %)</span>'; }
+      else { if(laps.length){ ST.laps[what]=laps; $("#stLive").innerHTML=`<span class="ok">${laps.length} lap(s) measured</span>`; } else $("#stLive").innerHTML='<span class="err">cancelled, no laps</span>'; }
+      stSave(); stCompute(); }
+  },500);
+}
+$("#stDz").onclick=()=>stRun("r4000","dz","Dead zone armed");
+$("#stF").onclick=()=>stRun("h10000",100,"Full speed armed");
+$("#st75").onclick=()=>stRun("h7500",75,"75 % armed");
+$("#st50").onclick=()=>stRun("h5000",50,"50 % armed");
+$("#stReset").onclick=()=>{ ST.dz=[]; ST.laps={}; delete ST.result; stSave(); stCompute(); };
+$("#stApply").onclick=async()=>{ const r=ST.result; if(!r) return;
+  try{ await put("gm_output",1,true); await put("gj_anti",Math.round(r.anti*10),true); await put("gj_curve",Math.round(r.curve*100),true); await put("gj_max",r.max,true); await put("gj_dz",0,true);
+    $("#stLive").innerHTML='<span class="ok">saved — gyro now drives the right stick; turn the gyro on (LB + RB + View) and try it. Fine-tune on the gyro page.</span>'; try{ await gyRead(); }catch(e){} }
+  catch(e){ $("#stLive").innerHTML=`<span class="err">${e.message}</span>`; } };
+stCompute();
 $("#lvRead").onclick=lvRead; $("#lvApply").onclick=()=>lvWrite(false); $("#lvSave").onclick=()=>lvWrite(true);
 async function tool(op,path,msg){ try{ if(op===0xB5){ const b=new Uint8Array(63); b[0]=0xB5; await serial(()=>ctl().sendFeatureReport(1,b)); } else await send(path,op); $("#tStatus").innerHTML=`<span class="ok">${msg}</span>`; }catch(e){ $("#tStatus").innerHTML=`<span class="err">${e.message}</span>`; } }
 $("#tCal").onclick=()=>tool(0xB5,"","measuring — don't touch the controller for 2 s");

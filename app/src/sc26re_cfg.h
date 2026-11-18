@@ -88,10 +88,10 @@ enum sc26re_cfg_id
 	SC26RE_CFG_GM_ACCEL,       /* gyro mouse acceleration: extra % at fast turns (0 off) */
 	SC26RE_CFG_GM_ACCEL_LO,    /* deg/s where the acceleration starts */
 	SC26RE_CFG_GM_ACCEL_HI,    /* deg/s where it is full */
-	SC26RE_CFG_GJ_DZ,          /* gyro joystick dead zone, deg/s */
-	SC26RE_CFG_GJ_ANTI,        /* gyro joystick anti dead zone, % */
+	SC26RE_CFG_GJ_DZ,          /* gyro joystick dead zone, 0.1 deg/s (or 0.1 deg for deflection) */
+	SC26RE_CFG_GJ_ANTI,        /* gyro joystick anti dead zone, 0.1 % */
 	SC26RE_CFG_GJ_MAX,         /* gyro joystick: deg/s for full deflection */
-	SC26RE_CFG_GJ_CURVE,       /* gyro joystick response exponent x10 */
+	SC26RE_CFG_GJ_CURVE,       /* gyro joystick response exponent x100 */
 	SC26RE_CFG_GJ_TILT,        /* gyro joystick deflection: degrees of tilt for full deflection */
 	SC26RE_CFG_PAD_OUT,        /* pad output over USB: 0 Steam Controller, 1 Xbox 360 only, 2 both; restart */
 	SC26RE_CFG_GM_RATCHET,     /* gyro ratchet: while this button is held the gyro output pauses, -1 = none */

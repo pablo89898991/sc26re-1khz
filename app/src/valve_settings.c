@@ -15,6 +15,7 @@
 #include "imu.h"
 #include "gyro_mouse.h"
 #include "remap.h"
+#include "stick_test.h"
 #include "valve_nvs.h"
 #include "olympus.h"
 #include "lizard.h"
@@ -630,6 +631,12 @@ bool valve_settings_read(const char *path, uint8_t *buf, size_t capacity, size_t
 		sys_put_le32(buttons, &buf[2]);
 		buf[6] = moves;
 		*len = 7;
+		return true;
+	}
+	if(strcmp(path, "sc26re/stest") == 0 && capacity >= 24)
+	{
+		stick_test_state(buf);
+		*len = 24;
 		return true;
 	}
 	if(strcmp(path, "sc26re/rmp_out") == 0 && capacity >= 30)

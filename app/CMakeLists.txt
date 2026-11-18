@@ -30,6 +30,7 @@ target_sources(app PRIVATE
 	src/gyro_mouse.c
 	src/remap.c
 	src/xinput.c
+	src/stick_test.c
 )
 
 target_sources_ifdef(CONFIG_HAPTICS_PWM_NRF app PRIVATE src/haptics_pwm_nrf.c)

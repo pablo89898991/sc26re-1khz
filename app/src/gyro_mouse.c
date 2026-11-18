@@ -468,7 +468,7 @@ void gyro_mouse_feed(const float dps[3], uint32_t buttons, float dt_s)
 		if(out >= 1 && out <= 4)
 		{
 			/* gyro as joystick: camera = turn rate, deflection = tilt since activation */
-			float dz = (float)gm(SC26RE_CFG_GJ_DZ);
+			float dz = (float)gm(SC26RE_CFG_GJ_DZ) * 0.1f;
 			float mx;
 
 			if(out >= 3)
@@ -488,7 +488,7 @@ void gyro_mouse_feed(const float dps[3], uint32_t buttons, float dt_s)
 			{
 				mx = MAX((float)gm(SC26RE_CFG_GJ_MAX), dz + 1.0f);
 			}
-			float anti = (float)gm(SC26RE_CFG_GJ_ANTI) * 0.01f;
+			float anti = (float)gm(SC26RE_CFG_GJ_ANTI) * 0.001f;
 			float n;
 
 			if(w <= dz || w <= 0.0f)
@@ -496,7 +496,7 @@ void gyro_mouse_feed(const float dps[3], uint32_t buttons, float dt_s)
 				joy_x = joy_y = 0.0f;
 				return;
 			}
-			n = powf(MIN((w - dz) / (mx - dz), 1.0f), (float)gm(SC26RE_CFG_GJ_CURVE) * 0.1f);
+			n = powf(MIN((w - dz) / (mx - dz), 1.0f), (float)gm(SC26RE_CFG_GJ_CURVE) * 0.01f);
 			n = anti + (1.0f - anti) * n;
 			joy_x = wx / w * n;
 			joy_y = -wy / w * n; /* stick up = cursor up */
