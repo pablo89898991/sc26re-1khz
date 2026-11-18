@@ -332,6 +332,18 @@ def regress_monitor_not_stale():
     s.run(20, STEAM=1, DLEFT=1); s.run(20, STEAM=0, DLEFT=0); s.run(20, L4=0, LB=0)
     m = s.read("sc26re/rmp_out"); assert m[2] == 0 and m[12:16] == bytes(4), m.hex()
 
+@test
+def regress_layer_held_by_a_ring_it_removes():
+    base = Profile(); base.analog(1, DPAD4, ring=5000); base.bind("RS_RING", LAYER + 2)
+    lay = Profile(); lay.analog(1, MOUSE, speed=500); lay.analog(3, FLICK); lay.bind("A", key("x"))
+    s = Sim(); s.upload(2, lay); s.use(base); s.run(5)
+    s.run(300, rsy=32767, RP_TOUCH=1, rpx=20000)
+    e = Events(s.run(30, A=1)); s.run(20, A=0)
+    assert key("x") in e.kbd()[-1], e.kbd()[-1:]     # the layer is on (held by the ring)
+    s.run(10, rsy=0, RP_TOUCH=0, rpx=0)
+    late = s.run(2000); later = s.run(500)
+    assert not any(m[1] or m[2] for m in later.mouse()), later.mouse()[:3]
+
 if __name__ == "__main__":
     only = sys.argv[1:]; ok = fail = 0
     for t in TESTS:

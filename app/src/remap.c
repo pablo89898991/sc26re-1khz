@@ -119,6 +119,8 @@ static int8_t radial_sel[2] = { -1, -1 };
 static int8_t radial_fire[2] = { -1, -1 };
 static bool radial_mode[2], radial_click[2], radial_touch[2];
 static int8_t layer_now = -1, layer_next = -1; /* action layer: profile laid over the current one */
+static int8_t layer_holder = -1, layer_holder_next = -1; /* the source holding the layer */
+static int8_t out_src = -1;                     /* source whose actions out_action() is handling */
 static uint16_t stick_out;                      /* analog output actions held this report */
 struct macro_run
 {
@@ -403,6 +405,7 @@ static void out_action(uint8_t a, uint8_t keys[6], size_t *nk, uint8_t *mods, ui
 	else if(a >= REMAP_ACT_LAYER && a < REMAP_ACT_LAYER + REMAP_PROFILES)
 	{
 		layer_next = (int8_t)(a - REMAP_ACT_LAYER);
+		layer_holder_next = out_src;
 	}
 	else if(a >= REMAP_ACT_STICK && a <= REMAP_ACT_TRIG_R)
 	{
@@ -776,6 +779,10 @@ static void send_mouse(void)
 	int8_t v[4];
 	bool any = false;
 
+	/* at most ~a quarter second of movement waits (USB: 127 counts per ms);
+	 * more means something produced far too much, never move for seconds */
+	mouse_acc[0] = CLAMP(mouse_acc[0], -32767.0f, 32767.0f);
+	mouse_acc[1] = CLAMP(mouse_acc[1], -32767.0f, 32767.0f);
 	for(size_t i = 0; i < 4; ++i)
 	{
 		float t = CLAMP(mouse_acc[i] >= 0.0f ? floorf(mouse_acc[i]) : ceilf(mouse_acc[i]), -127.0f, 127.0f);
@@ -1196,13 +1203,46 @@ static bool has_layer_action(const struct remap_binding *b)
 	return false;
 }
 
+/* the stick (0, 1) or trackpad (2, 3) a derived source comes from, -1 none */
+static int analog_of_src(int s)
+{
+	if(s >= REMAP_SRC_LS_UP && s < REMAP_SRC_LPAD_UP)
+	{
+		return (s - REMAP_SRC_LS_UP) / 4;
+	}
+	if(s >= REMAP_SRC_LPAD_UP && s < REMAP_SRC_LPAD_GATE)
+	{
+		return 2 + (s - REMAP_SRC_LPAD_UP) / 4;
+	}
+	if(s >= REMAP_SRC_LPAD_GATE && s < REMAP_SRC_LPAD_CW)
+	{
+		return 2 + (s - REMAP_SRC_LPAD_GATE) / 4;
+	}
+	if(s >= REMAP_SRC_LPAD_CW && s < REMAP_SRC_LT_SOFT)
+	{
+		return 2 + (s - REMAP_SRC_LPAD_CW) / 2;
+	}
+	if(s >= REMAP_SRC_LS_RING && s < REMAP_SRC_LPAD_CENTER)
+	{
+		return s - REMAP_SRC_LS_RING;
+	}
+	if(s >= REMAP_SRC_LPAD_CENTER && s < REMAP_SRC_COUNT)
+	{
+		return 2 + s - REMAP_SRC_LPAD_CENTER;
+	}
+	return -1;
+}
+
 static const struct remap_analog *analog_cfg(const struct remap_profile *p, int i)
 {
 	int g = REMAP_SHIFT_LS + i;
 	const struct remap_profile *l = layer_profile();
 
-	/* action layer: its sticks / pads replace the base ones unless left "to Steam" */
-	if(l != NULL && l->an[i].mode != REMAP_ANALOG_PASS)
+	/* action layer: its sticks / pads replace the base ones unless left "to Steam".
+	 * Not the stick / pad whose input holds the layer: the layer would change
+	 * what holds it (a ring that is gone in the layer) and switch itself off
+	 * and on every report. */
+	if(l != NULL && l->an[i].mode != REMAP_ANALOG_PASS && analog_of_src(layer_holder) != i)
 	{
 		return &l->an[i];
 	}
@@ -1382,6 +1422,8 @@ void remap_process(struct controller_report *r, float dt)
 	TURBO_MS = MAX(p->turbo_ms ? p->turbo_ms : 100U, 20U);
 	layer_now = layer_next; /* the layer held in the last report */
 	layer_next = -1;
+	layer_holder = layer_holder_next;
+	layer_holder_next = -1;
 	stick_out = 0U;
 
 	/* mode shifts: while a group's shift button is held it uses its
@@ -1761,6 +1803,7 @@ void remap_process(struct controller_report *r, float dt)
 		const struct remap_binding *b = binding(p, s);
 		struct src_state *ss = &st[s];
 
+		out_src = (int8_t)s;
 		if(!bound(b))
 		{
 			continue;
@@ -1922,6 +1965,7 @@ void remap_process(struct controller_report *r, float dt)
 			}
 			if(now - mr->t < (int64_t)dur)
 			{
+				out_src = -1;
 				out_action(st2[0], keys, &nk, &mods, &pad);
 				break;
 			}
@@ -2195,5 +2239,13 @@ const uint8_t *remap_sim_staging(int *p)
 {
 	*p = staging_p;
 	return (const uint8_t *)&staging;
+}
+#endif
+#ifdef SC26RE_SIM
+void remap_sim_mouse(float *out)
+{
+	memcpy(out, mouse_acc, sizeof(mouse_acc));
+	out[4] = flick_left;
+	out[5] = flick_rate;
 }
 #endif

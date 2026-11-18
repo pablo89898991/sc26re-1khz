@@ -4,7 +4,8 @@ import random, sys, json
 import fuzz
 from simlib import *
 
-PAGE = True  # page actions in the middle of play (remapper switch, profile choice, profile save)
+PAGE = True
+STABLE = True  # page actions in the middle of play (remapper switch, profile choice, profile save)
 
 def page_action(r, s):
     k = r.random()
@@ -96,6 +97,21 @@ def scenario(seed, mode, n_profiles=20, steps=400, disconnects=False):
             for ch, ms in complex_input(r, s, profs[0]):
                 apply(s, ch)
                 if ms: s.run(ms)
+            if STABLE and r.random() < .015:
+                # stability: the controller held still for 3 s, then nothing may keep flipping
+                s.run(3000)
+                n0 = len(s.log); s.run(1000); tail = s.log[n0:]
+                flips = [e for e in tail if e.split()[1] in ("K",) or (e.split()[1] == "M" and e.split()[2] != (tail[0].split()[2] if False else e.split()[2]))]
+                kb = [e for e in tail if e.split()[1] == "K"]
+                mb = set(e.split()[2] for e in tail if e.split()[1] == "M")
+                padflip = s.out["buttons"]
+                s.run(1); padflip2 = s.out["buttons"]
+                turbo = any(p.b[488 + 14 * k] & M_TURBO for p in profs for k in range(66)) or any(p.b[1412 + 14 * k] & M_TURBO for p in profs for k in range(46))
+                cyc = any(p.b[488 + 14 * k] & (M_TURBO) for p in profs for k in range(66))
+                if not turbo and (len(kb) > 4 or len(mb) > 1):
+                    found.append((seed, mode, pi, "output keeps changing with the controller held still: %s" % (kb[:3] or list(mb))))
+                    json.dump({"profs": [p.b.hex() for p in profs]}, open("/tmp/wstable_%d_%d_%d.json" % (seed, mode, pi), "w"))
+                    break
             if disconnects and mode and r.random() < .01:
                 s.link(False); s.run(r.choice([30, 300, 2000])); s.link(True)
         fuzz.neutral(s)
