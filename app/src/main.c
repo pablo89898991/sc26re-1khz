@@ -1,4 +1,5 @@
 /* SPDX-License-Identifier: AGPL-3.0-or-later */
+#include <hal/nrf_power.h>
 #include <errno.h>
 #include <stdlib.h>
 #include <string.h>
@@ -72,11 +73,18 @@ static enum radio_personality boot_chord_personality(void)
 	k_sleep(K_MSEC(BOOT_CHORD_SETTLE_MS));
 	buttons = hardware_read_buttons();
 
-	/* BLE wins the three-button chord so A+B also opens its pairing window. */
-	if(chord_pressed(buttons, CONTROLLER_BUTTON_RIGHT_SHOULDER, CONTROLLER_BUTTON_B))
+	/* BLE wins the three-button chord so A+B also opens its pairing window.
+	 * B + RB (stock) or B + LB: Bluetooth and its pairing window, kept over the
+	 * reboot into Bluetooth mode (the window opened only with A + B before, so
+	 * the stock chord switched modes but never paired, and holding Steam for it
+	 * switched the controller off after 5 s). */
+	if(chord_pressed(buttons, CONTROLLER_BUTTON_RIGHT_SHOULDER, CONTROLLER_BUTTON_B) ||
+	   chord_pressed(buttons, CONTROLLER_BUTTON_LEFT_SHOULDER, CONTROLLER_BUTTON_B))
 	{
+		nrf_power_gpregret_set(NRF_POWER, 1, HARDWARE_PAIRING_GPREGRET);
 		return RADIO_PERSONALITY_BLE;
 	}
+	nrf_power_gpregret_set(NRF_POWER, 1, 0);
 	if(chord_pressed(buttons, CONTROLLER_BUTTON_RIGHT_SHOULDER, CONTROLLER_BUTTON_A))
 	{
 		return RADIO_PERSONALITY_ESB;

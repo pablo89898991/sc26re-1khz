@@ -124,6 +124,8 @@ void hardware_store_state(const struct controller_report *report);
 bool hardware_load_state(struct controller_report *report);
 uint32_t hardware_read_buttons(void);
 bool hardware_pairing_chord_pressed(void);
+/* GPREGRET[1] value: open the Bluetooth pairing window after the next reboot */
+#define HARDWARE_PAIRING_GPREGRET 0xB1U
 void hardware_haptic_pulse(void);
 int hardware_haptic_tone(uint32_t frequency_hz, uint32_t duration_ms);
 

@@ -12,6 +12,7 @@
 #include "analog.h"
 #include "calibration.h"
 #include "controller.h"
+#include <hal/nrf_power.h>
 #include "haptics.h"
 #include "imu.h"
 #include "olympus.h"
@@ -326,7 +327,22 @@ void hardware_signal_input_changed(void)
 bool hardware_pairing_chord_pressed(void)
 {
 	uint32_t pressed = hardware_read_buttons();
+	const uint32_t ab = BIT(CONTROLLER_BUTTON_A) | BIT(CONTROLLER_BUTTON_B);
+	const uint32_t shoulders = BIT(CONTROLLER_BUTTON_RIGHT_SHOULDER) | BIT(CONTROLLER_BUTTON_LEFT_SHOULDER);
 
-	return (pressed & (BIT(CONTROLLER_BUTTON_A) | BIT(CONTROLLER_BUTTON_B))) ==
-	       (BIT(CONTROLLER_BUTTON_A) | BIT(CONTROLLER_BUTTON_B));
+	bool flagged = nrf_power_gpregret_get(NRF_POWER, 1) == HARDWARE_PAIRING_GPREGRET;
+
+	nrf_power_gpregret_set(NRF_POWER, 1, 0);
+	/* A + B, or the stock chord: B + RB (or LB), held while switching on */
+	if((pressed & ab) == ab)
+	{
+		return true;
+	}
+	if((pressed & BIT(CONTROLLER_BUTTON_B)) && (pressed & shoulders))
+	{
+		return true;
+	}
+	/* the chord switched the controller to Bluetooth and rebooted it: the
+	 * request survives the reboot even if the buttons were let go meanwhile */
+	return flagged;
 }

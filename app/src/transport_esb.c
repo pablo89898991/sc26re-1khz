@@ -512,6 +512,7 @@ static void queue_latest_input(void)
 		memcpy(&payload.data[payload.length], entry->data, entry->len);
 		payload.length += entry->len;
 		queued_reports_included++;
+		payload.hold_after = entry->state ? 1U : 0U;
 	}
 	/*
 	 * The Puck turns every report in a payload into a USB report on the same

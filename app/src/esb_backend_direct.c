@@ -50,6 +50,17 @@ static bool rx_duplicate_valid;
 static uint8_t rx_duplicate_pid;
 static uint32_t rx_duplicate_crc;
 static struct k_spinlock fifo_lock;
+/*
+ * The Puck turns each payload into one USB report in a single slot that the PC
+ * reads once per ms, and a newer payload replaces an unread one. A keyboard
+ * report (sent once per change) followed by the pad state in the next poll was
+ * replaced before the PC read it: keys never reached the PC over the Puck while
+ * the mouse (repeated with every movement report) did. After a payload with
+ * such a report, the following ACKs are empty for this long.
+ */
+#define ESB_STATE_HOLD_US 2000
+static bool tx_hold_active;
+static uint32_t tx_hold_until;
 static volatile uint32_t end_events;
 static volatile uint32_t crc_ok_events;
 static volatile uint32_t crc_bad_events;
@@ -255,6 +266,15 @@ static bool peek_tx_payload(struct valve_esb_payload *payload)
 {
 	k_spinlock_key_t key = k_spin_lock(&fifo_lock);
 
+	if(tx_hold_active)
+	{
+		if((int32_t)(k_cycle_get_32() - tx_hold_until) < 0)
+		{
+			k_spin_unlock(&fifo_lock, key);
+			return false;
+		}
+		tx_hold_active = false;
+	}
 	if(tx_count == 0)
 	{
 		k_spin_unlock(&fifo_lock, key);
@@ -276,6 +296,11 @@ static void discard_tx_payload(void)
 		return;
 	}
 
+	if(tx_fifo[tx_tail].hold_after)
+	{
+		tx_hold_active = true;
+		tx_hold_until = k_cycle_get_32() + (uint32_t)k_us_to_cyc_ceil32(ESB_STATE_HOLD_US);
+	}
 	tx_tail = (tx_tail + 1) % TX_FIFO_SIZE;
 	tx_count--;
 	k_spin_unlock(&fifo_lock, key);

@@ -28,6 +28,10 @@ struct valve_esb_payload
 	int8_t rssi;
 	uint8_t noack;
 	uint8_t pid;
+	/* TX: carries a keyboard / mouse-button report. After the Puck has it, send
+	 * nothing for ESB_STATE_HOLD_US so the Puck's single USB report slot is
+	 * read by the PC before the next payload replaces it. */
+	uint8_t hold_after;
 	uint8_t data[VALVE_ESB_BACKEND_MAX_PAYLOAD_SIZE];
 };
 
