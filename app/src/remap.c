@@ -188,6 +188,7 @@ static bool ring_on[4];
 static bool center_on[2];
 static bool pad_act[2]; /* trackpad active (touched / clicked / pressed) this report */
 static bool swipe_done[2];
+static int64_t swipe_t[2];   /* last swipe fired */
 static uint8_t swipe_fire[2]; /* per pad this report: bit 0 up, 1 down, 2 left, 3 right */
 static bool swipe_mode[2];
 static int16_t swipe_anchor[2][2];
@@ -894,6 +895,13 @@ static void swipe(int j, const struct remap_analog *an, bool active, int16_t x, 
 	{
 		return;
 	}
+	/* repeats: the previous tap must be over (key up) before the next one,
+	 * else a fast long swipe merges into one long press */
+	if(k_uptime_get() - swipe_t[j] < 2 * TAP_MS)
+	{
+		return;
+	}
+	swipe_t[j] = k_uptime_get();
 	if(abs(dy) >= abs(dx))
 	{
 		swipe_fire[j] = dy > 0 ? 1U : 2U;
@@ -1282,6 +1290,7 @@ void remap_process(struct controller_report *r, float dt)
 		              : 0U;
 	}
 	/* trackpads: active while touched or while clicked */
+	memset(pad_joy, 0, sizeof(pad_joy));
 	for(int j = 0; j < 2; ++j)
 	{
 		const struct remap_analog *an = analog_cfg(p, 2 + j);
@@ -1398,7 +1407,10 @@ void remap_process(struct controller_report *r, float dt)
 			{
 				zone = (int16_t)(radial_sel[j] + 1); /* 0 = centre */
 			}
-			if(zone >= 0 && last_zone[j] >= 0 && zone != last_zone[j])
+			/* a tick on every change of zone, and on the first touch when it
+			 * lands in a zone (gates/D-pad/radial: 0 = no zone; grid: all are) */
+			if(zone >= 0 && zone != last_zone[j] &&
+			   (last_zone[j] >= 0 || zone > 0 || an->mode == REMAP_ANALOG_GRID))
 			{
 				feedback(an->haptic, j);
 			}
@@ -1440,9 +1452,11 @@ void remap_process(struct controller_report *r, float dt)
 			flick_on[2 + j] = false;
 		}
 		{
+			/* pad_joy is cleared before the pad loop: with "other stick" the
+			 * left pad writes the right stick's slot, which the right pad must
+			 * not clear again */
 			int t = j ^ ((an->flags & REMAP_AF_OTHER_STICK) ? 1 : 0);
 
-			pad_joy[t][0] = pad_joy[t][1] = 0.0f;
 			if(an->mode == REMAP_ANALOG_JOYSTICK && act)
 			{
 				int16_t jx = x, jy = y;

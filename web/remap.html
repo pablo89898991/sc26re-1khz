@@ -96,7 +96,7 @@
 <body>
 <div class="top">
   <div class="topin">
-    <div class="brand">SC2 <span class="hz">Remapper</span> <span class="note" id="pagever" title="page version — if it is older than expected, press Ctrl+F5">p.2026-11-18c</span></div>
+    <div class="brand">SC2 <span class="hz">Remapper</span> <span class="note" id="pagever" title="page version — if it is older than expected, press Ctrl+F5">p.2026-11-18d</span></div>
     <button class="primary" id="connect">Connect controller</button>
     <span id="status" class="chip">not connected</span>
     <span class="grow"></span>
@@ -710,7 +710,19 @@ $("#connect").onclick=async()=>{
 navigator.hid&&navigator.hid.addEventListener("disconnect",e=>{ devs=devs.filter(d=>d!==e.device); if(ctlDev===e.device) ctlDev=null; $("#status").textContent=devs.length?"":"disconnected"; $("#status").className="chip"; });
 let lastBtn=0;
 let lastRep=null;
-function onReport(e){ if(e.reportId!==0x42) return; rate.set(e.device,1); if(!ctlDev) ctlDev=e.device; if(e.device!==ctlDev||e.data.byteLength<5) return; lastBtn=e.data.getUint32(1,true); if(e.data.byteLength>=29) lastRep=e.data; }
+let remapOn=false, rawAt=0;
+function onReport(e){ if(e.reportId!==0x42) return; rate.set(e.device,1); if(!ctlDev) ctlDev=e.device; if(e.device!==ctlDev||e.data.byteLength<5) return;
+  if(performance.now()-rawAt<300) return; /* the physical state comes from sc26re/raw */
+  lastBtn=e.data.getUint32(1,true); if(e.data.byteLength>=29) lastRep=e.data; }
+/* while the remapper is on, remapped inputs are missing from the pad report: the
+ * picture shows the physical controller instead (same layout, read from the firmware) */
+setInterval(async()=>{
+  if(!remapOn||!devs.length||$("#v_map").hidden) return;
+  let b; try{ b=await read("sc26re/raw"); }catch(e){ return; }
+  if(!b||b.length<28) return;
+  const u=new Uint8Array(1+b.length); u.set(b,1); const dv=new DataView(u.buffer);
+  rawAt=performance.now(); lastBtn=dv.getUint32(1,true); lastRep=dv;
+},40);
 /* live picture: sticks, finger on the trackpads (size = pressure), stick touch (capsense), trigger pull */
 setInterval(()=>{
   const d=lastRep; if(!d) return;
@@ -732,7 +744,7 @@ setInterval(()=>{
 async function refreshState(){
   const on=await cfgGet("remap_on"), p=await cfgGet("remap_profile");
   if(on===null){ $("#status").textContent="this firmware has no remapper (needs sc26re v51+)"; $("#status").className="chip warn"; return; }
-  $("#onoff").innerHTML="Remapper <b>"+(on?"ON":"off")+"</b>"; $("#onoff").className="sw"+(on?" on":"");
+  remapOn=!!on; $("#onoff").innerHTML="Remapper <b>"+(on?"ON":"off")+"</b>"; $("#onoff").className="sw"+(on?" on":"");
   $("#activeProf").value=String(p||0);
   { const po=await cfgGet("pad_out"); $("#padoutL").hidden=po===null; if(po!==null) $("#padout").value=String(po); }
   $("#status").textContent=`connected · ${ctl().productId===0x1302?"USB cable":"Puck"}`; $("#status").className="chip ok";
@@ -1056,6 +1068,7 @@ setInterval(async()=>{
   const padb=PADB.filter(([x])=>dv.getUint32(12,true)&(1<<x)).map(([,n])=>"Pad "+n), xb=XBOXB.filter(([x])=>dv.getUint32(16,true)&(1<<x)).map(([,n])=>"Xbox "+n);
   const sh=SHIFT_NAME.filter((n,g)=>b[2]&(1<<g)).map(n=>"⇧ "+n);
   const all=[...sh,...keys,...mb,...padb,...xb].map(x=>`<span class="k">${x}</span>`).join("")+mv;
+  remapOn=b[1]!==0; /* also follows LB+RB+Menu on the controller */
   $("#mon").innerHTML=`<b>Output</b> · profile ${b[0]+1} · remapper ${b[1]===1?"on":b[1]===2?"on (empty profile)":"off"}<br>${all||"<span>nothing pressed</span>"}`;
 },150);
 
