@@ -23,14 +23,23 @@ static void ev(const char *fmt, ...) __attribute__((format(printf, 1, 2)));
 static void ev(const char *fmt, ...)
 {
 	va_list ap;
+	char line[160];
+	int n0, n1;
+
+	if(evlen > sizeof(evlog) - 200)
+	{
+		evlen = 0; /* the driver reads the log after every run(); keep the newest */
+	}
+	n0 = snprintf(line, sizeof(line), "%lld ", (long long)now_ms);
 	va_start(ap, fmt);
-	int n = snprintf(evlog + evlen, sizeof(evlog) - evlen, "%lld ", (long long)now_ms);
-	if(n > 0) evlen += n;
-	n = vsnprintf(evlog + evlen, sizeof(evlog) - evlen, fmt, ap);
-	if(n > 0) evlen += n;
-	if(evlen < sizeof(evlog) - 1) evlog[evlen++] = '\n';
-	evlog[evlen] = 0;
+	n1 = vsnprintf(line + n0, sizeof(line) - (size_t)n0, fmt, ap);
 	va_end(ap);
+	if(n0 < 0 || n1 < 0) return;
+	size_t n = strnlen(line, sizeof(line) - 1);
+	memcpy(evlog + evlen, line, n);
+	evlen += n;
+	evlog[evlen++] = '\n';
+	evlog[evlen] = 0;
 }
 
 /* ---- transport model: what the host (PC) actually receives ----

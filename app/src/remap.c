@@ -671,6 +671,9 @@ static void stick_analog(int i, const struct remap_analog *an, int16_t x, int16_
 		if(floorf(scroll_notch[i]) != floorf(before))
 		{
 			feedback(an->haptic, i);
+			/* keep it small: a float that only grows loses the fractions
+			 * after hours of scrolling */
+			scroll_notch[i] -= floorf(scroll_notch[i]);
 		}
 	}
 }
