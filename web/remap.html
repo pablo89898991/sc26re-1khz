@@ -99,7 +99,7 @@
 <body>
 <div class="top">
   <div class="topin">
-    <div class="brand">SC2 <span class="hz">Remapper</span> <span class="note" id="pagever" title="page version — if it is older than expected, press Ctrl+F5">p.2026-11-18j</span></div>
+    <div class="brand">SC2 <span class="hz">Remapper</span> <span class="note" id="pagever" title="page version — if it is older than expected, press Ctrl+F5">p.2026-11-18k</span></div>
     <button class="primary" id="connect">Connect controller</button>
     <span id="status" class="chip">not connected</span>
     <span class="grow"></span>
@@ -175,7 +175,7 @@
           <div class="tools"><button class="primary" id="cStZero">Zero sticks</button></div>
           <p class="note cardnote" id="cStStatus"></p></div>
         <div class="card"><h3>Triggers</h3>
-      <p><b>Soft pull</b> fires when the trigger passes the point you choose, <b>full pull</b> is the click at the end. <b>Trigger mode</b> (per trigger, per profile): <b>Simple threshold</b> — both independent; <b>Hair trigger</b> — soft fires on any further pull and stops on any release (fast semi-auto); <b>Hip fire</b> — a quick pull to the click fires only full (shoot from the hip), a slow pull fires soft (aim) and then full too; <b>Hip fire exclusive</b> — the same but soft and full never together. The hip fire window sets what counts as quick. <b>Analog start / end</b> trims the range Steam sees. Binding the soft pull takes the analog trigger away from Steam.</p>
+      <p><b>Soft pull</b> fires when the trigger passes the point you choose, <b>full pull</b> is the click at the end. <b>Trigger mode</b> (per trigger, per profile): <b>Simple threshold</b> — both independent; <b>Hair trigger</b> — soft fires on any further pull and stops on any release (fast semi-auto); <b>Hip fire</b> — a quick pull to the click fires only full (shoot from the hip), a slow pull fires soft (aim) and then full too; <b>Hip fire exclusive</b> — the same but soft and full never together. The hip fire window sets what counts as quick. <b>Analog start / end</b> trims the range Steam sees. Binding the soft pull takes the analog trigger away from Steam. <b>Xbox LT / RT (whole trigger, analog)</b> on the soft pull sends the whole trigger to the Xbox pad (every bit of travel, analog start / end applied, not only past the soft point); on any other input it is a full pull while held. Needs Pad output “Steam + Xbox” or “Xbox only” (cable).</p>
           <div class="tools"><button class="primary" id="cTrStart">Full range: start</button><button id="cTrNext" disabled>Next</button><button id="cTrZero" class="ghost">Zero (released)</button></div>
           <p class="note cardnote" id="cTrStatus"></p></div>
         <div class="card"><h3>Gyro mouse — 360° (real-world sensitivity)</h3>
@@ -233,7 +233,7 @@
       <h3>Outer ring</h3>
       <p>Sticks and trackpads have an outer ring: its binding fires while the stick / finger is beyond the radius you set (or inside it, with invert) — e.g. sprint when the stick is pushed all the way.</p>
       <h3>Triggers</h3>
-      <p><b>Soft pull</b> fires when the trigger passes the point you choose (1–100 %), <b>full pull</b> is the click at the end. Binding the soft pull takes the analog trigger away from Steam.</p>
+      <p><b>Soft pull</b> fires when the trigger passes the point you choose (1–100 %), <b>full pull</b> is the click at the end. Binding the soft pull takes the analog trigger away from Steam. <b>Xbox LT / RT (whole trigger, analog)</b> on the soft pull sends the whole trigger to the Xbox pad (every bit of travel, analog start / end applied, not only past the soft point); on any other input it is a full pull while held. Needs Pad output “Steam + Xbox” or “Xbox only” (cable).</p>
       <h3>Haptics</h3>
       <p>Every binding has its own haptics (off / tick / click / strong) played on that side’s trackpad actuator when it fires; mouse and scroll modes can tick while moving. Gyro mouse haptics are on the gyro page.</p>
       <h3>Touch sensors</h3>
@@ -272,13 +272,14 @@ const MODS={0xE0:"Left Ctrl",0xE1:"Left Shift",0xE2:"Left Alt",0xE3:"Left Win",0
 const MOUSE={0x70:"Mouse left",0x71:"Mouse right",0x7A:"Mouse middle",0x7B:"Mouse back (4)",0x7C:"Mouse forward (5)",0x76:"Mouse move up",0x77:"Mouse move down",0x78:"Mouse move left",0x79:"Mouse move right",0x72:"Wheel up",0x73:"Wheel down",0x74:"Wheel left",0x75:"Wheel right"};
 const PADB=[[0,"A"],[1,"B"],[2,"X"],[3,"Y"],[19,"LB"],[9,"RB"],[27,"LT click"],[23,"RT click"],[17,"L4"],[18,"L5"],[7,"R4"],[8,"R5"],[13,"D-pad up"],[10,"D-pad down"],[12,"D-pad left"],[11,"D-pad right"],[6,"Menu"],[14,"View"],[4,"QAM"],[15,"L3"],[5,"R3"],[26,"Left pad click"],[22,"Right pad click"]];
 const XBOXB=[[16,"Guide"],[0,"A"],[1,"B"],[2,"X"],[3,"Y"],[19,"LB"],[9,"RB"],[27,"LT (full)"],[23,"RT (full)"],[6,"Start"],[14,"Back"],[15,"L3"],[5,"R3"],[13,"D-pad up"],[10,"D-pad down"],[12,"D-pad left"],[11,"D-pad right"]];
+const XTRIG=["Xbox LT (whole trigger, analog)","Xbox RT (whole trigger, analog)"];
 const STICKOUT=["Left stick up (full)","Left stick down (full)","Left stick left (full)","Left stick right (full)","Right stick up (full)","Right stick down (full)","Right stick left (full)","Right stick right (full)","Left trigger (full, analog)","Right trigger (full, analog)"];
 const OPTS=(()=>{
   let h='<option value="0">—</option><optgroup label="Mouse">'+Object.entries(MOUSE).map(([v,n])=>`<option value="${v}">${n}</option>`).join("")+'</optgroup>';
   h+='<optgroup label="Modifiers">'+Object.entries(MODS).map(([v,n])=>`<option value="${v}">${n}</option>`).join("")+'</optgroup>';
   h+='<optgroup label="Keyboard">'+Object.entries(KEYS).map(([v,n])=>`<option value="${v}">${n}</option>`).join("")+'</optgroup>';
   h+='<optgroup label="Steam pad button">'+PADB.map(([b,n])=>`<option value="${0x80+b}">Pad ${n}</option>`).join("")+'</optgroup>';
-  h+='<optgroup label="Xbox pad only (Pad output: Steam + Xbox)">'+XBOXB.map(([b,n])=>`<option value="${0xA0+b}">Xbox ${n}</option>`).join("")+'</optgroup>';
+  h+='<optgroup label="Xbox pad only (Pad output: Steam + Xbox)">'+XBOXB.map(([b,n])=>`<option value="${0xA0+b}">Xbox ${n}</option>`).join("")+XTRIG.map((n,i)=>`<option value="${0xDA+i}">${n}</option>`).join("")+'</optgroup>';
   h+='<optgroup label="Steam pad analog">'+STICKOUT.map((n,i)=>`<option value="${0xD0+i}">${n}</option>`).join("")+'</optgroup>';
   h+='<optgroup label="Profiles / action sets / layers">'+[0,1,2,3].map(p=>`<option value="${0xC0+p}">Switch to profile ${p+1} (action set)</option>`).join("")+[0,1,2,3].map(p=>`<option value="${0xC4+p}">Hold layer: profile ${p+1} (action layer)</option>`).join("")+'</optgroup>';
   h+='<optgroup label="Macros (this profile)">'+[0,1,2,3].map(m=>`<option value="${0xC8+m}">Run macro ${m+1}</option>`).join("")+'</optgroup>';
@@ -335,7 +336,7 @@ function emptyProfile(){ const b=new Uint8Array(PROF_SIZE); b[0]=0xA7; b[1]=PROF
 
 /* ---- UI ---- */
 const SRCNAME={}; for(const [,list] of SRC) for(const [s,n] of list) SRCNAME[s]=n;
-const ACTNAME=v=>v===0?"":MOUSE[v]||MODS[v]||KEYS[v]||(v>=0x80&&v<0x9e?"Pad "+((PADB.find(([b])=>b===v-0x80)||[0,"#"+(v-0x80)])[1]):v>=0xA0&&v<0xBE?"Xbox "+((XBOXB.find(([b])=>b===v-0xA0)||[0,"#"+(v-0xA0)])[1]):v>=0xC0&&v<0xC4?"Profile "+(v-0xBF):v>=0xC4&&v<0xC8?"Layer "+(v-0xC3):v>=0xC8&&v<0xCC?"Macro "+(v-0xC7):v>=0xD0&&v<0xDA?STICKOUT[v-0xD0]:"0x"+v.toString(16));
+const ACTNAME=v=>v===0?"":MOUSE[v]||MODS[v]||KEYS[v]||(v>=0x80&&v<0x9e?"Pad "+((PADB.find(([b])=>b===v-0x80)||[0,"#"+(v-0x80)])[1]):v>=0xA0&&v<0xBE?"Xbox "+((XBOXB.find(([b])=>b===v-0xA0)||[0,"#"+(v-0xA0)])[1]):v>=0xC0&&v<0xC4?"Profile "+(v-0xBF):v>=0xC4&&v<0xC8?"Layer "+(v-0xC3):v>=0xC8&&v<0xCC?"Macro "+(v-0xC7):v>=0xD0&&v<0xDA?STICKOUT[v-0xD0]:v===0xDA||v===0xDB?XTRIG[v-0xDA]:"0x"+v.toString(16));
 let bindClip=null;
 /* built-in presets: set bindings on a fresh profile */
 const PRESETS=[

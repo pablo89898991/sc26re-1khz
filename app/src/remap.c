@@ -144,6 +144,7 @@ static uint8_t mouse_sent_buttons; /* buttons in the last mouse report that went
 static uint8_t mouse_owed;         /* button releases held back for the radio */
 static uint8_t kbd_pend[8];  /* keys pressed while the link refused reports (report layout) */
 static uint32_t xbox_buttons;
+static uint8_t xbox_trig[2];   /* Xbox LT / RT from XTRIG actions, 0..255 */
 static uint8_t move_dirs; /* mouse move actions held: up, down, left, right */
 /* radial menu slices, clockwise from the top */
 static const uint8_t radial_src[2][10] = {
@@ -184,6 +185,11 @@ static struct remap_profile *active(void)
 uint32_t remap_xbox_buttons(void)
 {
 	return remap_enabled() ? xbox_buttons : 0U;
+}
+
+uint8_t remap_xbox_trigger(int t)
+{
+	return remap_enabled() && t >= 0 && t < 2 ? xbox_trig[t] : 0U;
 }
 
 uint8_t remap_mouse_buttons(void)
@@ -448,6 +454,14 @@ static void out_action(uint8_t a, uint8_t keys[6], size_t *nk, uint8_t *mods, ui
 	else if(a >= REMAP_ACT_STICK && a <= REMAP_ACT_TRIG_R)
 	{
 		stick_out |= (uint16_t)BIT(a - REMAP_ACT_STICK);
+	}
+	else if(a == REMAP_ACT_XTRIG_L || a == REMAP_ACT_XTRIG_R)
+	{
+		/* on the soft pull the analog value is set with the trigger (whole travel) */
+		if(out_src != REMAP_SRC_LT_SOFT && out_src != REMAP_SRC_RT_SOFT)
+		{
+			xbox_trig[a - REMAP_ACT_XTRIG_L] = 255U;
+		}
 	}
 }
 
@@ -1112,6 +1126,7 @@ static void release_all(void)
 	flick_left = 0.0f;
 	/* everything else that can hold an output */
 	xbox_buttons = 0U;
+	memset(xbox_trig, 0, sizeof(xbox_trig));
 	move_dirs = 0U;
 	stick_out = 0U;
 	memset(macros, 0, sizeof(macros));
@@ -1971,6 +1986,8 @@ void remap_process(struct controller_report *r, float dt)
 		}
 	}
 	/* triggers: soft pull point with a little hysteresis */
+	uint8_t xtrig_an[2] = { 0U, 0U };
+
 	for(int t = 0; t < 2; ++t)
 	{
 		int16_t v = t ? r->trigger_right : r->trigger_left;
@@ -2060,6 +2077,24 @@ void remap_process(struct controller_report *r, float dt)
 				}
 			}
 		}
+		{
+			/* "Xbox LT / RT (whole trigger)" on the soft pull: the analog value
+			 * (with the analog start / end above) goes to the Xbox pad */
+			const struct remap_binding *sb = binding(p, REMAP_SRC_LT_SOFT + t);
+			int16_t av = t ? r->trigger_right : r->trigger_left;
+
+			for(int i = 0; i < 4; ++i)
+			{
+				uint8_t xa = sb->act[0][i];
+
+				if(xa == REMAP_ACT_XTRIG_L || xa == REMAP_ACT_XTRIG_R)
+				{
+					uint8_t o = (uint8_t)(MAX(av, 0) >> 7);
+
+					xtrig_an[xa - REMAP_ACT_XTRIG_L] = MAX(xtrig_an[xa - REMAP_ACT_XTRIG_L], o);
+				}
+			}
+		}
 		if(bound(binding(p, REMAP_SRC_LT_SOFT + t)))
 		{
 			if(t)
@@ -2075,6 +2110,8 @@ void remap_process(struct controller_report *r, float dt)
 
 	mouse_buttons = 0U;
 	xbox_buttons = 0U;
+	xbox_trig[0] = xtrig_an[0];
+	xbox_trig[1] = xtrig_an[1];
 	move_dirs = 0U;
 	for(int s = 0; s < REMAP_SRC_COUNT; ++s)
 	{

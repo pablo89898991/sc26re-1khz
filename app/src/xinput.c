@@ -362,6 +362,9 @@ void xinput_send(const struct controller_report *r, uint32_t extra)
 	                                                           : (mirror ? (uint8_t)(MAX(r->trigger_left, 0) >> 7) : 0U);
 	rep[5] = (btn & BIT(CONTROLLER_BUTTON_RIGHT_TRIGGER_CLICK)) ? 255U
 	                                                            : (mirror ? (uint8_t)(MAX(r->trigger_right, 0) >> 7) : 0U);
+	/* "Xbox LT / RT (whole trigger)" bindings */
+	rep[4] = MAX(rep[4], remap_xbox_trigger(0));
+	rep[5] = MAX(rep[5], remap_xbox_trigger(1));
 	if(mirror)
 	{
 		sys_put_le16((uint16_t)clamp16(r->stick_left_x), &rep[6]);

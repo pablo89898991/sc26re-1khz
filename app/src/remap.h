@@ -63,6 +63,11 @@ enum
 #define REMAP_ACT_STICK 0xD0   /* + 0..7: left stick up/down/left/right, right stick up/down/left/right (full) */
 #define REMAP_ACT_TRIG_L 0xD8  /* left / right trigger fully pulled (analog) */
 #define REMAP_ACT_TRIG_R 0xD9
+/* Xbox pad LT / RT, the whole trigger: on a soft-pull source the analog trigger
+ * follows the physical one (0..100 %, analog start / end applied), on any other
+ * source a full pull while it is active */
+#define REMAP_ACT_XTRIG_L 0xDA
+#define REMAP_ACT_XTRIG_R 0xDB
 #define REMAP_MACRO_STEPS 16
 
 /* stick / trackpad modes (struct remap_analog.mode) */
@@ -187,6 +192,8 @@ void remap_mouse_out_lock(void);
 void remap_mouse_out_unlock(void);
 /* buttons the active profile sends to the Xbox pad only (Steam bit layout) */
 uint32_t remap_xbox_buttons(void);
+/* Xbox pad LT (0) / RT (1) from "Xbox LT / RT (whole trigger)" bindings, 0..255 */
+uint8_t remap_xbox_trigger(int t);
 /* the active profile's own gyro setting for this sc26re_cfg id, if it has one */
 bool remap_gyro_value(int id, int16_t *value);
 /* output monitor for the editor page (30 bytes) */
