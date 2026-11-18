@@ -296,9 +296,14 @@ void sim_step(const uint8_t *in, uint8_t *out, int dt_us)
 		for(int t = 0; t < (dt_us + 999) / 1000; ++t) gyro_mouse_feed(gm_dps, b, 0.001f);
 		if(gyro_mouse_has_counts() && gyro_mouse_take(&dx, &dy))
 		{
-			uint8_t m[5] = { remap_mouse_buttons(), (uint8_t)dx, (uint8_t)dy, 0, 0 };
+			uint8_t m[5] = { 0, (uint8_t)dx, (uint8_t)dy, 0, 0 };
+			int e;
 
-			if(transport_send_input_report(0x40, m, sizeof(m)) != 0) gyro_mouse_give_back(dx, dy);
+			remap_mouse_out_lock(); /* as imu.c */
+			m[0] = remap_mouse_buttons();
+			e = transport_send_input_report(0x40, m, sizeof(m));
+			remap_mouse_out_unlock();
+			if(e != 0) gyro_mouse_give_back(dx, dy);
 			else gyro_mouse_note_sent(dx, dy);
 		}
 	}

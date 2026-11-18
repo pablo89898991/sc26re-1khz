@@ -801,7 +801,35 @@ static void pad_mouse(int side, const struct remap_analog *an, bool active, int1
 	pad_prev_valid[side] = true;
 }
 
+/*
+ * Mouse reports come from two threads: this remapper (main loop) and the gyro
+ * mouse (IMU thread), whose reports carry the remapper's buttons. Each reads the
+ * buttons and queues its report under this lock, so a gyro report can never
+ * carry a button state older than a report already queued (a click let go and
+ * then pressed again at the PC).
+ */
+K_MUTEX_DEFINE(mouse_out_lock);
+
+void remap_mouse_out_lock(void)
+{
+	(void)k_mutex_lock(&mouse_out_lock, K_FOREVER);
+}
+
+void remap_mouse_out_unlock(void)
+{
+	(void)k_mutex_unlock(&mouse_out_lock);
+}
+
+static void send_mouse_locked(void);
+
 static void send_mouse(void)
+{
+	remap_mouse_out_lock();
+	send_mouse_locked();
+	remap_mouse_out_unlock();
+}
+
+static void send_mouse_locked(void)
 {
 	uint8_t m[5];
 	static uint8_t last_buttons;

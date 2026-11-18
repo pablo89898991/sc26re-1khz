@@ -179,6 +179,9 @@ void remap_set_enabled(bool on);
 /* report loop: outputs keyboard/mouse, rewrites the pad report (dt in s) */
 void remap_process(struct controller_report *r, float dt);
 uint8_t remap_mouse_buttons(void);
+/* held around reading remap_mouse_buttons() and queueing another mouse report */
+void remap_mouse_out_lock(void);
+void remap_mouse_out_unlock(void);
 /* buttons the active profile sends to the Xbox pad only (Steam bit layout) */
 uint32_t remap_xbox_buttons(void);
 /* the active profile's own gyro setting for this sc26re_cfg id, if it has one */

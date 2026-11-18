@@ -1572,15 +1572,18 @@ static bool imu_send_mouse(void)
 	{
 		return false;
 	}
-	m[0] = remap_mouse_buttons(); /* keep the remapper's held mouse buttons */
 	m[1] = (uint8_t)dx;
 	m[2] = (uint8_t)dy;
+	remap_mouse_out_lock(); /* the buttons and the queue order belong together */
+	m[0] = remap_mouse_buttons(); /* keep the remapper's held mouse buttons */
 	if(transport_send_input_report(0x40, m, sizeof(m)) != 0)
 	{
+		remap_mouse_out_unlock();
 		/* link busy: the movement stays for the next report */
 		gyro_mouse_give_back(dx, dy);
 		return false;
 	}
+	remap_mouse_out_unlock();
 	gyro_mouse_note_sent(dx, dy);
 	return true;
 }
