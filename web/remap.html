@@ -99,13 +99,14 @@
 <body>
 <div class="top">
   <div class="topin">
-    <div class="brand">SC2 <span class="hz">Remapper</span> <span class="note" id="pagever" title="page version — if it is older than expected, press Ctrl+F5">p.2026-11-18g</span></div>
+    <div class="brand">SC2 <span class="hz">Remapper</span> <span class="note" id="pagever" title="page version — if it is older than expected, press Ctrl+F5">p.2026-11-18h</span></div>
     <button class="primary" id="connect">Connect controller</button>
     <span id="status" class="chip">not connected</span>
     <span class="grow"></span>
     <button id="onoff" class="sw" title="On the controller: LB + RB + Menu">Remapper <b>?</b></button>
     <button id="gmOn" class="sw" title="On the controller: LB + RB + View">Gyro mouse <b>?</b></button>
     <label class="note" id="padoutL" hidden title="Xbox 360 = the game sees an Xbox controller (XInput) over the USB cable; Steam keeps the Steam button. Takes effect after the controller is turned off and on.">Pad output <select id="padout"><option value="0">Steam Controller</option><option value="1">Xbox 360 only (USB)</option><option value="2">Steam + Xbox 360 (USB)</option></select></label>
+    <label class="note" id="xiguideL" hidden title="Xbox 360 only: tapping the Steam button on its own presses the Xbox Guide button (Windows: Game Bar). Steam + another button (profiles, power) never does. Any input can also be bound to the action 'Xbox Guide'."><input type="checkbox" id="xiguide"> Steam = Xbox Guide</label>
   </div>
 </div>
 <div class="wrap">
@@ -268,7 +269,7 @@ const KEYS={4:"A",5:"B",6:"C",7:"D",8:"E",9:"F",10:"G",11:"H",12:"I",13:"J",14:"
 const MODS={0xE0:"Left Ctrl",0xE1:"Left Shift",0xE2:"Left Alt",0xE3:"Left Win",0xE4:"Right Ctrl",0xE5:"Right Shift",0xE6:"Right Alt",0xE7:"Right Win"};
 const MOUSE={0x70:"Mouse left",0x71:"Mouse right",0x7A:"Mouse middle",0x7B:"Mouse back (4)",0x7C:"Mouse forward (5)",0x76:"Mouse move up",0x77:"Mouse move down",0x78:"Mouse move left",0x79:"Mouse move right",0x72:"Wheel up",0x73:"Wheel down",0x74:"Wheel left",0x75:"Wheel right"};
 const PADB=[[0,"A"],[1,"B"],[2,"X"],[3,"Y"],[19,"LB"],[9,"RB"],[27,"LT click"],[23,"RT click"],[17,"L4"],[18,"L5"],[7,"R4"],[8,"R5"],[13,"D-pad up"],[10,"D-pad down"],[12,"D-pad left"],[11,"D-pad right"],[6,"Menu"],[14,"View"],[4,"QAM"],[15,"L3"],[5,"R3"],[26,"Left pad click"],[22,"Right pad click"]];
-const XBOXB=[[0,"A"],[1,"B"],[2,"X"],[3,"Y"],[19,"LB"],[9,"RB"],[27,"LT (full)"],[23,"RT (full)"],[6,"Start"],[14,"Back"],[15,"L3"],[5,"R3"],[13,"D-pad up"],[10,"D-pad down"],[12,"D-pad left"],[11,"D-pad right"]];
+const XBOXB=[[16,"Guide"],[0,"A"],[1,"B"],[2,"X"],[3,"Y"],[19,"LB"],[9,"RB"],[27,"LT (full)"],[23,"RT (full)"],[6,"Start"],[14,"Back"],[15,"L3"],[5,"R3"],[13,"D-pad up"],[10,"D-pad down"],[12,"D-pad left"],[11,"D-pad right"]];
 const STICKOUT=["Left stick up (full)","Left stick down (full)","Left stick left (full)","Left stick right (full)","Right stick up (full)","Right stick down (full)","Right stick left (full)","Right stick right (full)","Left trigger (full, analog)","Right trigger (full, analog)"];
 const OPTS=(()=>{
   let h='<option value="0">—</option><optgroup label="Mouse">'+Object.entries(MOUSE).map(([v,n])=>`<option value="${v}">${n}</option>`).join("")+'</optgroup>';
@@ -750,10 +751,12 @@ async function refreshState(){
   if(on===null){ $("#status").textContent="this firmware has no remapper (needs sc26re v51+)"; $("#status").className="chip warn"; return; }
   remapOn=!!on; $("#onoff").innerHTML="Remapper <b>"+(on?"ON":"off")+"</b>"; $("#onoff").className="sw"+(on?" on":"");
   $("#activeProf").value=String(p||0);
-  { const po=await cfgGet("pad_out"); $("#padoutL").hidden=po===null; if(po!==null) $("#padout").value=String(po); }
+  { const po=await cfgGet("pad_out"); $("#padoutL").hidden=po===null; if(po!==null) $("#padout").value=String(po);
+    const xg=po===null?null:await cfgGet("xi_guide").catch(()=>null); $("#xiguideL").hidden=xg===null||po!==1; if(xg!==null) $("#xiguide").checked=xg===1; }
   $("#status").textContent=`connected · ${ctl().productId===0x1302?"USB cable":"Puck"}`; $("#status").className="chip ok";
 }
 $("#onoff").onclick=async()=>{ try{ const on=await cfgGet("remap_on"); await cfgSet("remap_on",on?0:1); await refreshState(); }catch(e){ $("#pstatus").innerHTML=`<span class="err">${e.message}</span>`; } };
+$("#xiguide").onchange=async e=>{ try{ await cfgSet("xi_guide",e.target.checked?1:0); }catch(err){ $("#pstatus").innerHTML=`<span class="err">${err.message}</span>`; } };
 $("#padout").onchange=async e=>{ try{ await cfgSet("pad_out",+e.target.value); alert("Saved. Turn the controller off and on (hold Steam, or Steam + Y) for the new pad output to take effect."); }catch(err){ $("#pstatus").innerHTML=`<span class="err">${err.message}</span>`; } };
 $("#activeProf").onchange=async e=>{ try{ await cfgSet("remap_profile",+e.target.value); }catch(err){ $("#pstatus").innerHTML=`<span class="err">${err.message}</span>`; } };
 

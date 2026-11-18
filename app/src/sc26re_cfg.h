@@ -97,6 +97,7 @@ enum sc26re_cfg_id
 	SC26RE_CFG_GM_RATCHET,     /* gyro ratchet: while this button is held the gyro output pauses, -1 = none */
 	SC26RE_CFG_GM_ACT_BUTTON2, /* second gyro activation button (either works), -1 none */
 	SC26RE_CFG_GM_SMOOTH,      /* gyro mouse precision smoothing threshold, 0.1 deg/s (0 off) */
+	SC26RE_CFG_XI_GUIDE,       /* Xbox output: a lone tap of the Steam button = Xbox Guide (0 off) */
 	SC26RE_CFG_COUNT,
 };
 

@@ -30,6 +30,7 @@ target_sources(app PRIVATE
 	src/gyro_mouse.c
 	src/remap.c
 	src/xinput.c
+	src/xinput_guide.c
 	src/stick_test.c
 )
 

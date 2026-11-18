@@ -346,6 +346,16 @@ void xinput_send(const struct controller_report *r, uint32_t extra)
 			rep[map[i].byte] |= map[i].mask;
 		}
 	}
+	/* Xbox Guide: the remapper's "Xbox Guide" action (Steam bit in extra), or
+	 * (option, Xbox-only output) the Steam button tapped on its own */
+	if(extra & BIT(CONTROLLER_BUTTON_STEAM))
+	{
+		rep[3] |= 0x04;
+	}
+	if(xinput_guide_tap(mirror ? r->buttons : 0U, k_uptime_get()))
+	{
+		rep[3] |= 0x04;
+	}
 	rep[4] = (btn & BIT(CONTROLLER_BUTTON_LEFT_TRIGGER_CLICK)) ? 255U
 	                                                           : (mirror ? (uint8_t)(MAX(r->trigger_left, 0) >> 7) : 0U);
 	rep[5] = (btn & BIT(CONTROLLER_BUTTON_RIGHT_TRIGGER_CLICK)) ? 255U

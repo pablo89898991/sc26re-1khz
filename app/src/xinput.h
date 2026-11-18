@@ -16,3 +16,8 @@ bool xinput_enabled(void);
 void xinput_send(const struct controller_report *r, uint32_t extra);
 /* XInput active: leave only Steam / QAM in the Steam pad report */
 void xinput_neutral_pad(struct controller_report *r);
+
+/* touch sensors do not make a Steam press a chord */
+#define XI_GUIDE_IGNORE (BIT(20) | BIT(21) | BIT(24) | BIT(25) | BIT(28) | BIT(29))
+/* option xi_guide: true while the Xbox Guide tap is on */
+bool xinput_guide_tap(uint32_t buttons, int64_t now);
