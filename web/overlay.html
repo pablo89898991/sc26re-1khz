@@ -25,6 +25,7 @@
   <div class="row"><label>Background</label><select id="bg"><option value="#00ff00">green (chroma key)</option><option value="#ff00ff">magenta (chroma key)</option><option value="#0d1320">dark</option><option value="#ffffff">white</option></select></div>
   <div class="row"><label>Body</label><input type="color" id="bodyCol" value="#2a2f3a"><label>Pressed</label><input type="color" id="hiCol" value="#4fc98a"></div>
   <div class="row"><label>View tilt</label><input type="range" id="tilt" min="0" max="90" value="55"><label>Size</label><input type="range" id="zoom" min="40" max="160" value="100"></div>
+  <div class="row"><label><input type="checkbox" id="xray" checked> show back buttons, triggers and grips through the body</label></div>
   <div class="row"><label><input type="checkbox" id="useGyro" checked> gyro moves it</label><button id="recenter">Recenter (R)</button></div>
   <div class="row"><label><input type="checkbox" id="level"> keep level with gravity</label><label><input type="checkbox" id="imuOn"> turn gyro on without Steam</label></div>
   <div class="row"><label>Invert</label><label><input type="checkbox" id="invP"> pitch</label><label><input type="checkbox" id="invY"> yaw</label><label><input type="checkbox" id="invR"> roll</label></div>
@@ -34,7 +35,7 @@
 "use strict";
 const $=s=>document.querySelector(s);
 /* ---------- settings ---------- */
-const SET_IDS=["bg","bodyCol","hiCol","tilt","zoom","useGyro","level","imuOn","invP","invY","invR"];
+const SET_IDS=["xray","bg","bodyCol","hiCol","tilt","zoom","useGyro","level","imuOn","invP","invY","invR"];
 try{ const o=JSON.parse(localStorage.getItem("sc26re_overlay")||"{}"); for(const k of SET_IDS) if(k in o){ const e=$("#"+k); if(e.type==="checkbox") e.checked=o[k]; else e.value=o[k]; } }catch(e){}
 function saveSet(){ const o={}; for(const k of SET_IDS){ const e=$("#"+k); o[k]=e.type==="checkbox"?e.checked:e.value; } try{ localStorage.setItem("sc26re_overlay",JSON.stringify(o)); }catch(e){} }
 SET_IDS.forEach(k=>$("#"+k).addEventListener("input",saveSet));
@@ -116,22 +117,22 @@ for(const [an,px,rot] of [["lp",306,9],["rp",502,-9]]){ const [x,y]=P2(px,245);
 /* bumpers and triggers on the top edge (they stick out of the back half) */
 for(const [side,px] of [[0,252],[1,556]]){ const [x,y]=P2(px,52);
   part(side?"rb":"lb",roundRect(66,12,5),-2,T-2,{x,y:y+6,bit:side?9:19});
-  const tr=part(side?"rt":"lt",roundRect(56,16,6),-T,-2,{x,y:y+10,bit:side?23:27,kind:"trigger"}); tr.side=side; }
+  const tr=part(side?"rt":"lt",roundRect(56,16,6),-T,-2,{x,y:y+52,bit:side?23:27,kind:"trigger"}); tr.side=side; tr.xray=true; }
 /* back buttons and grip zones on the back */
-for(const [bit,px,py] of [[17,190,215],[18,190,250],[7,618,215],[8,618,250]]){ const [x,y]=P2(px,py); part("back"+bit,roundRect(26,18,7),-T-4,-T,{x,y,bit}); }
-for(const [bit,px] of [[29,186],[28,622]]){ const [x,y]=P2(px,345); part("grip"+bit,roundRect(52,70,20),-T-1.5,-T,{x,y,bit,col:"#232834",kind:"grip"}); }
+for(const [bit,px,py] of [[17,190,215],[18,190,250],[7,618,215],[8,618,250]]){ const [x,y]=P2(px,py); part("back"+bit,roundRect(26,18,7),-T-4,-T,{x,y,bit}).xray=true; }
+for(const [bit,px] of [[29,186],[28,622]]){ const [x,y]=P2(px,345); part("grip"+bit,roundRect(52,70,20),-T-6,-T,{x,y,bit,col:"#232834",kind:"grip"}).xray=true; }
 
 /* ---------- WebGL ---------- */
 const cv=$("#c"), gl=cv.getContext("webgl",{antialias:true,premultipliedAlpha:false});
 const vs=`attribute vec3 p; attribute vec3 n; uniform mat4 M, VP; varying vec3 vn; varying vec3 vp;
 void main(){ vec4 w=M*vec4(p,1.); vp=w.xyz; vn=mat3(M)*n; gl_Position=VP*w; }`;
-const fs=`precision mediump float; varying vec3 vn; varying vec3 vp; uniform vec3 col; uniform vec3 eye;
+const fs=`precision mediump float; varying vec3 vn; varying vec3 vp; uniform vec3 col; uniform vec3 eye; uniform float alpha;
 void main(){ vec3 N=normalize(vn); vec3 L=normalize(vec3(.4,.8,1.)); vec3 E=normalize(eye-vp); vec3 H=normalize(L+E);
  float d=max(dot(N,L),0.), s=pow(max(dot(N,H),0.),40.)*.35, rim=pow(1.-max(dot(N,E),0.),3.)*.25;
- gl_FragColor=vec4(col*(.32+.68*d)+vec3(s+rim),1.); }`;
+ gl_FragColor=vec4(col*(.32+.68*d)+vec3(s+rim),alpha); }`;
 function sh(t,src){ const s=gl.createShader(t); gl.shaderSource(s,src); gl.compileShader(s); if(!gl.getShaderParameter(s,gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s)); return s; }
 const prog=gl.createProgram(); gl.attachShader(prog,sh(gl.VERTEX_SHADER,vs)); gl.attachShader(prog,sh(gl.FRAGMENT_SHADER,fs)); gl.linkProgram(prog); gl.useProgram(prog);
-const loc={p:gl.getAttribLocation(prog,"p"),n:gl.getAttribLocation(prog,"n"),M:gl.getUniformLocation(prog,"M"),VP:gl.getUniformLocation(prog,"VP"),col:gl.getUniformLocation(prog,"col"),eye:gl.getUniformLocation(prog,"eye")};
+const loc={p:gl.getAttribLocation(prog,"p"),n:gl.getAttribLocation(prog,"n"),M:gl.getUniformLocation(prog,"M"),VP:gl.getUniformLocation(prog,"VP"),col:gl.getUniformLocation(prog,"col"),eye:gl.getUniformLocation(prog,"eye"),alpha:gl.getUniformLocation(prog,"alpha")};
 for(const pt of PARTS){ pt.pb=gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER,pt.pb); gl.bufferData(gl.ARRAY_BUFFER,new Float32Array(pt.m.p),gl.STATIC_DRAW);
   pt.nb=gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER,pt.nb); gl.bufferData(gl.ARRAY_BUFFER,new Float32Array(pt.m.n),gl.STATIC_DRAW); pt.cnt=pt.m.p.length/3; }
 gl.enable(gl.DEPTH_TEST);
@@ -186,7 +187,12 @@ function frame(){
   const tiltQ=qaxis([1,0,0],-(+$("#tilt").value)*Math.PI/180);
   const R=qmul(dragQ,qmul(tiltQ,qmul(qRef,q)));
   const base=mq(R), body=hex($("#bodyCol").value), hi=hex($("#hiCol").value);
+  const xr=$("#xray").checked;
+  for(const pass of [0,1]){
+  if(pass===1){ if(!xr) break; gl.clear(gl.DEPTH_BUFFER_BIT); gl.enable(gl.DEPTH_TEST); gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA,gl.ONE_MINUS_SRC_ALPHA); }
+  else { gl.enable(gl.DEPTH_TEST); gl.disable(gl.BLEND); }
   for(const pt of PARTS){
+    if(xr&&!!pt.xray!==(pass===1)) continue;
     let local=mt(pt.x,pt.y,0), extra=m4(), col=pt.col?hex(pt.col):mix(body,[0.55,0.6,0.7],pt.kind==="body"?0:0.35), on=pt.bit!==undefined&&(st.btn&(1<<pt.bit));
     if(pt.kind==="stick"){ const s=st[pt.an]; extra=mq(qnorm(qmul(qaxis([0,1,0],s[0]*0.35),qaxis([1,0,0],-s[1]*0.35)))); local=mmul(local,mt(0,0,T)); extra=mmul(extra,mt(0,0,-T));
       if(pt.cap!==undefined&&(st.btn&(1<<pt.cap))) col=mix(col,hi,0.75); }
@@ -198,10 +204,13 @@ function frame(){
     if(pt.kind==="button"&&on) col=hi;
     if(pt.kind==="body") col=body;
     const M=mmul(base,mmul(local,extra));
-    gl.uniformMatrix4fv(loc.M,false,M); gl.uniform3fv(loc.col,col);
+    let alpha=1;
+    if(pass===1){ const act=on||(pt.kind==="trigger"&&(pt.side?st.rt:st.lt)>0.02); alpha=act?0.95:0.35; if(!act) col=mix(col,[0.75,0.8,0.9],0.5); }
+    gl.uniformMatrix4fv(loc.M,false,M); gl.uniform3fv(loc.col,col); gl.uniform1f(loc.alpha,alpha);
     gl.bindBuffer(gl.ARRAY_BUFFER,pt.pb); gl.enableVertexAttribArray(loc.p); gl.vertexAttribPointer(loc.p,3,gl.FLOAT,false,0,0);
     gl.bindBuffer(gl.ARRAY_BUFFER,pt.nb); gl.enableVertexAttribArray(loc.n); gl.vertexAttribPointer(loc.n,3,gl.FLOAT,false,0,0);
     gl.drawArrays(gl.TRIANGLES,0,pt.cnt);
+  }
   }
   requestAnimationFrame(frame);
 }
