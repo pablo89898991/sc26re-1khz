@@ -397,3 +397,5 @@ const uint8_t *remap_sim_staging(int *p);
 int sim_staging(uint8_t *out) { int p; const uint8_t *b = remap_sim_staging(&p); memcpy(out, b, 2056); return p; }
 void remap_sim_mouse(float *out);
 void sim_mouse_state(float *out) { remap_sim_mouse(out); }
+/* the PC holds what another producer (lizard mode) sent last */
+void sim_host_set(uint8_t mb, const uint8_t *kbd) { host_mb = mb; memcpy(host_kbd, kbd, 8); }

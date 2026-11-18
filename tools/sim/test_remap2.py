@@ -434,6 +434,17 @@ def regress_stick_mouse_partial_deflection():
     dx = sum(m[1] for m in e.mouse())
     assert 900 <= dx <= 1100, dx   # ((0.55 - 0.1) / 0.9)^2 * 4000 = 1000
 
+@test
+def regress_turning_on_clears_what_lizard_left():
+    p = Profile(); p.bind("A", key("a"))
+    for tr in (None, (1, 1, 0, 15), (2, 0, 0, 15)):
+        s = Sim()
+        if tr: s.transport(*tr)
+        s.upload(0, p); s.cfg("remap_profile", 0); s.cfg("remap_on", 0); s.run(50)
+        s.lib.sim_host_set(1, bytes([0, 0, 0x28, 0, 0, 0, 0, 0]))  # lizard left a click and Enter
+        s.cfg("remap_on", 1); s.run(300)
+        h = s.host(); assert h["mb"] == 0 and h["kbd"] == bytes(8), (tr, h)
+
 if __name__ == "__main__":
     only = sys.argv[1:]; ok = fail = 0
     for t in TESTS:

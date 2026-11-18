@@ -1585,6 +1585,13 @@ void remap_process(struct controller_report *r, float dt)
 			flush_outputs();
 			return;
 		}
+		if(!was_on)
+		{
+			/* just turned on: lizard mode (or anything else) may have left keys
+			 * or a click held at the PC: send our full state once */
+			kbd_valid = false;
+			mouse_refresh = true;
+		}
 		was_on = true;
 	}
 	p = active();
