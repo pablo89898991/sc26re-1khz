@@ -365,12 +365,16 @@ void xinput_send(const struct controller_report *r, uint32_t extra)
 	/* "Xbox LT / RT (whole trigger)" bindings */
 	rep[4] = MAX(rep[4], remap_xbox_trigger(0));
 	rep[5] = MAX(rep[5], remap_xbox_trigger(1));
-	if(mirror)
 	{
-		sys_put_le16((uint16_t)clamp16(r->stick_left_x), &rep[6]);
-		sys_put_le16((uint16_t)clamp16(r->stick_left_y), &rep[8]);
-		sys_put_le16((uint16_t)clamp16(r->stick_right_x), &rep[10]);
-		sys_put_le16((uint16_t)clamp16(r->stick_right_y), &rep[12]);
+		/* "Xbox stick" modes of the remapper, plus (Xbox only) the pad's own sticks */
+		int16_t xs[2][2];
+
+		remap_xbox_stick(0, &xs[0][0], &xs[0][1]);
+		remap_xbox_stick(1, &xs[1][0], &xs[1][1]);
+		sys_put_le16((uint16_t)clamp16((mirror ? r->stick_left_x : 0) + xs[0][0]), &rep[6]);
+		sys_put_le16((uint16_t)clamp16((mirror ? r->stick_left_y : 0) + xs[0][1]), &rep[8]);
+		sys_put_le16((uint16_t)clamp16((mirror ? r->stick_right_x : 0) + xs[1][0]), &rep[10]);
+		sys_put_le16((uint16_t)clamp16((mirror ? r->stick_right_y : 0) + xs[1][1]), &rep[12]);
 	}
 
 	key = k_spin_lock(&xi_lock);

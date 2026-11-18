@@ -83,6 +83,8 @@ enum
 #define REMAP_ANALOG_GRID 9     /* trackpads: 3 x 3 zones (8 directions + centre), each its own binding */
 #define REMAP_ANALOG_RADIAL 10  /* trackpads: radial menu, 2..10 slices (speed), fires on lift (or click) */
 #define REMAP_ANALOG_SINGLE 11  /* trackpads: the whole pad is one button (the centre source), touch / click / pressure */
+#define REMAP_ANALOG_XBOX 12    /* sticks: to the Xbox pad's stick (dead zones applied); trackpads: finger position = Xbox stick.
+                                 * REMAP_AF_OTHER_STICK: the other side's stick. The Steam pad does not get it. */
 
 #define REMAP_PF_BLOCK_UNBOUND 0x01 /* inputs without a binding send nothing to Steam */
 #define REMAP_PF_GYRO 0x02          /* the profile's own gyro settings replace the global ones */
@@ -194,6 +196,8 @@ void remap_mouse_out_unlock(void);
 uint32_t remap_xbox_buttons(void);
 /* Xbox pad LT (0) / RT (1) from "Xbox LT / RT (whole trigger)" bindings, 0..255 */
 uint8_t remap_xbox_trigger(int t);
+/* Xbox pad left (0) / right (1) stick from "Xbox stick" modes */
+void remap_xbox_stick(int i, int16_t *x, int16_t *y);
 /* the active profile's own gyro setting for this sc26re_cfg id, if it has one */
 bool remap_gyro_value(int id, int16_t *value);
 /* output monitor for the editor page (30 bytes) */

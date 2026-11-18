@@ -99,7 +99,7 @@
 <body>
 <div class="top">
   <div class="topin">
-    <div class="brand">SC2 <span class="hz">Remapper</span> <span class="note" id="pagever" title="page version — if it is older than expected, press Ctrl+F5">p.2026-11-18k</span></div>
+    <div class="brand">SC2 <span class="hz">Remapper</span> <span class="note" id="pagever" title="page version — if it is older than expected, press Ctrl+F5">p.2026-11-18l</span></div>
     <button class="primary" id="connect">Connect controller</button>
     <span id="status" class="chip">not connected</span>
     <span class="grow"></span>
@@ -133,6 +133,7 @@
         <button id="clear" class="ghost danger">Clear</button>
       </div>
       <p id="pstatus" class="note" style="min-height:1.2em;margin:6px 0 0"></p>
+      <p id="xbwarn" class="note warn" hidden style="margin:4px 0 0"></p>
       <div class="board">
         <div class="col l" id="colL"></div>
         <div><div id="pic"></div><div id="mon" class="mon"></div><p class="note" style="text-align:center;margin:4px 0 0">Click an input to edit it · pressed inputs light up green · <a href="#" id="toGyro">Gyro &amp; gyro mouse settings →</a> · <a href="overlay.html" target="_blank">3D overlay for recording →</a></p></div>
@@ -308,8 +309,8 @@ const softPct=t=>(U16(18+2*t)||5000)/100;
 const RAWBTN=[[0,"A"],[1,"B"],[2,"X"],[3,"Y"],[19,"LB"],[9,"RB"],[27,"LT click"],[23,"RT click"],[17,"L4"],[18,"L5"],[7,"R4"],[8,"R5"],[15,"L3"],[5,"R3"],[6,"Menu"],[14,"View"],[4,"QAM"],[13,"D-pad up"],[10,"D-pad down"],[12,"D-pad left"],[11,"D-pad right"],[26,"Left pad click"],[22,"Right pad click"],[25,"Left pad touch"],[21,"Right pad touch"],[24,"Left stick touch"],[20,"Right stick touch"],[29,"Left grip touch"],[28,"Right grip touch"]];
 const SHBTN=[[0,"— none —"],...RAWBTN.map(([v,n])=>[v+1,n])];
 const shName=g=>(SHBTN.find(([v])=>v===shBtn(g))||[0,"?"])[1];
-const MODES_STICK=[[0,"Analog (to Steam)"],[1,"D-pad 4-way"],[2,"D-pad 8-way"],[3,"Mouse"],[4,"Scroll"],[7,"Flick stick"]];
-const MODES_PAD=[[0,"To Steam (not remapped)"],[1,"D-pad 4-way"],[2,"D-pad 8-way"],[9,"9 zones (grid)"],[5,"Gates (4 corners)"],[3,"Mouse"],[6,"Joystick"],[7,"Flick stick"],[4,"Scroll wheel (circle)"],[8,"Directional swipe"],[10,"Radial menu"],[11,"Single button (whole pad)"]];
+const MODES_STICK=[[0,"Analog (to Steam)"],[12,"Xbox stick (to the Xbox pad)"],[1,"D-pad 4-way"],[2,"D-pad 8-way"],[3,"Mouse"],[4,"Scroll"],[7,"Flick stick"]];
+const MODES_PAD=[[0,"To Steam (not remapped)"],[1,"D-pad 4-way"],[2,"D-pad 8-way"],[9,"9 zones (grid)"],[5,"Gates (4 corners)"],[3,"Mouse"],[6,"Joystick"],[7,"Flick stick"],[4,"Scroll wheel (circle)"],[8,"Directional swipe"],[10,"Radial menu"],[11,"Single button (whole pad)"],[12,"Xbox stick (finger position)"]];
 const modeNameL=(an,L)=>((isPad(an)?MODES_PAD:MODES_STICK).find(([v])=>v===prof[cur][aOffL(an,L)])||[0,"?"])[1];
 const modeName=an=>modeNameL(an,0)+(shBtn(GRP_OF_AN[an])?` <em>⇧ ${shName(GRP_OF_AN[an])}:</em> ${modeNameL(an,1)}`:"");
 const HAPT=[[0,"off"],[1,"tick (light)"],[2,"click"],[3,"strong"]];
@@ -353,6 +354,10 @@ const PRESETS=[
    B(13,0x1E); B(11,0x1F); B(10,0x20); B(12,0x21); B(6,0x2B); B(14,0x29); B(17,0x14); B(7,0x0A);
    b[17]|=2|4; const g=[0,21,1,1,2,3,100,100,100,100,100,0,30,150,0,0,300,100,30,1,-1,90,-1,90,-1,90,-1,90,60,-1];
    g.forEach((v,k)=>dv.setInt16(44+k*2,v,true)); }],
+ ["Xbox pad (whole controller)",b=>{ const B=(s,a)=>{ b[488+s*14+1]=a; };
+   /* buttons, D-pad, Steam = Guide, sticks and analog triggers all to the Xbox pad; nothing to Steam */
+   for(const x of [0,1,2,3,19,9,6,14,15,5,13,10,12,11,16]) B(x,0xA0+x);
+   b[256]=12; b[256+18]=12; B(58,0xDA); B(59,0xDB); b[17]|=1; }],
 ];
 let sel=null; /* number = source, string = analog group "ls"/"rs"/"lp"/"rp" */
 function buildTabs(){ if(typeof gyScopeShow==='function'&&document.getElementById('gyScope')&&$("#gyScope").value==="p") setTimeout(gyScopeShow,0); $("#tabs").innerHTML=[0,1,2,3].map(i=>`<button class="tab${i===cur?" on":""}" data-p="${i}">Profile ${i+1}${nameOf(prof[i])?": "+nameOf(prof[i]):""}</button>`).join(""); document.querySelectorAll("#tabs .tab").forEach(b=>b.onclick=()=>{ saveName(); cur=+b.dataset.p; render(); }); }
@@ -437,7 +442,7 @@ function gyroSummary(){ const e=document.getElementById("g_gm_output"), a=docume
   return e.options[e.selectedIndex].text+(a&&a.selectedIndex>=0?" · "+a.options[a.selectedIndex].text:"")+" →"; }
 function showView(v){ document.querySelectorAll(".view").forEach(x=>x.classList.toggle("on",x.dataset.v===v)); for(const k of ["map","gyro","ctl","cal","help"]) $("#v_"+k).hidden=k!==v; window.scrollTo(0,0); }
 function render(){
-  buildTabs();
+  buildTabs(); updXbWarn();
   $("#pname").value=nameOf(prof[cur]); $("#block").checked=(prof[cur][17]&1)!==0;
   { const L=prof[cur].slice(40,43), on=L[0]|L[1]|L[2]; $("#pledOn").checked=!!on; if(on) $("#pled").value="#"+[...L].map(x=>x.toString(16).padStart(2,"0")).join(""); }
   const b0=prof[cur];
@@ -537,14 +542,15 @@ function editor(){
       h+=`<div class="row2"><label>Works while</label><select id="aact"><option value="0">the pad is touched</option><option value="1">the pad is clicked</option><option value="16">the pad is pressed harder than…</option></select></div>`;
       if(av===16) h+=pct("press",P(16)||30,1,100,"Pressure","how hard you must press (light touch ≈ 5 %, click ≈ 60–80 %)");
     }
-    if(!pad&&m===0){
-      h+=pct("dzi",P(2),0,90,"Inner dead zone","0 = Steam’s own");
+    if(m===12){ const sd=(an==="ls"||an==="lp")?0:1; h+=`<div class="row2"><label>Drives</label><select id="aoth"><option value="0">the Xbox pad’s ${sd?"right":"left"} stick</option><option value="4">the Xbox pad’s ${sd?"left":"right"} stick</option></select><small>needs Pad output “Steam + Xbox” or “Xbox only” (cable); Steam does not get it</small></div>`; }
+    if(!pad&&(m===0||m===12)){
+      h+=pct("dzi",P(2),0,90,"Inner dead zone",m===12?"":"0 = Steam’s own");
       h+=pct("dzo",P(4),0,50,"Outer dead zone","full deflection is reached this much earlier");
       h+=pct("anti",P(14),0,90,"Anti dead zone","smallest deflection Steam sees once out of the dead zone");
       h+=slider("crv",cv||1,0.5,4,0.05,"Response curve","×","1.0 linear · above = finer near the centre · below = faster start");
     }
-    if(pad&&m===6){
-      h+=`<div class="row2"><label>Drives</label><select id="aoth"><option value="0">the ${j?"right":"left"} stick</option><option value="4">the ${j?"left":"right"} stick</option></select><small>added to that stick in the pad report</small></div>`;
+    if(pad&&(m===6||m===12)){
+      if(m===6) h+=`<div class="row2"><label>Drives</label><select id="aoth"><option value="0">the ${j?"right":"left"} stick</option><option value="4">the ${j?"left":"right"} stick</option></select><small>added to that stick in the pad report</small></div>`;
       h+=pct("dzi",P(2),0,90,"Inner dead zone","");
       h+=pct("dzo",P(4),0,50,"Outer dead zone","full deflection this much before the edge");
       h+=pct("anti",P(14),0,90,"Anti dead zone","");
@@ -605,7 +611,7 @@ function editor(){
       if(nm===7){ setU16(o+6,100); setU16(o+2,8000); }
       if(nm===8) setU16(o+2,1500);
       if(pad&&(nm===5||nm===9)&&!b[o+8]) b[o+8]=1;
-      if(nm===6){ setU16(o+2,1000); setU16(o+4,1000); }
+      if(nm===6||(nm===12&&pad)){ setU16(o+2,1000); setU16(o+4,1000); }
       if(nm===10){ setU16(o+6,8); setU16(o+2,2500); if(!b[o+8]) b[o+8]=1; }
       if(nm===3&&pad){ setU16(o+10,0); setU16(o+4,0); }
       setDirty(); render(); };
@@ -761,13 +767,29 @@ async function refreshState(){
   if(on===null){ $("#status").textContent="this firmware has no remapper (needs sc26re v51+)"; $("#status").className="chip warn"; return; }
   remapOn=!!on; $("#onoff").innerHTML="Remapper <b>"+(on?"ON":"off")+"</b>"; $("#onoff").className="sw"+(on?" on":"");
   $("#activeProf").value=String(p||0);
-  { const po=await cfgGet("pad_out"); $("#padoutL").hidden=po===null; if(po!==null) $("#padout").value=String(po);
+  { const po=await cfgGet("pad_out"); padOutNow=po; $("#padoutL").hidden=po===null; if(po!==null) $("#padout").value=String(po);
     const xg=po===null?null:await cfgGet("xi_guide").catch(()=>null); $("#xiguideL").hidden=xg===null||po!==1; if(xg!==null) $("#xiguide").checked=xg===1; }
   $("#status").textContent=`connected · ${ctl().productId===0x1302?"USB cable":"Puck"}`; $("#status").className="chip ok";
+  updXbWarn();
 }
+/* the profile sends to the Xbox pad, which needs Pad output Steam + Xbox / Xbox only and the cable */
+let padOutNow=null, padOutBoot=null, linkNow=null;
+function usesXbox(b){
+  for(let s=0;s<66+46;s++){ const o=(s<66?488+s*14:1412+(s-66)*14)+1; for(let k=0;k<12;k++){ const a=b[o+k]; if((a>=0xA0&&a<0xBE)||a===0xDA||a===0xDB) return true; } }
+  for(let i=0;i<4;i++) if(b[256+i*18]===12) return true;
+  for(let g=0;g<8;g++) if(b[328+g*20+2]===12) return true;
+  return false;
+}
+function updXbWarn(){ const w=$("#xbwarn"); if(!w) return;
+  let m=""; if(usesXbox(prof[cur])){
+    if(padOutNow===0) m="This profile sends to the Xbox pad, but Pad output (top right) is “Steam Controller”: choose “Steam + Xbox 360” or “Xbox 360 only”, then turn the controller off and on.";
+    else if(padOutNow!==null&&padOutBoot!==null&&padOutBoot!==padOutNow) m="Pad output was changed: turn the controller off and on for it to take effect.";
+    else if(linkNow!==null&&linkNow!==0) m="This profile sends to the Xbox pad, which exists only over the USB cable (not over the Puck or Bluetooth): Xbox buttons, sticks and triggers do nothing on this link.";
+  }
+  w.textContent=m; w.hidden=!m; }
 $("#onoff").onclick=async()=>{ try{ const on=await cfgGet("remap_on"); await cfgSet("remap_on",on?0:1); await refreshState(); }catch(e){ $("#pstatus").innerHTML=`<span class="err">${e.message}</span>`; } };
 $("#xiguide").onchange=async e=>{ try{ await cfgSet("xi_guide",e.target.checked?1:0); }catch(err){ $("#pstatus").innerHTML=`<span class="err">${err.message}</span>`; } };
-$("#padout").onchange=async e=>{ try{ await cfgSet("pad_out",+e.target.value); alert("Saved. Turn the controller off and on (hold Steam, or Steam + Y) for the new pad output to take effect."); }catch(err){ $("#pstatus").innerHTML=`<span class="err">${err.message}</span>`; } };
+$("#padout").onchange=async e=>{ try{ if(padOutBoot===null) padOutBoot=padOutNow; await cfgSet("pad_out",+e.target.value); padOutNow=+e.target.value; updXbWarn(); alert("Saved. Turn the controller off and on (hold Steam, or Steam + Y) for the new pad output to take effect."); }catch(err){ $("#pstatus").innerHTML=`<span class="err">${err.message}</span>`; } };
 $("#activeProf").onchange=async e=>{ try{ await cfgSet("remap_profile",+e.target.value); }catch(err){ $("#pstatus").innerHTML=`<span class="err">${err.message}</span>`; } };
 
 async function readProfile(p){ const b=new Uint8Array(PROF_SIZE); for(let o=0;o<PROF_SIZE;o+=CH){ const d=await read(`sc26re/rmp/${p}/${o.toString(16)}`); b.set(d.slice(0,Math.min(CH,PROF_SIZE-o)),o); } return b; }
@@ -1096,7 +1118,7 @@ setInterval(async()=>{
   const all=[...sh,...keys,...mb,...padb,...xb].map(x=>`<span class="k">${x}</span>`).join("")+mv;
   remapOn=b[1]!==0; /* also follows LB+RB+Menu on the controller */
   /* diagnostics: keyboard reports handed to the link (newer firmware) */
-  let diag=""; if(monDiagOk!==false){ try{ const g=await read("sc26re/rmp_diag"); if(g&&g.length>=6){ monDiagOk=true; const gv=new DataView(g.buffer,g.byteOffset);
+  let diag=""; if(monDiagOk!==false){ try{ const g=await read("sc26re/rmp_diag"); if(g&&g.length>=6){ monDiagOk=true; const gv=new DataView(g.buffer,g.byteOffset); if(linkNow!==g[5]){ linkNow=g[5]; updXbWarn(); }
     diag=`<br><span class="note">keyboard reports sent ${gv.getUint16(0,true)}, refused ${gv.getUint16(2,true)}${gv.getUint16(2,true)?` (last error ${(g[4]<<24>>24)})`:""} · link ${["USB cable","Bluetooth","Puck","none"][g[5]]||"?"}</span>`; } }catch(e){ if(monDiagOk===null) monDiagOk=false; } }
   $("#mon").innerHTML=`<b>Output</b> · profile ${b[0]+1} · remapper ${b[1]===1?"on":b[1]===2?"on (empty profile)":"off"}<br>${all||"<span>nothing pressed</span>"}${diag}`;
 },150);

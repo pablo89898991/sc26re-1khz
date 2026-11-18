@@ -325,6 +325,7 @@ void sim_clear_events(void) { evlen = 0; evlog[0] = 0; }
 int sim_gyro_mouse(void) { return gm_on; }
 uint32_t sim_xbox_buttons(void) { return remap_xbox_buttons(); }
 unsigned sim_xbox_trigger(int t) { return remap_xbox_trigger(t); }
+int sim_xbox_stick(int i, int axis) { int16_t x, y; remap_xbox_stick(i, &x, &y); return axis ? y : x; }
 uint8_t sim_mouse_buttons(void) { return remap_mouse_buttons(); }
 
 /* feature report like the firmware: req[0]=op, req[1]=len, path\0data. Returns reply length in rsp. */

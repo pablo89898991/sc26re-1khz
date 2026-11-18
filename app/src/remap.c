@@ -145,6 +145,8 @@ static uint8_t mouse_owed;         /* button releases held back for the radio */
 static uint8_t kbd_pend[8];  /* keys pressed while the link refused reports (report layout) */
 static uint32_t xbox_buttons;
 static uint8_t xbox_trig[2];   /* Xbox LT / RT from XTRIG actions, 0..255 */
+static float xbox_stick[2][2]; /* Xbox sticks from "Xbox stick" modes, -1..1 (summed) */
+static int16_t xbox_stick_out[2][2];
 static uint8_t move_dirs; /* mouse move actions held: up, down, left, right */
 /* radial menu slices, clockwise from the top */
 static const uint8_t radial_src[2][10] = {
@@ -185,6 +187,14 @@ static struct remap_profile *active(void)
 uint32_t remap_xbox_buttons(void)
 {
 	return remap_enabled() ? xbox_buttons : 0U;
+}
+
+void remap_xbox_stick(int i, int16_t *x, int16_t *y)
+{
+	bool on = remap_enabled() && i >= 0 && i < 2;
+
+	*x = on ? xbox_stick_out[i][0] : 0;
+	*y = on ? xbox_stick_out[i][1] : 0;
 }
 
 uint8_t remap_xbox_trigger(int t)
@@ -1127,6 +1137,8 @@ static void release_all(void)
 	/* everything else that can hold an output */
 	xbox_buttons = 0U;
 	memset(xbox_trig, 0, sizeof(xbox_trig));
+	memset(xbox_stick, 0, sizeof(xbox_stick));
+	memset(xbox_stick_out, 0, sizeof(xbox_stick_out));
 	move_dirs = 0U;
 	stick_out = 0U;
 	memset(macros, 0, sizeof(macros));
@@ -1787,6 +1799,7 @@ void remap_process(struct controller_report *r, float dt)
 	}
 	/* trackpads: active while touched or while clicked */
 	memset(pad_joy, 0, sizeof(pad_joy));
+	memset(xbox_stick, 0, sizeof(xbox_stick));
 	for(int j = 0; j < 2; ++j)
 	{
 		const struct remap_analog *an = analog_cfg(p, 2 + j);
@@ -1964,6 +1977,14 @@ void remap_process(struct controller_report *r, float dt)
 				stick_dead_zones(an, &jx, &jy);
 				pad_joy[t][0] = (float)jx / 32767.0f;
 				pad_joy[t][1] = (float)jy / 32767.0f;
+			}
+			else if(an->mode == REMAP_ANALOG_XBOX && act)
+			{
+				int16_t jx = x, jy = y;
+
+				stick_dead_zones(an, &jx, &jy);
+				xbox_stick[t][0] += (float)jx / 32767.0f;
+				xbox_stick[t][1] += (float)jy / 32767.0f;
 			}
 		}
 		if(an->mode != REMAP_ANALOG_PASS)
@@ -2230,6 +2251,16 @@ void remap_process(struct controller_report *r, float dt)
 		{
 			stick_dead_zones(an, &x, &y);
 		}
+		else if(an->mode == REMAP_ANALOG_XBOX)
+		{
+			int t = i ^ ((an->flags & REMAP_AF_OTHER_STICK) ? 1 : 0);
+
+			flick_on[i] = false;
+			stick_dead_zones(an, &x, &y);
+			xbox_stick[t][0] += (float)x / 32767.0f;
+			xbox_stick[t][1] += (float)y / 32767.0f;
+			x = y = 0;
+		}
 		else
 		{
 			if(an->mode == REMAP_ANALOG_FLICK)
@@ -2254,6 +2285,13 @@ void remap_process(struct controller_report *r, float dt)
 		{
 			r->stick_left_x = x;
 			r->stick_left_y = y;
+		}
+	}
+	for(int i = 0; i < 2; ++i)
+	{
+		for(int k = 0; k < 2; ++k)
+		{
+			xbox_stick_out[i][k] = (int16_t)CLAMP(lroundf(xbox_stick[i][k] * 32767.0f), -32767, 32767);
 		}
 	}
 	flick_step(dt);
