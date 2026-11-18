@@ -5,13 +5,13 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
 (async () => {
   const br = await chromium.launch({ executablePath: '/usr/bin/google-chrome', args: ['--no-sandbox'] });
   const ctx = await br.newContext({ acceptDownloads: true, viewport: { width: 1300, height: 1000 } });
-  const pg = await ctx.newPage();
+  const pg = await ctx.newPage(); pg.setDefaultTimeout(1500);
   const errs = []; pg.on('pageerror', e => errs.push(e.message)); pg.on('console', m => { if (m.type() === 'error') errs.push(m.text()); });
   pg.on('dialog', d => d.accept());
   await pg.addInitScript({ path: __dirname + '/webhid_shim.js' });
   await pg.goto('file://' + __dirname + '/../../web/remap.html');
   await pg.click('#connect');
-  await pg.waitForFunction(() => /loaded/.test(document.querySelector('#pstatus').textContent), null, { timeout: 30000 });
+  await pg.waitForFunction(() => /loaded/.test(document.querySelector('#pstatus').textContent), null, { timeout: 60000 });
   const fails = []; const ok = (c, m) => { if (!c) fails.push(m); };
   const dlgOpen = () => pg.evaluate(() => document.querySelector('#dlg').open);
   const done = async () => { if (await dlgOpen()) await pg.click('#dlgDone'); };
@@ -19,8 +19,11 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
   const items = await pg.$$eval('#v_map [data-s]', x => [...new Set(x.map(e => e.dataset.s))]);
   for (const it of items) {
     if (it === 'gyro') continue;
-    await pg.click(`#v_map [data-s="${it}"] >> nth=0`, { force: true }).catch(e => fails.push('click ' + it + ': ' + e.message.slice(0, 80)));
-    await sleep(30);
+    for (let a = 0; a < 4 && !(await dlgOpen()); a++) {   // the page redraws after a dialog closes
+      await sleep(60);
+      await pg.click(`#v_map [data-s="${it}"] >> nth=0`).catch(() => {});
+      await sleep(40);
+    }
     if (!(await dlgOpen())) { fails.push('no dialog for ' + it); continue; }
     if (await pg.$('#amode')) {
       const modes = await pg.$$eval('#amode option', o => o.map(x => x.value));
@@ -32,8 +35,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
         await nth('#editor select:not(#amode)', async h => { const v = await h.$$eval('option', o => o.map(x => x.value)); if (v.length) await h.selectOption(v[v.length - 1]); });
         await nth('#editor input[type=number]', async h => { await h.fill('7'); await h.dispatchEvent('change'); });
         // sub-binding dialogs
-        const subs = await pg.$$('#editor .subs .item');
-        if (subs.length) { await subs[0].click(); await sleep(20); await pg.click('#back').catch(() => {}); await sleep(20); }
+        if (await pg.$('#editor .subs .item')) { await pg.click('#editor .subs .item >> nth=0').catch(() => {}); await sleep(20); await pg.click('#back').catch(() => {}); await sleep(20); }
       }
       await pg.selectOption('#amode', modes[0]).catch(() => {});
     } else {
@@ -63,7 +65,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
   await pg.waitForFunction(() => /saved to|differs|err/.test(document.querySelector('#pstatus').textContent) && !/saving/.test(document.querySelector('#pstatus').textContent), null, { timeout: 60000 });
   ok(/saved to the controller/.test(await pg.textContent('#pstatus')), 'save: ' + await pg.textContent('#pstatus'));
   await pg.click('#read');
-  await pg.waitForFunction(() => /loaded/.test(document.querySelector('#pstatus').textContent), null, { timeout: 30000 });
+  await pg.waitForFunction(() => /loaded/.test(document.querySelector('#pstatus').textContent), null, { timeout: 60000 });
   const after = await pg.evaluate(() => Array.from(prof[cur]));
   ok(JSON.stringify(before) === JSON.stringify(after), 'reload differs from what was saved');
   // 5. export -> import round trip
@@ -75,7 +77,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
   ok(JSON.stringify(imp.slice(16)) === JSON.stringify(after.slice(16)), 'import differs from export');
   // 6. presets
   await pg.click('#profset'); await sleep(50);
-  for (const b of await pg.$$('#dlg [data-pre]')) { await b.click(); await sleep(50); }
+  { const n = await pg.$$eval('#dlg [data-pre]', x => x.length); for (let i = 0; i < n; i++) { if (!(await dlgOpen())) await pg.click('#profset'); await pg.click(`#dlg [data-pre] >> nth=${i}`); await sleep(50); } }
   await done();
   // 7. other tabs
   for (const v of ['gyro', 'ctl', 'cal', 'help', 'map']) { await pg.click(`.view[data-v="${v}"]`).catch(() => {}); await sleep(150); }

@@ -5,6 +5,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>SC2 Remapper</title>
 <style>
+/* only the inputs on the picture take clicks: the outline and live dots are drawn over the bumpers */
+#pic svg > :not(.hit){pointer-events:none}
+
   :root{--bg:#0e1420;--panel:#161f30;--panel2:#1d283c;--edge:#2b3850;--ink:#e6edf7;--muted:#90a0ba;--accent:#4ea1ff;--accent2:#7cc4ff;--ok:#3fd07f;--warn:#ffb347;--err:#ff6b6b;--mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;}
   *{box-sizing:border-box}
   body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.55 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;padding:28px 16px 60px;}
@@ -96,7 +99,7 @@
 <body>
 <div class="top">
   <div class="topin">
-    <div class="brand">SC2 <span class="hz">Remapper</span> <span class="note" id="pagever" title="page version — if it is older than expected, press Ctrl+F5">p.2026-11-18e</span></div>
+    <div class="brand">SC2 <span class="hz">Remapper</span> <span class="note" id="pagever" title="page version — if it is older than expected, press Ctrl+F5">p.2026-11-18f</span></div>
     <button class="primary" id="connect">Connect controller</button>
     <span id="status" class="chip">not connected</span>
     <span class="grow"></span>
