@@ -12,10 +12,10 @@ const kbd = evs => evs.filter(e => e.split(' ')[1] === 'K').map(e => e.split(' '
   const pg = await br.newPage({ viewport: { width: 1300, height: 1000 } });
   const errs = []; pg.on('pageerror', e => errs.push(e.message)); pg.on('console', m => { if (m.type() === 'error') errs.push(m.text()); });
   pg.on('dialog', d => d.accept());
-  await pg.addInitScript({ path: __dirname + '/webhid_shim.js' });
+  await pg.addInitScript({ path: __dirname + (process.env.SLOW ? '/webhid_shim_slow.js' : '/webhid_shim.js') });
   await pg.goto('file://' + __dirname + '/../../web/remap.html');
   await pg.click('#connect');
-  await pg.waitForFunction(() => /loaded/.test(document.querySelector('#pstatus').textContent), null, { timeout: 30000 });
+  await pg.waitForFunction(() => /loaded/.test(document.querySelector('#pstatus').textContent), null, { timeout: process.env.SLOW ? 120000 : 30000 });
   check('connect + read 4 profiles', true, await pg.textContent('#status'));
 
   // 1. bind A -> key A through the editor, save
@@ -24,7 +24,7 @@ const kbd = evs => evs.filter(e => e.split(' ')[1] === 'K').map(e => e.split(' '
   await pg.click('#dlgDone');
   await pg.fill('#pname', 'e2e');
   await pg.click('#write');
-  await pg.waitForFunction(() => /saved|differs|err/.test(document.querySelector('#pstatus').textContent), null, { timeout: 60000 });
+  await pg.waitForFunction(() => /saved|differs|err/.test(document.querySelector('#pstatus').textContent), null, { timeout: process.env.SLOW ? 120000 : 60000 });
   check('save profile (read-back compare)', /saved to the controller/.test(await pg.textContent('#pstatus')), await pg.textContent('#pstatus'));
   if (!/ON/.test(await pg.textContent('#onoff'))) { await pg.click('#onoff'); await pg.waitForFunction(() => /ON/.test(document.querySelector('#onoff').textContent), null, { timeout: 10000 }).catch(() => {}); }
   check('remapper on', /ON/.test(await pg.textContent('#onoff')));
@@ -55,7 +55,7 @@ const kbd = evs => evs.filter(e => e.split(' ')[1] === 'K').map(e => e.split(' '
   if (await pg.$('#ahap')) await pg.selectOption('#ahap', '1');
   await pg.click('#dlgDone');
   await pg.click('#write');
-  await pg.waitForFunction(() => /saved|differs|err/.test(document.querySelector('#pstatus').textContent) && !/saving/.test(document.querySelector('#pstatus').textContent), null, { timeout: 60000 });
+  await pg.waitForFunction(() => /saved|differs|err/.test(document.querySelector('#pstatus').textContent) && !/saving/.test(document.querySelector('#pstatus').textContent), null, { timeout: process.env.SLOW ? 120000 : 60000 });
   await sleep(300);
   check('save radial profile', /saved to the controller/.test(await pg.textContent('#pstatus')));
   await post('/clear', {});
@@ -77,7 +77,7 @@ const kbd = evs => evs.filter(e => e.split(' ')[1] === 'K').map(e => e.split(' '
   await pg.selectOption('#dlg [data-gi="0:0"]', String(0xC8));
   await pg.click('#dlgDone');
   await pg.click('#write');
-  await pg.waitForFunction(() => /saved to|differs|err/.test(document.querySelector('#pstatus').textContent), null, { timeout: 60000 });
+  await pg.waitForFunction(() => /saved to|differs|err/.test(document.querySelector('#pstatus').textContent), null, { timeout: process.env.SLOW ? 120000 : 60000 });
   await post('/clear', {}); await post('/set', { B: 1 }); await sleep(60); await post('/set', { B: 0 }); await sleep(300);
   ev = await get('/events');
   const ks = kbd(ev);
@@ -86,7 +86,7 @@ const kbd = evs => evs.filter(e => e.split(' ')[1] === 'K').map(e => e.split(' '
   // 4. reload from controller and compare
   const before = await pg.evaluate(() => Array.from(prof[0]));
   await pg.click('#read');
-  await pg.waitForFunction(() => /loaded/.test(document.querySelector('#pstatus').textContent), null, { timeout: 30000 });
+  await pg.waitForFunction(() => /loaded/.test(document.querySelector('#pstatus').textContent), null, { timeout: process.env.SLOW ? 120000 : 30000 });
   const after = await pg.evaluate(() => Array.from(prof[0]));
   check('reload from controller = same profile', JSON.stringify(before) === JSON.stringify(after));
 
@@ -108,10 +108,11 @@ const kbd = evs => evs.filter(e => e.split(' ')[1] === 'K').map(e => e.split(' '
   await pg.click('#gyApply'); await sleep(100);
   await pg.click('.view[data-v="map"]'); await sleep(200);
   await pg.click('#write');
-  await pg.waitForFunction(() => /saved to|differs|err/.test(document.querySelector('#pstatus').textContent) && !/saving/.test(document.querySelector('#pstatus').textContent), null, { timeout: 60000 });
+  await pg.waitForFunction(() => /saved to|differs|err/.test(document.querySelector('#pstatus').textContent) && !/saving/.test(document.querySelector('#pstatus').textContent), null, { timeout: process.env.SLOW ? 120000 : 60000 });
   await sleep(200);
   const fsr = await get('/fsr');
   check('profile gyro range 500 active on the controller', fsr === 500, 'fsr=' + fsr);
+  if (process.env.SLOW) console.log('link:', JSON.stringify(await pg.evaluate(() => window.__linkStats)));
   check('no page errors', errs.length === 0, errs.slice(0, 5).join(' | '));
   console.log(`\n${results.filter(r => r[1]).length} passed, ${results.filter(r => !r[1]).length} failed`);
   await br.close();

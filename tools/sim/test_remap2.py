@@ -344,6 +344,96 @@ def regress_layer_held_by_a_ring_it_removes():
     late = s.run(2000); later = s.run(500)
     assert not any(m[1] or m[2] for m in later.mouse()), later.mouse()[:3]
 
+def flicker(s, ms):
+    """keyboard state changes (not the periodic same-state refresh)"""
+    n0 = len(s.log); s.run(ms)
+    st = [tuple(e.split()[2:]) for e in s.log[:n0] if " K " in e][-1:]
+    n = 0
+    for e in s.log[n0:]:
+        if " K " not in e: continue
+        cur = tuple(e.split()[2:])
+        if st and cur != st[-1]: n += 1
+        st.append(cur)
+    return n
+
+@test
+def regress_tap_survives_really_full_radio_queue():
+    p = Profile(); p.bind("A", key("a")); p.bind("B", MOUSE_R); p.bind("X", key("lshift")); p.analog(1, MOUSE, speed=60000)
+    s = Sim(); s.transport(1, 1, loss=0); s.use(p); s.run(5)
+    s.lib.sim_transport(1, 1, 1000, 15, 3)        # radio stalls...
+    s.run(50, rsx=32767)                         # ... while the stick mouse fills the queue
+    assert s.host()["queued"] == 5, s.host()
+    s.run(5, A=1, B=1, X=1); s.run(5, A=0, B=0, X=0)  # a tap, a shift tap and a click while nothing gets in
+    s.lib.sim_transport(1, 1, 0, 15, 3); s.run(400, rsx=0)
+    assert host_presses(s, key("a")) == 1, "key tap lost"
+    hk = [int(e.split()[2], 16) & 2 for e in s.log if " HK " in e]
+    assert any(hk), "shift tap lost"
+    hm = [int(e.split()[2]) for e in s.log if " HM " in e]
+    assert any(b & 2 for b in hm), "click lost"
+
+@test
+def regress_nested_layers_stable_output():
+    a = Profile(); a.bind("DUP", LAYER + 2); a.bind("A", key("a"))
+    b = Profile(); b.bind("LP_TOUCH", LAYER + 1); b.bind("A", key("x"))
+    c = Profile(); c.bind("A", key("y"))
+    s = Sim(); s.upload(1, c); s.upload(2, b); s.use(a); s.run(5)
+    s.run(50, DUP=1, LP_TOUCH=1, A=1)
+    assert flicker(s, 500) == 0, "output flickers with nested layers"
+
+@test
+def regress_ring_layer_stable_output():
+    base = Profile(); base.analog(1, DPAD4, ring=5000); base.bind("RS_RING", LAYER + 2); base.bind("A", key("a"))
+    lay = Profile(); lay.analog(1, MOUSE, speed=500); lay.bind("A", key("x"))
+    s = Sim(); s.upload(2, lay); s.use(base); s.run(5)
+    s.run(50, rsy=32767, A=1)
+    assert flicker(s, 500) == 0 and held(s) == (key("x"),), held(s)
+
+@test
+def regress_pad_mouse_jumps_no_long_drift():
+    p = Profile(); p.analog(3, MOUSE, speed=5000)
+    s = fresh(p)
+    for k in range(40): touch(s, 1, 32000 if k % 2 else -32000, 0, ms=1)
+    lift(s, 1, ms=5); stop = s.lib.sim_time()
+    e = s.run(1500)
+    late = [m for ln, m in zip([x for x in e if " M " in x], e.mouse()) if int(ln.split()[0]) > stop + 400 and m[1]]
+    assert not late, late[:3]
+
+@test
+def regress_stick_scroll_half_deflection():
+    p = Profile(); p.analog(1, SCROLL, speed=1000, dz_in=1000)
+    s = fresh(p); e = s.run(2000, rsy=int(32767 * .55))
+    w = sum(m[3] for m in e.mouse())
+    assert 9 <= w <= 11, w   # half of the way past the dead zone: 5 notches/s
+
+@test
+def regress_releases_not_blocked_by_mouse_traffic():
+    # constant mouse movement (like the gyro mouse) must not hold keys / clicks down
+    p = Profile(); p.analog(1, MOUSE, speed=20000); p.bind("A", key("a")); p.bind("B", MOUSE_L)
+    for tr in ((1, 1, 0, 15), (2, 0, 0, 15), (2, 0, 0, 30)):
+        s = Sim(); s.transport(*tr); s.use(p); s.run(5); s.log = []
+        for _ in range(10):
+            s.run(60, A=1, B=1, rsx=32767); s.run(60, A=0, B=0, rsx=32767)
+        s.run(300, rsx=0)
+        hm = [int(e.split()[2]) & 1 for e in s.log if " HM " in e]
+        clicks = sum(1 for a, b in zip([0] + hm, hm) if b and not a)
+        assert host_presses(s, key("a")) == 10 and clicks == 10, (tr, host_presses(s, key("a")), clicks)
+
+@test
+def regress_layer_turns_pad_into_radial_while_held():
+    base = Profile(); base.analog(3, DPAD4, dz_in=2000); base.bind("RP_RIGHT", key("e")); base.bind("L4", LAYER + 1)
+    lay = Profile(); lay.analog(3, RADIAL, speed=8, dz_in=3000)
+    s = Sim(); s.upload(1, lay); s.use(base); s.run(5)
+    touch(s, 1, 25000, 0, ms=50); assert held(s) == (key("e"),), held(s)
+    s.run(50, L4=1)                                   # the pad becomes a radial menu under the finger
+    assert held(s) == (), ("held key stays in the radial menu", held(s))
+
+@test
+def regress_stick_mouse_partial_deflection():
+    p = Profile(); p.analog(1, MOUSE, speed=4000, dz_in=1000)
+    s = fresh(p); e = s.run(1000, rsx=int(32767 * .55))
+    dx = sum(m[1] for m in e.mouse())
+    assert 900 <= dx <= 1100, dx   # ((0.55 - 0.1) / 0.9)^2 * 4000 = 1000
+
 if __name__ == "__main__":
     only = sys.argv[1:]; ok = fail = 0
     for t in TESTS:

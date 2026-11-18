@@ -131,6 +131,10 @@ int transport_init(void);
 int transport_send(const struct controller_report *report);
 int transport_send_battery_status(const struct controller_battery_report *report);
 int transport_send_input_report(uint8_t report_id, const uint8_t *data, size_t len);
+/* ms since every mouse / keyboard report left the radio queue (INT32_MAX on USB) */
+int32_t transport_input_idle_ms(void);
+int32_t transport_esb_input_idle_ms(void);
+int32_t transport_ble_input_idle_ms(void);
 void transport_radio_deactivate(void);
 
 enum transport_usb_radio_mode

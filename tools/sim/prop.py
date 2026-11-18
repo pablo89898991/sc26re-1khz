@@ -4,6 +4,7 @@ import random, sys
 from simlib import *
 
 A, B, C = key("a"), key("b"), key("c")
+MIN_PC_TAP = 17  # one frame at 60 fps
 TRANSPORTS = {"usb": None, "puck": (1, 1, 20, 15), "bt": (2, 0, 10, 15)}
 
 def mk(mode, H=0, W=0, T=0):
@@ -26,6 +27,19 @@ def presses(s, code, host):
         if now and not was: n += 1
         was = now
     return n
+
+def held_spans(s, host):
+    """(key, ms held) for every press seen by the remapper output or by the PC"""
+    tag = "HK" if host else "K"
+    on, out, prev = {}, [], set()
+    for e in s.log:
+        q = e.split()
+        if q[1] != tag: continue
+        t = int(q[0]); cur = set(int(x, 16) for x in q[3:] if int(x, 16))
+        for k in cur - prev: on[k] = t
+        for k in prev - cur: out.append((k, t - on.pop(k)))
+        prev = cur
+    return out
 
 def pattern(s, seq):
     for down, ms in seq:
@@ -67,8 +81,18 @@ def run(seed, tr_name):
     # start + release
     for d in (1, 3, 50, He + 10):
         check("start+release d=%d" % d, mk(M_START | M_RELEASE, H, W, T), [(1, d)], {"a": 1, "b": 0, "c": 1}, tr_name, errs)
-    # start + hold
-    check("start+hold", mk(M_START | M_HOLD, H, W, T), [(1, He + 20)], {"a": 1, "b": 1, "c": 0}, tr_name, errs)
+    # start + hold, swept across the hold time
+    for d in range(He - 3, He + 4):
+        check("start+hold d=%d" % d, mk(M_START | M_HOLD, H, W, T), [(1, d)], {"a": 1, "b": 1 if d > He else 0, "c": 0}, tr_name, errs)
+    # every tap (not a press that follows the button) must last long enough for a game
+    for mode, seq, code in ((M_START, [(1, 2)], A), (M_DOUBLE, [(1, 20)], A), (M_RELEASE, [(1, 5)], C), (M_TURBO, [(1, 600)], A), (M_HOLD, [(1, 3)], A)):
+        s2 = sim(mk(mode, H, W, T), TRANSPORTS[tr_name]); pattern(s2, seq)
+        for host in ((False, True) if tr_name != "usb" else (False,)):
+            spans = [ln for k, ln in held_spans(s2, host) if k == code]
+            lim = 30 if not host else MIN_PC_TAP
+            if mode == M_TURBO: lim = min(lim, Te // 2 - 2)
+            if spans and min(spans) < lim:
+                errs.append("tap of %02x lasts only %d ms at the %s (mode %d, %s)" % (code, min(spans), "PC" if host else "remapper", mode, tr_name))
     # toggle: odd number of presses leaves it on until the next one
     check("toggle x2", mk(M_TOGGLE, H, W, T), [(1, 20), (0, 50), (1, 20)], {"a": 1, "b": 0, "c": 0}, tr_name, errs)
     # cycle

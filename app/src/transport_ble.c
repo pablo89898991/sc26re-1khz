@@ -87,6 +87,7 @@ struct valve_report
 struct ble_lizard_input_entry
 {
 	uint8_t id;
+	bool state; /* keyboard report or mouse buttons change (not movement only) */
 	uint8_t len;
 	uint8_t data[BLE_LIZARD_INPUT_MAX_SIZE];
 };
@@ -124,6 +125,38 @@ static uint32_t input_45_reports_sent;
 K_MSGQ_DEFINE(lizard_input_queue, sizeof(struct ble_lizard_input_entry),
               BLE_LIZARD_INPUT_QUEUE_DEPTH, 1);
 static atomic_t lizard_input_queue_draining;
+/*
+ * Keyboard / mouse-button reports waiting or on their way (queued, or handed to
+ * the stack and not yet sent), and when the last one went on air. The remapper
+ * waits for this before a release, so a press and its release never share a
+ * connection event (a press of 0 ms at the PC).
+ */
+static atomic_t ble_state_pending;
+static int64_t ble_state_left_ms;
+static uint8_t ble_last_mouse_buttons;
+
+static void ble_state_done(void)
+{
+	ble_state_left_ms = k_uptime_get();
+	if(atomic_get(&ble_state_pending) > 0) /* a late callback after a reset */
+	{
+		(void)atomic_dec(&ble_state_pending);
+	}
+}
+
+static void ble_state_sent(struct bt_conn *conn, void *user_data)
+{
+	ARG_UNUSED(conn);
+	ARG_UNUSED(user_data);
+	ble_state_done();
+}
+
+int32_t transport_ble_input_idle_ms(void)
+{
+	int64_t idle = atomic_get(&ble_state_pending) > 0 ? 0 : k_uptime_get() - ble_state_left_ms;
+
+	return (int32_t)MIN(idle, (int64_t)INT32_MAX);
+}
 /* Lock lifecycle before state when both are needed. active_conn owns one reference. */
 static K_MUTEX_DEFINE(ble_state_mutex);
 static K_MUTEX_DEFINE(ble_lifecycle_mutex);
@@ -445,6 +478,9 @@ static void ble_lizard_input_queue_reset(void)
 	while(k_msgq_get(&lizard_input_queue, &entry, K_NO_WAIT) == 0)
 	{
 	}
+	/* disconnected: nothing is on its way any more (sent callbacks may never come) */
+	atomic_set(&ble_state_pending, 0);
+	ble_state_left_ms = k_uptime_get();
 }
 
 static int ble_lizard_input_queue_drain(struct bt_conn *conn, uint32_t subscriptions)
@@ -477,7 +513,21 @@ static int ble_lizard_input_queue_drain(struct bt_conn *conn, uint32_t subscript
 		else
 		{
 			memcpy(report->data, entry.data, entry.len);
-			err = bt_gatt_notify(conn, &hog_service.attrs[attr_index], report->data, report->size);
+			if(entry.state)
+			{
+				struct bt_gatt_notify_params np = {
+					.attr = &hog_service.attrs[attr_index],
+					.data = report->data,
+					.len = report->size,
+					.func = ble_state_sent, /* on air: start the release spacing */
+				};
+
+				err = bt_gatt_notify_cb(conn, &np);
+			}
+			else
+			{
+				err = bt_gatt_notify(conn, &hog_service.attrs[attr_index], report->data, report->size);
+			}
 		}
 
 		if(err == -ENOMEM)
@@ -487,6 +537,10 @@ static int ble_lizard_input_queue_drain(struct bt_conn *conn, uint32_t subscript
 		}
 
 		(void)k_msgq_get(&lizard_input_queue, &entry, K_NO_WAIT);
+		if(entry.state && err)
+		{
+			ble_state_done(); /* dropped: nothing on its way */
+		}
 		if(err)
 		{
 			result = err;
@@ -1477,8 +1531,29 @@ int transport_ble_send_input_report(uint8_t report_id, const uint8_t *data, size
 		return -ENOTCONN;
 	}
 	memcpy(entry.data, data, len);
+	entry.state = report_id == 0x41 || (report_id == 0x40 && data[0] != ble_last_mouse_buttons);
+	/* movement only: never let it fill the queue in front of keys and clicks
+	 * (a link of a few hundred reports per second). The sender keeps the
+	 * movement and adds it to its next report (remap, gyro mouse give-back). */
+	if(!entry.state && k_msgq_num_used_get(&lizard_input_queue) >= 2U)
+	{
+		bt_conn_unref(snapshot.conn);
+		return -EAGAIN;
+	}
+	if(entry.state)
+	{
+		(void)atomic_inc(&ble_state_pending);
+	}
 
 	err = k_msgq_put(&lizard_input_queue, &entry, K_NO_WAIT);
+	if(err && entry.state)
+	{
+		(void)atomic_dec(&ble_state_pending);
+	}
+	else if(!err && report_id == 0x40)
+	{
+		ble_last_mouse_buttons = data[0];
+	}
 	if(err)
 	{
 		bt_conn_unref(snapshot.conn);

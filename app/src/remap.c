@@ -38,6 +38,31 @@ static uint16_t HOLD_MS = 250;
 static uint16_t DOUBLE_MS = 250;
 static uint16_t TURBO_MS = 100;
 #define TAP_MS 40
+#define RADIO_RELEASE_MS 20 /* a release goes out this long after the press went on air */
+#define RADIO_RELEASE_MAX_WAIT 250 /* ... but never waits longer than this */
+
+/* over the radio: may a release go out now? (USB: always) */
+static bool release_ok_now(void)
+{
+	static int64_t waiting_since = -1;
+	int64_t now = k_uptime_get();
+
+	if(transport_input_idle_ms() >= RADIO_RELEASE_MS)
+	{
+		waiting_since = -1;
+		return true;
+	}
+	if(waiting_since < 0)
+	{
+		waiting_since = now;
+	}
+	if(now - waiting_since >= RADIO_RELEASE_MAX_WAIT)
+	{
+		waiting_since = -1;
+		return true;
+	}
+	return false;
+}
 #define CHORD_MASK (BIT(CONTROLLER_BUTTON_LEFT_SHOULDER) | BIT(CONTROLLER_BUTTON_RIGHT_SHOULDER) | \
                     BIT(CONTROLLER_BUTTON_MENU))
 #define PATH_PREFIX "sc26re/rmp/"
@@ -106,6 +131,8 @@ static uint8_t mouse_buttons;
 static bool mouse_refresh;    /* send the mouse buttons again even without a change */
 static int64_t out_change_ms = -100000; /* last keyboard / mouse button change sent */
 static uint8_t mouse_pend;   /* mouse buttons pressed while the link refused reports */
+static uint8_t mouse_sent_buttons; /* buttons in the last mouse report that went out */
+static uint8_t mouse_owed;         /* button releases held back for the radio */
 static uint8_t kbd_pend[8];  /* keys pressed while the link refused reports (report layout) */
 static uint32_t xbox_buttons;
 static uint8_t move_dirs; /* mouse move actions held: up, down, left, right */
@@ -152,7 +179,9 @@ uint32_t remap_xbox_buttons(void)
 
 uint8_t remap_mouse_buttons(void)
 {
-	return remap_enabled() ? mouse_buttons : 0U;
+	/* the buttons last SENT: other mouse reports (gyro mouse) must not press or
+	 * let go of anything before the remapper's own report does */
+	return mouse_sent_buttons;
 }
 
 static bool bound(const struct remap_binding *b)
@@ -791,13 +820,37 @@ static void send_mouse(void)
 		mouse_acc[i] -= t;
 		any = any || v[i] != 0;
 	}
-	if(!any && (mouse_buttons | mouse_pend) == last_buttons && !mouse_refresh)
+	/* a click the link refused is still sent (pressed once) when it takes reports again;
+	 * a release over the radio waits like the keyboard's */
+	uint8_t mb = mouse_buttons | mouse_pend;
+
+	if(mb & mouse_owed)
+	{
+		/* pressed again while its release waits: the release goes first */
+		uint8_t rel[5] = { (uint8_t)(last_buttons & ~mouse_owed), 0, 0, 0, 0 };
+
+		if(transport_send_input_report(0x40, rel, sizeof(rel)) == 0)
+		{
+			last_buttons = rel[0];
+			mouse_sent_buttons = rel[0];
+		}
+		mouse_owed = 0U;
+	}
+	if((last_buttons & ~mb) && !release_ok_now())
+	{
+		mouse_owed |= last_buttons & ~mb;
+		mb |= last_buttons;
+	}
+	else
+	{
+		mouse_owed &= mb;
+	}
+	if(!any && mb == last_buttons && !mouse_refresh)
 	{
 		return;
 	}
 	mouse_refresh = false;
-	/* a click the link refused is still sent (pressed once) when it takes reports again */
-	m[0] = mouse_buttons | mouse_pend;
+	m[0] = mb;
 	m[1] = (uint8_t)v[0];
 	m[2] = (uint8_t)v[1];
 	m[3] = (uint8_t)v[2];
@@ -809,6 +862,7 @@ static void send_mouse(void)
 			out_change_ms = k_uptime_get();
 		}
 		last_buttons = m[0];
+		mouse_sent_buttons = m[0];
 		mouse_pend = 0U;
 		mon_dx += v[0];
 		mon_dy += v[1];
@@ -829,6 +883,108 @@ static void send_mouse(void)
 }
 
 static bool kbd_flush; /* the "all keys up" report still has to go out */
+
+static uint8_t kbd_owed[8]; /* releases held back for the radio (report layout) */
+
+/* is a key / modifier whose release is held back wanted again? */
+static bool repressed(const uint8_t *kbd, const uint8_t *owed)
+{
+	if(kbd[0] & owed[0])
+	{
+		return true;
+	}
+	for(int i = 2; i < 8 && owed[i]; ++i)
+	{
+		if(memchr(&kbd[2], owed[i], 6) != NULL)
+		{
+			return true;
+		}
+	}
+	return false;
+}
+
+/* remove the keys / modifiers of `keys` from report `r` (keeps the slots packed) */
+static void strip_keys(uint8_t *r, const uint8_t *keys)
+{
+	uint8_t out[6] = { 0 };
+	int n = 0;
+
+	r[0] &= (uint8_t)~keys[0];
+	for(int i = 2; i < 8; ++i)
+	{
+		if(r[i] && memchr(&keys[2], r[i], 6) == NULL)
+		{
+			out[n++] = r[i];
+		}
+	}
+	memcpy(&r[2], out, 6);
+}
+
+/* owed releases still owed after report `sent`: only those still held in it */
+static void keep_owed(uint8_t *owed, const uint8_t *sent)
+{
+	uint8_t keep[8] = { 0 };
+	int n = 0;
+
+	keep[0] = owed[0] & sent[0];
+	for(int i = 2; i < 8 && owed[i]; ++i)
+	{
+		if(memchr(&sent[2], owed[i], 6) != NULL)
+		{
+			keep[2 + n++] = owed[i];
+		}
+	}
+	memcpy(owed, keep, 8);
+}
+
+/* turbo over a slow link: the next press waits until the last release went
+ * out, else it would arrive together with it (a press the game never sees) */
+static bool turbo_waits(const struct remap_binding *b)
+{
+	for(int i = 0; i < 4; ++i)
+	{
+		uint8_t a = b->act[0][i];
+
+		if(a >= 0xE0U && a <= 0xE7U && (kbd_owed[0] & BIT(a - 0xE0U)))
+		{
+			return true;
+		}
+		if(a >= 0x04U && a <= 0x65U && memchr(&kbd_owed[2], a, 6) != NULL)
+		{
+			return true;
+		}
+		if(a == REMAP_ACT_MOUSE_L && (mouse_owed & 1U))
+		{
+			return true;
+		}
+		if(a == REMAP_ACT_MOUSE_R && (mouse_owed & 2U))
+		{
+			return true;
+		}
+		if(a >= REMAP_ACT_MOUSE_M && a <= REMAP_ACT_MOUSE_5 && (mouse_owed & BIT(2 + a - REMAP_ACT_MOUSE_M)))
+		{
+			return true;
+		}
+	}
+	return false;
+}
+
+/* does going from `last` to `kbd` let go of a key or modifier? */
+static bool releases_key(const uint8_t *kbd, const uint8_t *last)
+{
+	if(last[0] & ~kbd[0])
+	{
+		return true;
+	}
+	for(int i = 2; i < 8 && last[i]; ++i)
+	{
+		if(memchr(&kbd[2], last[i], 6) == NULL)
+		{
+			return true;
+		}
+	}
+	return false;
+}
 
 /*
  * Keyboard and mouse buttons are states: a report taken by the radio can still
@@ -871,6 +1027,8 @@ static void release_all(void)
 	static const uint8_t zero[8];
 
 	mouse_pend = 0U;
+	mouse_owed = 0U;
+	memset(kbd_owed, 0, sizeof(kbd_owed));
 	mon_pad = 0U;            /* the output monitor shows nothing held either */
 	memset(shifted, 0, sizeof(shifted));
 	memset(st, 0, sizeof(st));
@@ -1874,7 +2032,8 @@ void remap_process(struct controller_report *r, float dt)
 			run_source(b, ss, down, now, s, pj < 0 || !pad_act[pj]);
 		}
 		if(ss->held_group >= 0 &&
-		   !((b->mode & REMAP_MODE_TURBO) && ss->held_group == 0 && ((now - ss->t_down) / (TURBO_MS / 2)) % 2 == 1))
+		   !((b->mode & REMAP_MODE_TURBO) && ss->held_group == 0 &&
+		     (((now - ss->t_down) / (TURBO_MS / 2)) % 2 == 1 || turbo_waits(b))))
 		{
 			for(size_t i = 0; i < 4; ++i)
 			{
@@ -2047,6 +2206,56 @@ void remap_process(struct controller_report *r, float dt)
 				kbd[2 + nk++] = kbd_pend[i];
 			}
 		}
+		/* over the radio a release waits until the press has left the queue
+		 * for RADIO_RELEASE_MS: queued together, press and release reach the
+		 * PC in the same packet / connection event, a press of 0-1 ms that a
+		 * game never sees (fast turbo) */
+		/* a key pressed again while its release still waits: the release goes
+		 * out first, now (every press counts, even when they come too fast
+		 * for the link to keep them apart) */
+		if(kbd_valid && repressed(kbd, kbd_owed))
+		{
+			uint8_t rel[8];
+
+			memcpy(rel, last_kbd, sizeof(rel));
+			strip_keys(rel, kbd_owed);
+			if(transport_send_input_report(0x41, rel, sizeof(rel)) == 0)
+			{
+				memcpy(last_kbd, rel, sizeof(rel));
+			}
+			memset(kbd_owed, 0, sizeof(kbd_owed));
+		}
+		if(kbd_valid && releases_key(kbd, last_kbd) && !release_ok_now())
+		{
+			/* remember what we hold back */
+			kbd_owed[0] |= last_kbd[0] & (uint8_t)~kbd[0];
+			for(int i = 2; i < 8 && last_kbd[i]; ++i)
+			{
+				if(memchr(&kbd[2], last_kbd[i], 6) == NULL && memchr(&kbd_owed[2], last_kbd[i], 6) == NULL)
+				{
+					uint8_t *slot = memchr(&kbd_owed[2], 0, 6);
+
+					if(slot != NULL)
+					{
+						*slot = last_kbd[i];
+					}
+				}
+			}
+			kbd[0] |= last_kbd[0];
+			for(int i = 2; i < 8 && last_kbd[i]; ++i)
+			{
+				size_t used = 0;
+
+				while(used < 6U && kbd[2 + used])
+				{
+					++used;
+				}
+				if(memchr(&kbd[2], last_kbd[i], used) == NULL && used < 6U)
+				{
+					kbd[2 + used] = last_kbd[i];
+				}
+			}
+		}
 		if(!kbd_valid || memcmp(kbd, last_kbd, sizeof(kbd)) != 0)
 		{
 			if(transport_send_input_report(0x41, kbd, sizeof(kbd)) == 0)
@@ -2058,6 +2267,7 @@ void remap_process(struct controller_report *r, float dt)
 				memcpy(last_kbd, kbd, sizeof(kbd));
 				kbd_valid = true;
 				kbd_flush = false;
+				keep_owed(kbd_owed, kbd);
 				memset(kbd_pend, 0, sizeof(kbd_pend));
 			}
 			else

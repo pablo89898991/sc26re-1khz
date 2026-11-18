@@ -1,3 +1,4 @@
+#include <stdint.h>
 /* Host build of the remapper: the real remap.c and sc26re_cfg.c with the rest of
  * the firmware replaced by recording stubs. Driven from Python (ctypes). */
 #include <stdio.h>
@@ -51,12 +52,16 @@ static void ev(const char *fmt, ...)
  * 2 Bluetooth (as transport_ble.c): queue of 16 (-ENOMEM when full), drained into
  *   bt_gatt_notify while the stack has buffers; buffers free at each connection event.
  * Link trouble: frames lost (bursts) and disconnects (queue dropped). */
-struct qrep { uint8_t id, len, d[8]; };
+struct qrep { uint8_t id, len, d[8]; uint8_t state; };
+static int state_pending;      /* keyboard / mouse-button reports not yet delivered (as the firmware counts them) */
+static int64_t state_left_ms;
+static uint8_t last_mb_queued;
 static int tmode, esb_one, ble_bufs = 3, ble_ci = 15, link_up = 1;
 static unsigned rng = 1;
 static int lossy_pct, burst_left;
 static struct qrep q[16];
 static int qn;
+static int64_t q_empty_ms;
 static uint8_t host_kbd[8], host_mb;
 static long host_dx, host_dy, host_wh, host_pan;
 static int host_lost;
@@ -121,15 +126,29 @@ static int tsend(uint8_t id, const uint8_t *d, size_t len)
 			}
 		}
 		if(qn == 5) return -EAGAIN;
+		r.state = id == 0x41 || (id == 0x40 && d[0] != last_mb_queued);
+		if(id == 0x40) last_mb_queued = d[0];
+		state_pending += r.state;
 		q[qn++] = r;
 		return 0;
 	}
 	if(qn == 16) return -ENOMEM;
+	r.state = id == 0x41 || (id == 0x40 && d[0] != last_mb_queued);
+	if(!r.state && qn >= 2) return -EAGAIN; /* as transport_ble.c: movement never fills the queue */
+	if(id == 0x40) last_mb_queued = d[0];
+	state_pending += r.state;
 	q[qn++] = r;
 	return 0;
 }
 
-static int ble_free;
+static struct qrep stk[8];
+static int stk_n;
+/* as transport.c: ms since the mouse / keyboard queue emptied, USB: always */
+int32_t transport_input_idle_ms(void)
+{
+	if(tmode == 0) return INT32_MAX;
+	return state_pending > 0 ? 0 : (int32_t)(now_ms - state_left_ms);
+}
 /* one millisecond of radio */
 static void transport_tick(void)
 {
@@ -143,17 +162,26 @@ static void transport_tick(void)
 		int take = esb_one ? 1 : qn; /* 128-byte payload: all 5 fit */
 		host_lost += take - 1;
 		host_deliver(&q[take - 1]); /* the Puck keeps the newest */
+		for(int i = 0; i < take; ++i) if(q[i].state) { state_pending--; state_left_ms = now_ms; } /* left in a payload */
 		memmove(q, q + take, (size_t)(qn - take) * sizeof(q[0]));
 		qn -= take;
+		if(qn == 0) q_empty_ms = now_ms;
 		return;
 	}
-	if(now_ms % ble_ci == 0 && !lost) ble_free = ble_bufs;
-	while(qn > 0 && ble_free > 0)
+	/* Bluetooth: the queue empties into the stack's buffers at once (that is
+	 * when transport_ble sees it empty); the buffers go on air at each
+	 * connection event */
+	while(qn > 0 && stk_n < ble_bufs)
 	{
-		host_deliver(&q[0]);
+		stk[stk_n++] = q[0];
 		memmove(q, q + 1, (size_t)(qn - 1) * sizeof(q[0]));
 		qn--;
-		ble_free--;
+		if(qn == 0) q_empty_ms = now_ms;
+	}
+	if(now_ms % ble_ci == 0 && !lost)
+	{
+		for(int i = 0; i < stk_n; ++i) { host_deliver(&stk[i]); if(stk[i].state) { state_pending--; state_left_ms = now_ms; } } /* sent callback */
+		stk_n = 0;
 	}
 }
 
@@ -168,13 +196,15 @@ void sim_link(int up)
 	if(!up)
 	{
 		qn = 0; /* teardown drops what was waiting */
-		if(tmode == 2) { memset(host_kbd, 0, 8); host_mb = 0; ev("HK 00 00 00 00 00 00 00"); } /* BT host releases */
+		q_empty_ms = now_ms;
+		state_pending = 0; state_left_ms = now_ms;
+		if(tmode == 2) { stk_n = 0; state_pending = 0; memset(host_kbd, 0, 8); host_mb = 0; ev("HK 00 00 00 00 00 00 00"); } /* BT host releases */
 	}
 }
 void sim_host(int32_t *out)
 {
 	out[0] = host_mb; out[1] = (int32_t)host_dx; out[2] = (int32_t)host_dy; out[3] = (int32_t)host_wh; out[4] = (int32_t)host_pan;
-	out[5] = host_lost; out[6] = qn;
+	out[5] = host_lost; out[6] = qn + stk_n;
 	memcpy(&out[7], host_kbd, 8);
 }
 int haptics_play_feedback(uint8_t level, uint8_t channels) { ev("H %u %u", level, channels); return 0; }

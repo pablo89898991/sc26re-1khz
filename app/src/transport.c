@@ -148,6 +148,36 @@ __weak int transport_esb_send_battery_status(const struct controller_battery_rep
 	return -ENOTSUP;
 }
 
+__weak int32_t transport_esb_input_idle_ms(void)
+{
+	return INT32_MAX;
+}
+
+__weak int32_t transport_ble_input_idle_ms(void)
+{
+	return INT32_MAX;
+}
+
+static bool transport_usb_reports_suppressed(void);
+
+/* ms since every mouse / keyboard report left the radio queue (USB: always) */
+int32_t transport_input_idle_ms(void)
+{
+	if(IS_ENABLED(CONFIG_IBEX_USB_HID) && !transport_usb_reports_suppressed() && transport_usb_configured())
+	{
+		return INT32_MAX;
+	}
+	if(IS_ENABLED(CONFIG_IBEX_BLE) && radio_personality_get() == RADIO_PERSONALITY_BLE)
+	{
+		return transport_ble_input_idle_ms();
+	}
+	if(IS_ENABLED(CONFIG_IBEX_ESB) && radio_personality_get() == RADIO_PERSONALITY_ESB)
+	{
+		return transport_esb_input_idle_ms();
+	}
+	return INT32_MAX;
+}
+
 __weak int transport_esb_send_input_report(uint8_t report_id, const uint8_t *data, size_t len)
 {
 	ARG_UNUSED(report_id);

@@ -99,7 +99,7 @@
 <body>
 <div class="top">
   <div class="topin">
-    <div class="brand">SC2 <span class="hz">Remapper</span> <span class="note" id="pagever" title="page version — if it is older than expected, press Ctrl+F5">p.2026-11-18f</span></div>
+    <div class="brand">SC2 <span class="hz">Remapper</span> <span class="note" id="pagever" title="page version — if it is older than expected, press Ctrl+F5">p.2026-11-18g</span></div>
     <button class="primary" id="connect">Connect controller</button>
     <span id="status" class="chip">not connected</span>
     <span class="grow"></span>
@@ -690,7 +690,8 @@ async function read(path){ const d=ctl(); if(!d) throw new Error("connect first"
   return serial(async()=>{ let last=null;
     for(let a=0;a<8;a++){ try{
       await d.sendFeatureReport(1,pathCmd(0xED,path));
-      let r=null,o=-1; for(let k=0;k<10;k++){ try{ r=new Uint8Array((await d.receiveFeatureReport(1)).buffer); o=r[0]===0xED?0:(r[1]===0xED?1:-1); if(o>=0) break; }catch(e){} await new Promise(s=>setTimeout(s,15+k*10)); }
+      /* a reply comes within a few ms (USB, Puck, Bluetooth): after ~0.2 s ask again */
+      let r=null,o=-1; for(let k=0;k<6;k++){ try{ r=new Uint8Array((await d.receiveFeatureReport(1)).buffer); o=r[0]===0xED?0:(r[1]===0xED?1:-1); if(o>=0) break; }catch(e){} await new Promise(s=>setTimeout(s,10+k*10)); }
       if(o<0) throw new Error("no reply");
       const data=r.slice(o+2,o+2+r[o+1]); if(!data.length||data[0]!==tag) throw new Error("reply for another request (Steam?)");
       return data.slice(1);
@@ -720,7 +721,7 @@ function onReport(e){ if(e.reportId!==0x42) return; rate.set(e.device,1); if(!ct
 /* while the remapper is on, remapped inputs are missing from the pad report: the
  * picture shows the physical controller instead (same layout, read from the firmware) */
 setInterval(async()=>{
-  if(!remapOn||!devs.length||$("#v_map").hidden) return;
+  if(!remapOn||!devs.length||$("#v_map").hidden||bulk) return;
   let b; try{ b=await read("sc26re/raw"); }catch(e){ return; }
   if(!b||b.length<28) return;
   const u=new Uint8Array(1+b.length); u.set(b,1); const dv=new DataView(u.buffer);
@@ -757,14 +758,18 @@ $("#padout").onchange=async e=>{ try{ await cfgSet("pad_out",+e.target.value); a
 $("#activeProf").onchange=async e=>{ try{ await cfgSet("remap_profile",+e.target.value); }catch(err){ $("#pstatus").innerHTML=`<span class="err">${err.message}</span>`; } };
 
 async function readProfile(p){ const b=new Uint8Array(PROF_SIZE); for(let o=0;o<PROF_SIZE;o+=CH){ const d=await read(`sc26re/rmp/${p}/${o.toString(16)}`); b.set(d.slice(0,Math.min(CH,PROF_SIZE-o)),o); } return b; }
+let bulk=0; /* reading / saving profiles: the live polls wait (they share the link with it) */
 async function readAll(){
+  bulk++;
   try{ $("#pstatus").textContent="reading…";
     for(let p=0;p<4;p++){ const b=await readProfile(p); prof[p]=b[0]===0xA7&&b[1]===PROF_VER?b:emptyProfile(); }
     setDirty(false); render(); $("#pstatus").innerHTML='<span class="ok">profiles loaded from the controller</span>';
   }catch(e){ $("#pstatus").innerHTML=`<span class="err">${e.message}</span>`; }
+  finally{ bulk--; }
 }
 $("#read").onclick=readAll;
 $("#write").onclick=async()=>{
+  bulk++;
   try{ collect(); const b=prof[cur]; $("#pstatus").textContent="saving…";
     for(let o=0;o<PROF_SIZE;o+=CH) await send(`sc26re/rmp/${cur}/${o.toString(16)}`,0xEE,Array.from(b.slice(o,Math.min(o+CH,PROF_SIZE))));
     await send(`sc26re/rmp/${cur}`,0xEF);
@@ -773,6 +778,7 @@ $("#write").onclick=async()=>{
     $("#pstatus").innerHTML=okb?`<span class="ok">profile ${cur+1} saved to the controller</span>`:'<span class="err">saved, but reading it back differs — try again</span>';
     buildTabs();
   }catch(e){ $("#pstatus").innerHTML=`<span class="err">${e.message}</span>`; }
+  finally{ bulk--; }
 };
 $("#clear").onclick=()=>{ if(confirm(`Clear profile ${cur+1}? (Save to controller afterwards.)`)){ prof[cur]=emptyProfile(); sel=null; setDirty(); render(); } };
 $("#export").onclick=()=>{ collect(); const j=JSON.stringify({sc2remap:1,name:nameOf(prof[cur]),data:Array.from(prof[cur])}); const a=document.createElement("a"); a.href=URL.createObjectURL(new Blob([j],{type:"application/json"})); a.download=`sc2-remap-${(nameOf(prof[cur])||"profile"+(cur+1)).replace(/\W+/g,"_")}.json`; a.click(); };
@@ -1063,7 +1069,7 @@ $("#gyAuto").onchange=e=>{ const b=prof[cur]; b[17]=(b[17]&~4)|(e.target.checked
 let monPrev=null;
 const KEYNAME=v=>MODS[v]||KEYS[v]||("key "+v);
 setInterval(async()=>{
-  if(!devs.length||$("#v_map").hidden) return;
+  if(!devs.length||$("#v_map").hidden||bulk) return;
   let b; try{ b=await read("sc26re/rmp_out"); }catch(e){ return; }
   if(!b||b.length<30) { $("#mon").innerHTML=""; return; }
   const dv=new DataView(b.buffer,b.byteOffset,30), t=performance.now();

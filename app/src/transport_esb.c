@@ -64,6 +64,7 @@ enum
 struct esb_input_report_entry
 {
 	uint8_t id;
+	bool state; /* keyboard report or mouse buttons change (not movement only) */
 	uint8_t len;
 	uint8_t data[ESB_INPUT_REPORT_MAX_BODY_SIZE];
 };
@@ -104,6 +105,9 @@ static uint8_t report_sequence;
 static uint8_t input_report_queue_head;
 static uint8_t input_report_queue_count;
 static uint32_t input_report_queue_generation;
+static uint8_t state_queued;      /* keyboard / mouse-button reports in the queue */
+static int64_t state_left_ms;     /* when the last of them left in a payload */
+static uint8_t last_mouse_buttons_queued;
 static bool latest_input_valid;
 static bool legacy_feature_fallback_pending;
 static struct k_spinlock pending_session_lock;
@@ -225,6 +229,8 @@ static void clear_session_reports(void)
 	latest_input_valid = false;
 	input_report_queue_head = 0;
 	input_report_queue_count = 0;
+	state_queued = 0;
+	state_left_ms = k_uptime_get();
 	input_report_queue_generation++;
 	k_spin_unlock(&latest_input_lock, key);
 }
@@ -566,6 +572,15 @@ static void queue_latest_input(void)
 	{
 		input_report_queue_head =
 		    (input_report_queue_head + queued_reports_included) % ARRAY_SIZE(input_report_queue);
+		for(uint8_t i = 0; i < queued_reports_included; ++i)
+		{
+			if(input_report_queue[(input_report_queue_head + ARRAY_SIZE(input_report_queue) - 1U - i) %
+			                      ARRAY_SIZE(input_report_queue)].state && state_queued)
+			{
+				state_queued--;
+				state_left_ms = k_uptime_get();
+			}
+		}
 		input_report_queue_count -= queued_reports_included;
 		input_report_queue_generation++;
 	}
@@ -1489,6 +1504,13 @@ static int queue_input_report(uint8_t report_id, const uint8_t *data, size_t len
 	entry->id = report_id;
 	entry->len = len;
 	memcpy(entry->data, data, len);
+	entry->state = report_id == ESB_REPORT_41_ID ||
+	               (report_id == ESB_REPORT_40_ID && data[0] != last_mouse_buttons_queued);
+	if(report_id == ESB_REPORT_40_ID)
+	{
+		last_mouse_buttons_queued = data[0];
+	}
+	state_queued += entry->state ? 1U : 0U;
 	input_report_queue_count++;
 	k_spin_unlock(&latest_input_lock, key);
 	return 0;
@@ -1513,6 +1535,15 @@ int transport_esb_send_battery_status(const struct controller_battery_report *re
 	sys_put_le16(report->temperature_mc, &body[12]);
 
 	return queue_input_report(ESB_REPORT_43_ID, body, sizeof(body));
+}
+
+int32_t transport_esb_input_idle_ms(void)
+{
+	k_spinlock_key_t key = k_spin_lock(&latest_input_lock);
+	int64_t idle = state_queued ? 0 : k_uptime_get() - state_left_ms;
+
+	k_spin_unlock(&latest_input_lock, key);
+	return (int32_t)MIN(idle, (int64_t)INT32_MAX);
 }
 
 int transport_esb_send_input_report(uint8_t report_id, const uint8_t *data, size_t len)
