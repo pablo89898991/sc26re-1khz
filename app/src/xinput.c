@@ -26,6 +26,7 @@
 #include <zephyr/drivers/usb/udc.h>
 
 #include "controller.h"
+#include "haptics.h"
 #include "sc26re_cfg.h"
 #include "xinput.h"
 
@@ -194,6 +195,12 @@ static int xi_request(struct usbd_class_data *const c_data, struct net_buf *cons
 	struct udc_buf_info *bi = (struct udc_buf_info *)net_buf_user_data(buf);
 	uint8_t ep = bi->ep;
 
+	if(ep == xi_desc.out_ep.bEndpointAddress && err == 0 && buf->len >= 5U && buf->data[0] == 0x00U &&
+	   buf->data[1] == 0x08U)
+	{
+		/* rumble from the game: big (left) and small (right) motor */
+		haptics_xinput_rumble(buf->data[3], buf->data[4]);
+	}
 	net_buf_unref(buf);
 	if(ep == xi_desc.in_ep.bEndpointAddress)
 	{
@@ -205,7 +212,7 @@ static int xi_request(struct usbd_class_data *const c_data, struct net_buf *cons
 	}
 	else if(ep == xi_desc.out_ep.bEndpointAddress && atomic_get(&xi_enabled) && err != -ECONNABORTED)
 	{
-		/* rumble / LED reports: accepted and ignored */
+		/* next rumble / LED report */
 		(void)xi_submit_out(c_data);
 	}
 	return 0;

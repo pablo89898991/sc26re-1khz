@@ -213,10 +213,13 @@ static float band(float v, int16_t lo, int16_t hi, bool soft)
 static bool active(uint32_t buttons, uint32_t pressed)
 {
 	int16_t b = gm(SC26RE_CFG_GM_ACT_BUTTON);
+	int16_t b2 = gm(SC26RE_CFG_GM_ACT_BUTTON2);
 	int16_t mode = gm(SC26RE_CFG_GM_ACT_MODE);
-	bool held = b >= 0 && b <= 29 && (buttons & BIT(b)) != 0U;
+	/* either of the two activation buttons */
+	uint32_t mask = ((b >= 0 && b <= 29) ? BIT(b) : 0U) | ((b2 >= 0 && b2 <= 29) ? BIT(b2) : 0U);
+	bool held = (buttons & mask) != 0U;
 
-	if(b < 0 || b > 29 || mode == 0)
+	if(mask == 0U || mode == 0)
 	{
 		return true;
 	}
@@ -227,7 +230,7 @@ static bool active(uint32_t buttons, uint32_t pressed)
 		case 2:
 			return !held;
 		default:
-			if(pressed & BIT(b))
+			if(pressed & mask)
 			{
 				toggled_on = !toggled_on;
 			}
@@ -521,8 +524,26 @@ void gyro_mouse_feed(const float dps[3], uint32_t buttons, float dt_s)
 
 				g *= 1.0f + (float)acc * 0.01f * CLAMP((w - lo) / (hi - lo), 0.0f, 1.0f);
 			}
-			acc_x += wx * k * g;
-			acc_y += wy * k * g;
+			{
+				/* precision smoothing: slow turns (below the threshold) are averaged
+				 * over ~32 ms to hide sensor noise; fast turns stay instant */
+				static float sm_x, sm_y;
+				float th = (float)gm(SC26RE_CFG_GM_SMOOTH) * 0.1f;
+				float ox = wx * k * g, oy = wy * k * g;
+
+				if(th > 0.0f)
+				{
+					float t = CLAMP((w - th * 0.5f) / (th * 0.5f), 0.0f, 1.0f); /* 0 smooth .. 1 direct */
+					float a = 0.03f;
+
+					sm_x += (ox - sm_x) * a;
+					sm_y += (oy - sm_y) * a;
+					ox = sm_x + (ox - sm_x) * t;
+					oy = sm_y + (oy - sm_y) * t;
+				}
+				acc_x += ox;
+				acc_y += oy;
+			}
 		}
 	}
 }

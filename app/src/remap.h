@@ -9,7 +9,7 @@
 
 #define REMAP_PROFILES 4
 #define REMAP_MAGIC 0xA7
-#define REMAP_VERSION 5
+#define REMAP_VERSION 6
 
 /* sources: 0..29 controller button bits, then derived inputs */
 enum
@@ -35,6 +35,11 @@ enum
 #define REMAP_MODE_TOGGLE 0x04 /* group 0 toggles on each press */
 #define REMAP_MODE_START 0x08  /* group 0 tapped the moment it is pressed */
 #define REMAP_MODE_RELEASE 0x10 /* group 2 tapped when released (instead of double) */
+#define REMAP_MODE_TURBO 0x20   /* group 0 repeats while held (profile turbo rate) */
+#define REMAP_MODE_CYCLE 0x40   /* each press taps the next set: press, hold, double/release */
+/* binding.haptic: bits 0-1 haptic level, bits 2-7 chord button + 1 (only fires while it is held) */
+#define REMAP_HAPTIC_LEVEL(h) ((h) & 3U)
+#define REMAP_CHORD(h) ((h) >> 2)
 
 /* action codes: 0x01..0x65 keyboard usages, 0xE0..0xE7 modifiers */
 #define REMAP_ACT_MOUSE_L 0x70
@@ -52,7 +57,13 @@ enum
 #define REMAP_ACT_MOUSE_5 0x7C
 #define REMAP_ACT_PAD 0x80     /* + Steam pad button bit 0..29 */
 #define REMAP_ACT_XBOX 0xA0    /* + Steam button bit 0..29: Xbox pad only */
-#define REMAP_ACT_PROFILE 0xC0 /* + profile 0..3 */
+#define REMAP_ACT_PROFILE 0xC0 /* + profile 0..3: switch (action set) */
+#define REMAP_ACT_LAYER 0xC4   /* + profile 0..3: lay over the current one while held (action layer) */
+#define REMAP_ACT_MACRO 0xC8   /* + macro 0..3 of the profile */
+#define REMAP_ACT_STICK 0xD0   /* + 0..7: left stick up/down/left/right, right stick up/down/left/right (full) */
+#define REMAP_ACT_TRIG_L 0xD8  /* left / right trigger fully pulled (analog) */
+#define REMAP_ACT_TRIG_R 0xD9
+#define REMAP_MACRO_STEPS 16
 
 /* stick / trackpad modes (struct remap_analog.mode) */
 #define REMAP_ANALOG_PASS 0   /* to Steam as an analog input (sticks: dead zones applied) */
@@ -65,6 +76,7 @@ enum
 #define REMAP_ANALOG_FLICK 7    /* flick stick: point = turn there, rotate = keep turning */
 #define REMAP_ANALOG_SWIPE 8    /* trackpads: swipes fire the 4 directions */
 #define REMAP_ANALOG_GRID 9     /* trackpads: 3 x 3 zones (8 directions + centre), each its own binding */
+#define REMAP_ANALOG_RADIAL 10  /* trackpads: radial menu, 2..10 slices (speed), fires on lift (or click) */
 
 #define REMAP_PF_BLOCK_UNBOUND 0x01 /* inputs without a binding send nothing to Steam */
 #define REMAP_PF_GYRO 0x02          /* the profile's own gyro settings replace the global ones */
@@ -82,6 +94,9 @@ enum
 #define REMAP_AF_OTHER_STICK 0x04 /* trackpad joystick: drive the other side's stick */
 #define REMAP_AF_SWIPE_REPEAT 0x08 /* directional swipe: a long swipe fires again */
 #define REMAP_AF_PRESSURE 0x10     /* trackpads: active while pressed harder than .press */
+#define REMAP_AF_INVERT_X 0x20
+#define REMAP_AF_INVERT_Y 0x40
+#define REMAP_AF_TRACKBALL 0x80    /* trackpad mouse: keeps rolling after the finger leaves (friction = dz_out) */
 
 struct remap_analog
 {
@@ -90,9 +105,9 @@ struct remap_analog
 	uint16_t dz_in;   /* inner dead zone / activation / threshold, 0.01 % of the radius */
 	uint16_t dz_out;  /* outer dead zone, 0.01 % */
 	uint16_t speed;   /* mouse: counts/s (stick) or per swipe (pad); scroll: notches/s x100 (stick) or deg per step (wheel); flick: ms */
-	uint8_t haptic;   /* feedback for mouse / scroll movement: 0 off, 1 tick, 2 click, 3 strong */
-	uint8_t reserved;
-	uint16_t curve;   /* response exponent x100 (100 linear, 200 squared); 0 = mode default */
+	uint8_t haptic;   /* feedback for mouse / scroll movement / zones: 0 off, 1 tick, 2 click, 3 strong */
+	int8_t rotate;    /* rotation of the input, degrees */
+	uint16_t curve;   /* response exponent x100 (100 linear, 200 squared); 0 = mode default; pad mouse: acceleration % */
 	uint16_t ring;    /* outer ring radius, 0.01 % (0 = off) */
 	uint16_t anti_dz; /* anti dead zone, 0.01 % */
 	uint16_t press;   /* trackpads with REMAP_AF_PRESSURE: pressure needed, 0.01 % */
@@ -144,7 +159,11 @@ struct remap_profile
 	uint8_t trig_mode[2];      /* REMAP_TRIG_* */
 	uint16_t trig_hip_ms[2];   /* hip fire window (0 = 75 ms) */
 	uint16_t trig_range[2][2]; /* analog trigger to Steam: start, end (0.01 %; 0,0 = full range) */
-	uint8_t reserved[10];
+	uint16_t hold_ms;          /* long press time (0 = 250) */
+	uint16_t double_ms;        /* double press window (0 = 250) */
+	uint16_t turbo_ms;         /* turbo period (0 = 100) */
+	uint8_t reserved[4];
+	uint8_t macro[4][REMAP_MACRO_STEPS][2]; /* steps: action, time x10 ms (action 0 = wait; 0,0 = end) */
 	struct remap_analog an[4]; /* left stick, right stick, left pad, right pad */
 	struct remap_shift shift[REMAP_SHIFT_GROUPS];
 	struct remap_binding bind[REMAP_SRC_COUNT];

@@ -1352,6 +1352,51 @@ static void haptics_thread_main(void *arg1, void *arg2, void *arg3)
 	}
 }
 
+static int handle_haptic_rumble(const uint8_t *data, size_t len, bool log);
+
+/* Xbox 360 output: the game's rumble (0..255 per motor) on the controller's
+ * rumble actuators, refreshed while it lasts (each rumble burst is 100 ms) */
+static uint8_t xi_rumble[2];
+static void xi_rumble_work_fn(struct k_work *work);
+static K_WORK_DELAYABLE_DEFINE(xi_rumble_work, xi_rumble_work_fn);
+
+static void xi_rumble_play(void)
+{
+	uint8_t d[HID_RUMBLE_OUTPUT_REPORT_BYTES] = { 0 };
+
+	sys_put_le16(0x8000, &d[1]);                              /* intensity: base gain */
+	sys_put_le16((uint16_t)(xi_rumble[0] * 257U), &d[3]);    /* left = big motor */
+	sys_put_le16((uint16_t)(xi_rumble[1] * 257U), &d[6]);    /* right = small motor */
+	(void)handle_haptic_rumble(d, sizeof(d) - 1U, false);
+}
+
+static void xi_rumble_work_fn(struct k_work *work)
+{
+	ARG_UNUSED(work);
+	if(xi_rumble[0] || xi_rumble[1])
+	{
+		xi_rumble_play();
+		(void)k_work_reschedule(&xi_rumble_work, K_MSEC(80));
+	}
+}
+
+void haptics_xinput_rumble(uint8_t big, uint8_t small)
+{
+	bool was = xi_rumble[0] || xi_rumble[1];
+
+	xi_rumble[0] = big;
+	xi_rumble[1] = small;
+	xi_rumble_play();
+	if(big || small)
+	{
+		(void)k_work_reschedule(&xi_rumble_work, K_MSEC(80));
+	}
+	else if(was)
+	{
+		(void)k_work_cancel_delayable(&xi_rumble_work);
+	}
+}
+
 static const char *haptics_report_name(uint8_t report_id)
 {
 	switch(report_id)
