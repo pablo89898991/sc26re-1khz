@@ -93,12 +93,18 @@ struct src_state
 	int8_t pulse_group;
 	int64_t release_until; /* release press: group 2 tapped until */
 	uint8_t cycle;         /* cycle: next set */
+	bool block;            /* held when the profile changed: ignored until released */
 };
+static bool block_pressed; /* this report: block every source that is down */
 static struct src_state st[REMAP_SRC_COUNT];
 
 static uint8_t last_kbd[8];
 static bool kbd_valid;
 static uint8_t mouse_buttons;
+static bool mouse_refresh;    /* send the mouse buttons again even without a change */
+static int64_t out_change_ms = -100000; /* last keyboard / mouse button change sent */
+static uint8_t mouse_pend;   /* mouse buttons pressed while the link refused reports */
+static uint8_t kbd_pend[8];  /* keys pressed while the link refused reports (report layout) */
 static uint32_t xbox_buttons;
 static uint8_t move_dirs; /* mouse move actions held: up, down, left, right */
 /* radial menu slices, clockwise from the top */
@@ -454,6 +460,17 @@ static void pulse(const struct remap_binding *b, struct src_state *ss, int s, in
 	fire(b, 0, s);
 }
 
+/* sources that only fire taps (radial slices, wheel, swipes): nothing may stay
+ * held from the mode the source had before (layer / profile / shift change) */
+static void drop_hold(struct src_state *s)
+{
+	s->down = false;
+	s->toggled = false;
+	s->waiting_double = false;
+	s->held_group = -1;
+	s->release_until = 0;
+}
+
 static void run_source(const struct remap_binding *b, struct src_state *s, bool down, int64_t now, int src,
                        bool release_ok)
 {
@@ -740,18 +757,25 @@ static void send_mouse(void)
 		mouse_acc[i] -= t;
 		any = any || v[i] != 0;
 	}
-	if(!any && mouse_buttons == last_buttons)
+	if(!any && (mouse_buttons | mouse_pend) == last_buttons && !mouse_refresh)
 	{
 		return;
 	}
-	m[0] = mouse_buttons;
+	mouse_refresh = false;
+	/* a click the link refused is still sent (pressed once) when it takes reports again */
+	m[0] = mouse_buttons | mouse_pend;
 	m[1] = (uint8_t)v[0];
 	m[2] = (uint8_t)v[1];
 	m[3] = (uint8_t)v[2];
 	m[4] = (uint8_t)v[3];
 	if(transport_send_input_report(0x40, m, sizeof(m)) == 0)
 	{
-		last_buttons = mouse_buttons;
+		if(last_buttons != m[0])
+		{
+			out_change_ms = k_uptime_get();
+		}
+		last_buttons = m[0];
+		mouse_pend = 0U;
 		mon_dx += v[0];
 		mon_dy += v[1];
 		mon_wheel += v[2];
@@ -762,13 +786,57 @@ static void send_mouse(void)
 		{
 			mouse_acc[i] += (float)v[i];
 		}
+		mouse_pend |= mouse_buttons & ~last_buttons;
+		/* a slow link (Bluetooth) must not build a backlog that keeps the
+		 * pointer moving long after the input stopped: keep about 16 reports */
+		mouse_acc[0] = CLAMP(mouse_acc[0], -2032.0f, 2032.0f);
+		mouse_acc[1] = CLAMP(mouse_acc[1], -2032.0f, 2032.0f);
 	}
+}
+
+static bool kbd_flush; /* the "all keys up" report still has to go out */
+
+/*
+ * Keyboard and mouse buttons are states: a report taken by the radio can still
+ * be lost (the Puck link drops its queue when it reconnects), and the PC would
+ * keep a key down. For 5 s after a change the current state is sent again every
+ * 250 ms (a few reports, harmless when they arrive twice).
+ */
+static void refresh_outputs(void)
+{
+	static const uint8_t zero[8];
+	static int64_t t_ref;
+	int64_t now = k_uptime_get();
+
+	if(now - out_change_ms > 5000 || now - out_change_ms < 250 || now - t_ref < 250)
+	{
+		return;
+	}
+	t_ref = now;
+	(void)transport_send_input_report(0x41, kbd_valid ? last_kbd : zero, 8);
+	mouse_refresh = true;
+}
+
+/* with the remapper off or an empty profile: make sure the last "released"
+ * reports reach the PC even when the radio refused them the first time */
+static void flush_outputs(void)
+{
+	static const uint8_t zero[8];
+
+	if(kbd_flush && transport_send_input_report(0x41, zero, sizeof(zero)) == 0)
+	{
+		kbd_flush = false;
+		out_change_ms = k_uptime_get();
+	}
+	refresh_outputs();
+	send_mouse(); /* sends only a change still pending (buttons up) */
 }
 
 static void release_all(void)
 {
 	static const uint8_t zero[8];
 
+	mouse_pend = 0U;
 	memset(st, 0, sizeof(st));
 	for(size_t i = 0; i < REMAP_SRC_COUNT; ++i)
 	{
@@ -795,9 +863,14 @@ static void release_all(void)
 	}
 	if(kbd_valid && memcmp(last_kbd, zero, sizeof(zero)) != 0)
 	{
-		(void)transport_send_input_report(0x41, zero, sizeof(zero));
+		if(transport_send_input_report(0x41, zero, sizeof(zero)) != 0)
+		{
+			kbd_flush = true; /* the radio queue was full: retried by flush_outputs() */
+		}
+		out_change_ms = k_uptime_get();
 	}
 	memset(last_kbd, 0, sizeof(last_kbd));
+	memset(kbd_pend, 0, sizeof(kbd_pend));
 	kbd_valid = false;
 }
 
@@ -1235,6 +1308,7 @@ void remap_process(struct controller_report *r, float dt)
 	profile_changed();
 	if(!remap_enabled())
 	{
+		flush_outputs();
 		return;
 	}
 	p = active();
@@ -1242,7 +1316,22 @@ void remap_process(struct controller_report *r, float dt)
 	{
 		/* empty profile: nothing mapped, and nothing left held from before */
 		release_all(); /* sends nothing when nothing is held */
+		flush_outputs();
 		return;
+	}
+	{
+		/* another profile (switch action, Steam + D-pad): start from nothing held */
+		static const struct remap_profile *last_active;
+
+		if(p != last_active)
+		{
+			if(last_active != NULL)
+			{
+				release_all();
+				block_pressed = true;
+			}
+			last_active = p;
+		}
 	}
 	cur_profile = p;
 	HOLD_MS = p->hold_ms ? p->hold_ms : 250U;
@@ -1640,6 +1729,7 @@ void remap_process(struct controller_report *r, float dt)
 		}
 		if(radial_of_src[s] >= 0 && radial_mode[radial_of_src[s]])
 		{
+			drop_hold(ss);
 			if(radial_fire[radial_of_src[s]] == s)
 			{
 				pulse(b, ss, s, now);
@@ -1649,6 +1739,7 @@ void remap_process(struct controller_report *r, float dt)
 		{
 			int j = (s - REMAP_SRC_LPAD_CW) / 2;
 
+			drop_hold(ss);
 			if(wheel_fire[j] & BIT((s - REMAP_SRC_LPAD_CW) % 2))
 			{
 				pulse(b, ss, s, now);
@@ -1656,6 +1747,7 @@ void remap_process(struct controller_report *r, float dt)
 		}
 		else if(s >= REMAP_SRC_LPAD_UP && s < REMAP_SRC_LPAD_GATE && swipe_mode[(s - REMAP_SRC_LPAD_UP) / 4])
 		{
+			drop_hold(ss);
 			if(swipe_fire[(s - REMAP_SRC_LPAD_UP) / 4] & BIT((s - REMAP_SRC_LPAD_UP) % 4))
 			{
 				pulse(b, ss, s, now);
@@ -1681,6 +1773,18 @@ void remap_process(struct controller_report *r, float dt)
 			/* chorded: only while the chord button is held too */
 			bool down = src_pressed(s) && (chord == 0U || (chord <= 30U && (raw & BIT(chord - 1U))));
 
+			/* the input that switched the profile (still held) must not act in
+			 * the new one until it is let go, or two profiles switching to each
+			 * other on the same button would swap every report */
+			if(block_pressed && src_pressed(s))
+			{
+				ss->block = true;
+			}
+			if(ss->block)
+			{
+				ss->block = src_pressed(s);
+				down = false;
+			}
 			run_source(b, ss, down, now, s, pj < 0 || !pad_act[pj]);
 		}
 		if(ss->held_group >= 0 &&
@@ -1833,17 +1937,55 @@ void remap_process(struct controller_report *r, float dt)
 	}
 	r->buttons = (r->buttons & ~hide) | pad;
 	mon_pad = pad;
+	block_pressed = false;
+	refresh_outputs();
 
 	{
 		uint8_t kbd[8] = { mods, 0 };
 
 		memcpy(&kbd[2], keys, sizeof(keys));
+		/* keys pressed while the radio queue was full: keep them in the report
+		 * until one with them gets through, so a short tap is never lost */
+		kbd[0] |= kbd_pend[0];
+		for(int i = 2; i < 8 && kbd_pend[i]; ++i)
+		{
+			if(memchr(&kbd[2], kbd_pend[i], 6) == NULL && nk < 6U)
+			{
+				kbd[2 + nk++] = kbd_pend[i];
+			}
+		}
 		if(!kbd_valid || memcmp(kbd, last_kbd, sizeof(kbd)) != 0)
 		{
 			if(transport_send_input_report(0x41, kbd, sizeof(kbd)) == 0)
 			{
+				if(memcmp(kbd, last_kbd, sizeof(kbd)) != 0)
+				{
+					out_change_ms = now; /* a real change, not the first empty report */
+				}
 				memcpy(last_kbd, kbd, sizeof(kbd));
 				kbd_valid = true;
+				kbd_flush = false;
+				memset(kbd_pend, 0, sizeof(kbd_pend));
+			}
+			else
+			{
+				/* remember what is newly pressed in the report that did not go */
+				size_t np = 0;
+
+				while(np < 6U && kbd_pend[2 + np])
+				{
+					++np;
+				}
+				kbd_pend[0] |= kbd[0] & (uint8_t)~(kbd_valid ? last_kbd[0] : 0U);
+				for(int i = 2; i < 8 && kbd[i]; ++i)
+				{
+					bool was = kbd_valid && memchr(&last_kbd[2], kbd[i], 6) != NULL;
+
+					if(!was && memchr(&kbd_pend[2], kbd[i], np) == NULL && np < 6U)
+					{
+						kbd_pend[2 + np++] = kbd[i];
+					}
+				}
 			}
 		}
 	}

@@ -33,15 +33,140 @@ static void ev(const char *fmt, ...)
 	va_end(ap);
 }
 
+/* ---- transport model: what the host (PC) actually receives ----
+ * 0 USB: every report arrives.
+ * 1 Puck (ESB, as transport_esb.c): queue of 5, mouse movement merges into a waiting
+ *   mouse report, -EAGAIN when full; one payload per 1 ms frame carries the queued
+ *   reports (esb_one = 0: all that fit, like the firmware; 1: one per payload); the
+ *   Puck turns a payload into one USB report: only the newest of them survives.
+ * 2 Bluetooth (as transport_ble.c): queue of 16 (-ENOMEM when full), drained into
+ *   bt_gatt_notify while the stack has buffers; buffers free at each connection event.
+ * Link trouble: frames lost (bursts) and disconnects (queue dropped). */
+struct qrep { uint8_t id, len, d[8]; };
+static int tmode, esb_one, ble_bufs = 3, ble_ci = 15, link_up = 1;
+static unsigned rng = 1;
+static int lossy_pct, burst_left;
+static struct qrep q[16];
+static int qn;
+static uint8_t host_kbd[8], host_mb;
+static long host_dx, host_dy, host_wh, host_pan;
+static int host_lost;
+static uint32_t rnd(void) { rng = rng * 1103515245u + 12345u; return rng >> 8; }
+
+static void host_deliver(const struct qrep *r)
+{
+	if(r->id == 0x41)
+	{
+		if(memcmp(host_kbd, r->d, 8) != 0)
+		{
+			memcpy(host_kbd, r->d, 8);
+			ev("HK %02x %02x %02x %02x %02x %02x %02x", r->d[0], r->d[2], r->d[3], r->d[4], r->d[5], r->d[6], r->d[7]);
+		}
+	}
+	else if(r->id == 0x40)
+	{
+		host_mb = r->d[0];
+		host_dx += (int8_t)r->d[1]; host_dy += (int8_t)r->d[2]; host_wh += (int8_t)r->d[3]; host_pan += (int8_t)r->d[4];
+		ev("HM %u %d %d %d %d", r->d[0], (int8_t)r->d[1], (int8_t)r->d[2], (int8_t)r->d[3], (int8_t)r->d[4]);
+	}
+}
+
+static int tsend(uint8_t id, const uint8_t *d, size_t len);
 int transport_send_input_report(uint8_t id, const uint8_t *d, size_t len)
 {
-	if(id == 0x41 && len >= 8)
-		ev("K %02x %02x %02x %02x %02x %02x %02x", d[0], d[2], d[3], d[4], d[5], d[6], d[7]);
-	else if(id == 0x40 && len >= 5)
-		ev("M %u %d %d %d %d", d[0], (int8_t)d[1], (int8_t)d[2], (int8_t)d[3], (int8_t)d[4]);
-	else
-		ev("R %02x %zu", id, len);
+	int err = tsend(id, d, len);
+
+	if(err == 0) /* the device log: only reports the transport took */
+	{
+		if(id == 0x41 && len >= 8)
+			ev("K %02x %02x %02x %02x %02x %02x %02x", d[0], d[2], d[3], d[4], d[5], d[6], d[7]);
+		else if(id == 0x40 && len >= 5)
+			ev("M %u %d %d %d %d", d[0], (int8_t)d[1], (int8_t)d[2], (int8_t)d[3], (int8_t)d[4]);
+	}
+	return err;
+}
+
+static int tsend(uint8_t id, const uint8_t *d, size_t len)
+{
+	struct qrep r = { id, (uint8_t)len };
+	memcpy(r.d, d, len < 8 ? len : 8);
+	if(tmode == 0) { host_deliver(&r); return 0; }
+	if(!link_up) return -ENOTCONN;
+	if(tmode == 1)
+	{
+		if(id == 0x40)
+		{
+			/* as transport_esb.c: the newest mouse report decides, never the head */
+			for(int n = qn - 1; n >= (esb_one ? 1 : 0); --n)
+			{
+				if(q[n].id != 0x40) continue;
+				int ok = !esb_one || q[n].d[0] == d[0];
+				for(int i = 1; i < 5; ++i) { int v = (int8_t)q[n].d[i] + (int8_t)d[i]; ok = ok && v >= -127 && v <= 127; }
+				if(ok)
+				{
+					q[n].d[0] = d[0];
+					for(int i = 1; i < 5; ++i) q[n].d[i] = (uint8_t)(int8_t)((int8_t)q[n].d[i] + (int8_t)d[i]);
+					return 0;
+				}
+				if(esb_one) break;
+			}
+		}
+		if(qn == 5) return -EAGAIN;
+		q[qn++] = r;
+		return 0;
+	}
+	if(qn == 16) return -ENOMEM;
+	q[qn++] = r;
 	return 0;
+}
+
+static int ble_free;
+/* one millisecond of radio */
+static void transport_tick(void)
+{
+	if(tmode == 0 || !link_up) return;
+	bool lost = false;
+	if(burst_left > 0) { burst_left--; lost = true; }
+	else if((int)(rnd() % 1000) < lossy_pct) { burst_left = (int)(rnd() % 40); lost = true; }
+	if(tmode == 1)
+	{
+		if(lost || qn == 0) return;
+		int take = esb_one ? 1 : qn; /* 128-byte payload: all 5 fit */
+		host_lost += take - 1;
+		host_deliver(&q[take - 1]); /* the Puck keeps the newest */
+		memmove(q, q + take, (size_t)(qn - take) * sizeof(q[0]));
+		qn -= take;
+		return;
+	}
+	if(now_ms % ble_ci == 0 && !lost) ble_free = ble_bufs;
+	while(qn > 0 && ble_free > 0)
+	{
+		host_deliver(&q[0]);
+		memmove(q, q + 1, (size_t)(qn - 1) * sizeof(q[0]));
+		qn--;
+		ble_free--;
+	}
+}
+
+void sim_transport(int mode, int one, int loss_permille, int ci_ms, unsigned seed)
+{
+	tmode = mode; esb_one = one; lossy_pct = loss_permille; ble_ci = ci_ms > 0 ? ci_ms : 15; rng = seed | 1;
+}
+void sim_link(int up)
+{
+	if(up == link_up) return;
+	link_up = up;
+	if(!up)
+	{
+		qn = 0; /* teardown drops what was waiting */
+		if(tmode == 2) { memset(host_kbd, 0, 8); host_mb = 0; ev("HK 00 00 00 00 00 00 00"); } /* BT host releases */
+	}
+}
+void sim_host(int32_t *out)
+{
+	out[0] = host_mb; out[1] = (int32_t)host_dx; out[2] = (int32_t)host_dy; out[3] = (int32_t)host_wh; out[4] = (int32_t)host_pan;
+	out[5] = host_lost; out[6] = qn;
+	memcpy(&out[7], host_kbd, 8);
 }
 int haptics_play_feedback(uint8_t level, uint8_t channels) { ev("H %u %u", level, channels); return 0; }
 int haptics_play_beep(uint16_t f, uint16_t ms) { ev("B %u %u", f, ms); return 0; }
@@ -112,6 +237,7 @@ void sim_step(const uint8_t *in, uint8_t *out, int dt_us)
 	struct controller_report r;
 	memcpy(&r, in, sizeof(r));
 	now_ms += 0; /* time advanced by the driver (sub-ms steps) */
+	for(int t = 0; t < (dt_us + 999) / 1000; ++t) transport_tick();
 	remap_raw_capture(&r);
 	remap_process(&r, (float)dt_us * 1e-6f);
 	memcpy(out, &r, sizeof(r));

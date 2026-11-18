@@ -486,7 +486,11 @@ static void queue_latest_input(void)
 	 * into the waiting one) and the pad state keeps using the replaceable slot,
 	 * instead of the queue filling with fixed payloads and stale pad states.
 	 */
-	for(uint8_t i = 0; valve_esb_backend_fixed_pending() == 0U && i < input_report_queue_count; ++i)
+	/* one queued report per payload: the Puck makes a single USB report of a
+	 * payload (one slot per ms) and keeps only the newest, so a second keyboard
+	 * or mouse report here (a key press and its release, a key and a click)
+	 * would be lost */
+	for(uint8_t i = 0; valve_esb_backend_fixed_pending() == 0U && i < input_report_queue_count && i < 1U; ++i)
 	{
 		const uint8_t queue_index = (input_report_queue_head + i) % ARRAY_SIZE(input_report_queue);
 		const struct esb_input_report_entry *entry = &input_report_queue[queue_index];
@@ -1439,35 +1443,38 @@ static int queue_input_report(uint8_t report_id, const uint8_t *data, size_t len
 	}
 	if(report_id == ESB_REPORT_40_ID && len == ESB_REPORT_40_BODY_SIZE)
 	{
-		/* mouse (gyro mouse / lizard): add to a mouse report still waiting
-		 * instead of queueing another, so movement is never dropped or delayed */
-		for(uint8_t n = 0; n < input_report_queue_count; ++n)
+		/* mouse (gyro mouse / lizard): add the movement to the newest mouse
+		 * report still waiting instead of queueing another. Only the newest
+		 * (order of clicks), only with the same buttons (a click waiting here
+		 * must not become a release), and never the first in the queue: that
+		 * one may already be in a payload on its way, and it is dequeued after
+		 * the send, which would drop what was added meanwhile. */
+		for(int n = (int)input_report_queue_count - 1; n >= 1; --n)
 		{
 			struct esb_input_report_entry *e =
 			    &input_report_queue[(input_report_queue_head + n) % ARRAY_SIZE(input_report_queue)];
-			bool fits = true;
+			bool fits = e->len == len && e->data[0] == data[0];
 
-			if(e->id != ESB_REPORT_40_ID || e->len != len)
+			if(e->id != ESB_REPORT_40_ID)
 			{
 				continue;
 			}
-			for(size_t i = 1; i < len; ++i)
+			for(size_t i = 1; fits && i < len; ++i)
 			{
 				int32_t v = (int8_t)e->data[i] + (int8_t)data[i];
 
-				fits = fits && v >= -127 && v <= 127;
+				fits = v >= -127 && v <= 127;
 			}
-			if(!fits)
+			if(fits)
 			{
-				continue;
+				for(size_t i = 1; i < len; ++i)
+				{
+					e->data[i] = (uint8_t)(int8_t)((int8_t)e->data[i] + (int8_t)data[i]);
+				}
+				k_spin_unlock(&latest_input_lock, key);
+				return 0;
 			}
-			e->data[0] = data[0];
-			for(size_t i = 1; i < len; ++i)
-			{
-				e->data[i] = (uint8_t)(int8_t)((int8_t)e->data[i] + (int8_t)data[i]);
-			}
-			k_spin_unlock(&latest_input_lock, key);
-			return 0;
+			break; /* the newest mouse report decides */
 		}
 	}
 	if(input_report_queue_count == ARRAY_SIZE(input_report_queue))

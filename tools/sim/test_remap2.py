@@ -237,6 +237,56 @@ def regress_long_swipe_across_pad():
     ev += touch(s, 1, -32000, 0, ms=5); ev += touch(s, 1, 32000, 0, ms=50); ev += lift(s, 1)
     assert ev.taps(key("d")) == 1, ev
 
+def host_presses(s, code):
+    n, was = 0, False
+    for e in s.log:
+        p = e.split()
+        if p[1] != "HK": continue
+        now = ("%02x" % code) in p[3:]
+        if now and not was: n += 1
+        was = now
+    return n
+
+@test
+def regress_puck_key_and_click_same_moment():
+    p = Profile(); p.bind("A", (key("lshift"), MOUSE_L)); p.bind("B", key("b"))
+    s = Sim(); s.transport(1, 1, loss=0); s.use(p); s.run(5)
+    for _ in range(10):
+        s.run(30, A=1, B=1); s.run(30, A=0, B=0)
+    s.run(200)
+    hm = [e for e in s.log if " HM " in e]
+    clicks = sum(1 for a, b in zip([0] + [int(e.split()[2]) for e in hm], [int(e.split()[2]) for e in hm]) if not a & 1 and b & 1)
+    assert host_presses(s, key("b")) == 10 and clicks == 10, (host_presses(s, key("b")), clicks)
+
+@test
+def regress_tap_survives_full_radio_queue():
+    p = Profile(); p.bind("A", key("a"))
+    s = Sim(); s.transport(1, 1, loss=0); s.use(p); s.run(5)
+    s.lib.sim_transport(1, 1, 1000, 15, 3)  # radio down (every frame lost) ...
+    for k in range(8): s.run(2, X=k & 1)    # (unbound noise)
+    s.run(5, A=1); s.run(5, A=0)            # a 5 ms tap while nothing goes out
+    s.lib.sim_transport(1, 1, 0, 15, 3)     # radio back
+    s.run(300)
+    assert host_presses(s, key("a")) == 1, s.log[-10:]
+
+@test
+def regress_release_reaches_pc_when_remapper_turned_off():
+    p = Profile(); p.bind("R4", (key("d"), MOUSE_M))
+    s = Sim(); s.transport(2, 0, loss=0, ci=30); s.use(p); s.run(5)
+    s.run(50, R4=1)
+    s.run(5, LB=1, RB=1, MENU=1); s.run(1, LB=0, RB=0, MENU=0, R4=0)  # off while the BT queue is busy
+    s.run(2000)
+    h = s.host(); assert h["kbd"] == bytes(8) and h["mb"] == 0, h
+
+@test
+def regress_bt_no_mouse_backlog():
+    p = Profile(); p.analog(1, MOUSE, speed=20000)
+    s = Sim(); s.transport(2, 0, loss=0, ci=30); s.use(p); s.run(5)
+    s.run(2000, rsx=32767); stop = s.lib.sim_time(); s.run(5, rsx=0)
+    t = s.run(1500)
+    late = [e for e in t if " HM " in e and int(e.split()[0]) > stop + 500 and (int(e.split()[3]) or int(e.split()[4]))]
+    assert not late, late[:3]
+
 if __name__ == "__main__":
     only = sys.argv[1:]; ok = fail = 0
     for t in TESTS:

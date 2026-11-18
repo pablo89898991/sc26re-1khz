@@ -174,13 +174,29 @@ class Sim:
         self.lib.sim_clear_events()
         inb = struct.pack(RFMT, *[self.state[k] for k in RFIELDS])
         outb = ctypes.create_string_buffer(RSIZE)
-        for _ in range(ms):
-            self.lib.sim_set_time(self.lib.sim_time() + 1)
-            self.lib.sim_step(inb, outb, 1000)
+        jit = getattr(self, "jitter", None)
+        left = ms
+        while left > 0:
+            d = 1 if not jit else min(left, jit())
+            self.lib.sim_set_time(self.lib.sim_time() + d)
+            self.lib.sim_step(inb, outb, 1000 * d)
+            left -= d
         self.out = dict(zip(RFIELDS, struct.unpack(RFMT, outb.raw)))
         ev = [e for e in self.lib.sim_events().decode().splitlines() if e]
         self.log += ev
         return Events(ev)
+
+    def transport(self, mode, one=0, loss=0, ci=15, seed=1):
+        self.lib.sim_transport(mode, one, loss, ci, seed)
+
+    def link(self, up):
+        self.lib.sim_link(1 if up else 0)
+
+    def host(self):
+        a = (ctypes.c_int32 * 9)()
+        self.lib.sim_host(a)
+        kb = bytes(ctypes.string_at(ctypes.addressof(a) + 28, 8))
+        return dict(mb=a[0], dx=a[1], dy=a[2], wh=a[3], pan=a[4], lost=a[5], queued=a[6], kbd=kb)
 
     def out_btn(self, name):
         return bool(self.out["buttons"] & (1 << BTN[name]))
