@@ -90,7 +90,7 @@ class Sim:
         import shutil, tempfile
         Sim._n = getattr(Sim, "_n", 0) + 1
         so = os.path.join(tempfile.gettempdir(), "libsim_%d_%d.so" % (os.getpid(), Sim._n))
-        shutil.copy(os.path.join(HERE, "libsim.so"), so)
+        shutil.copy(os.path.join(HERE, os.environ.get("SIMLIB", "libsim.so")), so)
         self.lib = ctypes.CDLL(so)
         os.unlink(so)
         self.lib.sim_events.restype = ctypes.c_char_p

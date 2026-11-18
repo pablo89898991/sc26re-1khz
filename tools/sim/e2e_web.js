@@ -28,7 +28,10 @@ const kbd = evs => evs.filter(e => e.split(' ')[1] === 'K').map(e => e.split(' '
   check('save profile (read-back compare)', /saved to the controller/.test(await pg.textContent('#pstatus')), await pg.textContent('#pstatus'));
   if (!/ON/.test(await pg.textContent('#onoff'))) { await pg.click('#onoff'); await pg.waitForFunction(() => /ON/.test(document.querySelector('#onoff').textContent), null, { timeout: 10000 }).catch(() => {}); }
   check('remapper on', /ON/.test(await pg.textContent('#onoff')));
-  await post('/clear', {}); await post('/set', { A: 1 }); await sleep(200);
+  await post('/clear', {}); await post('/set', { A: 1 }); const tA = Date.now();
+  const tLit = await pg.waitForFunction(() => document.querySelector('#v_map [data-s="0"]').classList.contains('on'), null, { timeout: 3000 }).then(() => Date.now() - tA).catch(() => -1);
+  const tMon = await pg.waitForFunction(() => /Output/.test(document.querySelector('#mon').textContent) && !/nothing pressed/.test(document.querySelector('#mon').textContent), null, { timeout: 3000 }).then(() => Date.now() - tA).catch(() => -1);
+  console.log('latency: highlight', tLit, 'ms, monitor', tMon, 'ms');
   let ev = await get('/events');
   check('A sends keyboard A', kbd(ev).some(k => k.startsWith('00 04')), kbd(ev).join(' | '));
   const lit = await pg.evaluate(() => document.querySelector('#v_map [data-s="0"]').classList.contains('on'));

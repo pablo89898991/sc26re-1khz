@@ -193,6 +193,50 @@ def gyro_fsr_per_profile():
     s.run(20, STEAM=1, DUP=1); s.run(20, STEAM=0, DUP=0); assert s.lib.sim_gyro_fsr() == 500
     s.cfg("remap_on", 0); assert s.lib.sim_gyro_fsr() == 1000, "remapper off = global"
 
+@test
+def regress_empty_profile_clears_outputs():
+    p = Profile(); p.bind("B", XBOX + 13, mode=M_TURBO); p.bind("A", MOVE_UP)
+    s = fresh(p)
+    s.run(30, B=1, A=1)
+    s.run(20, STEAM=1, DLEFT=1)  # profile 4 = empty slot
+    s.run(20, STEAM=0, DLEFT=0, B=0, A=0); e = s.run(300)
+    assert s.lib.sim_xbox_buttons() == 0 and not any(m[2] for m in e.mouse()), (hex(s.lib.sim_xbox_buttons()), e.mouse()[:2])
+
+@test
+def regress_inner_ring_not_at_rest():
+    p = Profile(); p.analog(0, PASS, ring=5000, dz_in=1000, flags=AF_RING_INV); p.bind("LS_RING", key("w"))
+    s = fresh(p)
+    s.run(30); assert held(s) == (), held(s)
+    s.run(30, lsy=10000); assert held(s) == (key("w"),)
+    s.run(30, lsy=0); assert held(s) == ()
+
+@test
+def regress_nested_layers_do_not_flap():
+    a = Profile(); a.bind("DUP", LAYER + 2)
+    b = Profile(); b.bind("LP_TOUCH", LAYER + 1); b.bind("A", key("x")); b.analog(0, FLICK)
+    s = Sim(); s.upload(1, Profile()); s.upload(2, b); s.use(a); s.run(5)
+    s.run(50, DUP=1, LP_TOUCH=1); e = s.run(300, lsy=-32767)
+    s.run(10, DUP=0, LP_TOUCH=0, lsy=0); later = s.run(2000)
+    dx = sum(m[1] for m in e.mouse())
+    assert abs(abs(dx) - 16364 / 2) < 100, dx
+    assert not later.mouse() or not any(m[1] for m in later.mouse()), later.mouse()[:3]
+
+@test
+def regress_same_key_one_slot():
+    p = Profile()
+    for b in ("A", "B", "X", "Y"): p.bind(b, key("a"))
+    p.bind("L4", key("b")); p.bind("L5", key("c")); p.bind("R4", key("d")); p.bind("R5", key("e")); p.bind("LB", key("f"))
+    s = fresh(p)
+    s.run(20, A=1, B=1, X=1, Y=1, L4=1, L5=1, R4=1, R5=1, LB=1)
+    assert held(s) == tuple(sorted(key(c) for c in "abcdef")), held(s)
+
+@test
+def regress_long_swipe_across_pad():
+    p = Profile(); p.analog(3, SWIPE, dz_in=9000); p.bind("RP_RIGHT", key("d"))
+    s = fresh(p); ev = Events()
+    ev += touch(s, 1, -32000, 0, ms=5); ev += touch(s, 1, 32000, 0, ms=50); ev += lift(s, 1)
+    assert ev.taps(key("d")) == 1, ev
+
 if __name__ == "__main__":
     only = sys.argv[1:]; ok = fail = 0
     for t in TESTS:

@@ -362,7 +362,8 @@ static void out_action(uint8_t a, uint8_t keys[6], size_t *nk, uint8_t *mods, ui
 	}
 	else if(a <= 0x65U)
 	{
-		if(*nk < 6U)
+		/* a key held by two inputs takes one slot */
+		if(*nk < 6U && memchr(keys, a, *nk) == NULL)
 		{
 			keys[(*nk)++] = a;
 		}
@@ -780,6 +781,13 @@ static void release_all(void)
 	memset(flick_on, 0, sizeof(flick_on));
 	memset(pad_joy, 0, sizeof(pad_joy));
 	flick_left = 0.0f;
+	/* everything else that can hold an output */
+	xbox_buttons = 0U;
+	move_dirs = 0U;
+	stick_out = 0U;
+	memset(macros, 0, sizeof(macros));
+	memset(tb_vel, 0, sizeof(tb_vel));
+	layer_now = layer_next = -1;
 	if(mouse_buttons != 0U)
 	{
 		mouse_buttons = 0U;
@@ -837,7 +845,8 @@ static void flick(int i, const struct remap_analog *an, bool active, float fx, f
 		uint16_t ms = an->speed ? an->speed : 100U;
 
 		flick_on[i] = true;
-		flick_left += c360 * a / 360.0f;
+		/* a new flick adds to one still turning, never more than a full turn */
+		flick_left = CLAMP(flick_left + c360 * a / 360.0f, -c360, c360);
 		flick_rate = fabsf(flick_left) * 1000.0f / (float)MAX(ms, 1U);
 	}
 	else
@@ -891,7 +900,7 @@ static void swipe(int j, const struct remap_analog *an, bool active, int16_t x, 
 	}
 	dx = x - swipe_anchor[j][0];
 	dy = y - swipe_anchor[j][1];
-	if(dx * dx + dy * dy < th * th)
+	if((int64_t)dx * dx + (int64_t)dy * dy < (int64_t)th * th)
 	{
 		return;
 	}
@@ -1104,8 +1113,10 @@ static const struct remap_binding *binding(const struct remap_profile *p, int s)
 	const struct remap_binding *b = (g >= 0 && shifted[g]) ? &p->sbind[src_sidx[s]] : &p->bind[s];
 	const struct remap_profile *l = layer_profile();
 
-	/* action layer: its bound inputs win; the input holding the layer keeps its own */
-	if(l != NULL && bound(&l->bind[s]) && !has_layer_action(b))
+	/* action layer: its bound inputs win; the input holding the layer keeps its own.
+	 * Layer actions inside a layer are ignored (no nesting): two layers calling
+	 * each other would swap on every report. */
+	if(l != NULL && bound(&l->bind[s]) && !has_layer_action(b) && !has_layer_action(&l->bind[s]))
 	{
 		return &l->bind[s];
 	}
@@ -1144,11 +1155,20 @@ static bool ring_test(const struct remap_analog *an, float fx, float fy)
 {
 	float r = (float)an->ring * 0.0001f;
 
+	float m2 = fx * fx + fy * fy;
+
 	if(an->ring == 0U)
 	{
 		return false;
 	}
-	return (fx * fx + fy * fy >= r * r) != ((an->flags & REMAP_AF_RING_INVERT) != 0U);
+	if(an->flags & REMAP_AF_RING_INVERT)
+	{
+		/* inner ring (e.g. walk): only while pushed past the dead zone, not at rest */
+		float dz = (float)MAX(an->dz_in, 500U) * 0.0001f;
+
+		return m2 < r * r && m2 >= dz * dz;
+	}
+	return m2 >= r * r;
 }
 
 void remap_process(struct controller_report *r, float dt)
@@ -1220,7 +1240,9 @@ void remap_process(struct controller_report *r, float dt)
 	p = active();
 	if(p->magic != REMAP_MAGIC || p->version != REMAP_VERSION)
 	{
-		return; /* empty profile: nothing mapped */
+		/* empty profile: nothing mapped, and nothing left held from before */
+		release_all(); /* sends nothing when nothing is held */
+		return;
 	}
 	cur_profile = p;
 	HOLD_MS = p->hold_ms ? p->hold_ms : 250U;
