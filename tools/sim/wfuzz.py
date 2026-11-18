@@ -47,12 +47,15 @@ def complex_input(r, s, prof):
         seq += [({"bit": b, "v": 0}, r.choice([0, 0, 1, 5])) for b in bits]
         return seq
     fuzz.rnd_input(r, s)
+    apply(s, {})
     return [({}, r.choice([1, 2, 5, 10, 20, 40, 80, 150, 300]))]
 
 def apply(s, ch):
     if "bit" in ch:
         b = 1 << ch["bit"]
         s.state["buttons"] = (s.state["buttons"] | b) if ch["v"] else (s.state["buttons"] & ~b)
+    if GYRO and (s.state["buttons"] & ((1 << 19) | (1 << 9))) == ((1 << 19) | (1 << 9)):
+        s.state["buttons"] &= ~(1 << 14)  # no LB+RB+View: the gyro's own chords (360 calibration turns on purpose)
 
 def edges(evs, prefix):
     """count presses per key / mouse button, from 'K'/'M' (device) or 'HK'/'HM' (host) lines"""
