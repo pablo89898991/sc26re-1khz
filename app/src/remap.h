@@ -189,6 +189,8 @@ void remap_monitor(uint8_t *out);
 void remap_raw_capture(const struct controller_report *r);
 /* 40 bytes: buttons, triggers, sticks, pads + pressure, gyro turned (0.01 deg), accel */
 void remap_raw_read(uint8_t *out);
+/* the physical buttons (before the remapper hides mapped / unbound ones) */
+uint32_t remap_raw_buttons(void);
 extern const uint8_t remap_gyro_keys[REMAP_GYRO_KEYS];
 bool remap_path(const char *path);
 bool remap_read(const char *path, uint8_t *buf, size_t capacity, size_t *len);

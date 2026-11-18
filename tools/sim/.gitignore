@@ -4,3 +4,5 @@ libsim_cov.so
 *.gcda
 *.gcno
 *.gcov
+libsim_gm.so
+libsim_gm_asan.so

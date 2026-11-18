@@ -213,8 +213,10 @@ static struct rgbw_color led;
 void rgbw_led_set(struct rgbw_color c) { led = c; ev("L %u %u %u", c.r, c.g, c.b); }
 struct rgbw_color rgbw_led_get(void) { return led; }
 static bool gm_on;
+#ifndef WITH_GM
 void gyro_mouse_set_enabled(bool on) { gm_on = on; (void)sc26re_cfg_set(SC26RE_CFG_GM_ENABLED, on ? 1 : 0, false); ev("G %d", on); } /* as gyro_mouse.c */
 int32_t gyro_mouse_counts_per_360(void) { return 16364; }
+#endif
 void imu_raw_take(int16_t a[3], int16_t b[3]) { memset(a, 0, 6); memset(b, 0, 6); }
 void ibex_settings_notify(uint8_t id) { (void)id; }
 
@@ -271,14 +273,45 @@ int64_t sim_time(void) { return now_ms; }
 size_t sim_report_size(void) { return sizeof(struct controller_report); }
 
 /* one controller report through the remapper: in -> out (both struct controller_report) */
+#ifdef WITH_GM
+#include "gyro_mouse.h"
+static float gm_dps[3];
+static struct controller_report gm_state; /* hardware_store_state() */
+static bool gm_state_valid;
+static int gm_physical; /* 1: feed the physical buttons (fixed firmware), 0: the stored state (as before) */
+void sim_gyro(float x, float y, float z) { gm_dps[0] = x; gm_dps[1] = y; gm_dps[2] = z; }
+void sim_gm_physical(int on) { gm_physical = on; }
+#endif
+
 void sim_step(const uint8_t *in, uint8_t *out, int dt_us)
 {
 	struct controller_report r;
 	memcpy(&r, in, sizeof(r));
+#ifdef WITH_GM
+	{
+		/* imu.c: every gyro sample feeds the gyro mouse, its counts go out as mouse reports */
+		uint32_t b = gm_physical ? r.buttons : (gm_state_valid ? remap_raw_buttons() : 0U); /* as imu.c now */
+		int8_t dx, dy;
+
+		for(int t = 0; t < (dt_us + 999) / 1000; ++t) gyro_mouse_feed(gm_dps, b, 0.001f);
+		if(gyro_mouse_has_counts() && gyro_mouse_take(&dx, &dy))
+		{
+			uint8_t m[5] = { remap_mouse_buttons(), (uint8_t)dx, (uint8_t)dy, 0, 0 };
+
+			if(transport_send_input_report(0x40, m, sizeof(m)) != 0) gyro_mouse_give_back(dx, dy);
+			else gyro_mouse_note_sent(dx, dy);
+		}
+	}
+#endif
 	now_ms += 0; /* time advanced by the driver (sub-ms steps) */
 	for(int t = 0; t < (dt_us + 999) / 1000; ++t) transport_tick();
 	remap_raw_capture(&r);
 	remap_process(&r, (float)dt_us * 1e-6f);
+#ifdef WITH_GM
+	gyro_mouse_joystick(&r);              /* main.c order */
+	r.buttons = gyro_mouse_filter_buttons(r.buttons);
+	gm_state = r; gm_state_valid = true;  /* hardware_store_state */
+#endif
 	memcpy(out, &r, sizeof(r));
 }
 const char *sim_events(void) { return evlog; }

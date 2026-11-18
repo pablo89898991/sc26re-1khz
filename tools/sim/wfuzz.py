@@ -4,6 +4,8 @@ import random, sys, json
 import fuzz
 from simlib import *
 
+import ctypes
+GYRO = os.environ.get("SIMLIB", "").startswith("libsim_gm")
 PAGE = True
 STABLE = True  # page actions in the middle of play (remapper switch, profile choice, profile save)
 
@@ -90,10 +92,18 @@ def scenario(seed, mode, n_profiles=20, steps=400, disconnects=False):
         if mode and disconnects: s.jitter = lambda: r.choice([1, 1, 1, 2, 3])
         profs = [fuzz.rnd_profile(r, "w%d" % k) for k in range(3)]
         for k in (1, 2): s.upload(k, profs[k])
-        s.use(profs[0], 0); s.run(5)
+        s.use(profs[0], 0)
+        gyro = hasattr(s.lib, "sim_gyro") and GYRO
+        if gyro:  # the real gyro_mouse.c: random activation (also bound / touch inputs), mode, output
+            s.lib.sim_gyro.argtypes = [ctypes.c_float] * 3
+            s.cfg("gm_enabled", 1); s.cfg("gm_act_button", r.choice([-1, 20, 24, 28, 7, 17, 9]))
+            s.cfg("gm_act_mode", r.randrange(4)); s.cfg("gm_output", r.choice([0, 0, 1, 3]))
+            s.cfg("gm_ratchet", r.choice([-1, 8, 18]))
+        s.run(5)
         s.log = []
         down_until = -1
         for i in range(steps):
+            if gyro and r.random() < .05: s.lib.sim_gyro(r.uniform(-300, 300), r.uniform(-300, 300), r.uniform(-100, 100))
             for ch, ms in complex_input(r, s, profs[0]):
                 apply(s, ch)
                 if ms: s.run(ms)
@@ -115,6 +125,7 @@ def scenario(seed, mode, n_profiles=20, steps=400, disconnects=False):
             if disconnects and mode and r.random() < .01:
                 s.link(False); s.run(r.choice([30, 300, 2000])); s.link(True)
         fuzz.neutral(s)
+        if gyro: s.lib.sim_gyro(0, 0, 0)
         s.run(15000)
         h = s.host()
         dev = [e for e in s.log if e.split()[1] in ("K", "M")]

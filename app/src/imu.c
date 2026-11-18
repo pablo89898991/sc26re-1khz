@@ -1785,7 +1785,10 @@ static void imu_fast_thread_main(void *arg1, void *arg2, void *arg3)
 			uint32_t now_us = report.imu_timestamp_us;
 
 			gm_have_state = hardware_load_state(&st);
-			gyro_mouse_feed(gm_dps, gm_have_state ? st.buttons : 0U,
+			/* the physical buttons: the remapper hides mapped and (with "unbound
+			 * inputs do nothing") unbound ones from the stored state, which
+			 * switched off a gyro activation by stick touch, grip or a back button */
+			gyro_mouse_feed(gm_dps, gm_have_state ? remap_raw_buttons() : 0U,
 			                gm_last_us ? (float)(now_us - gm_last_us) * 1e-6f : 0.001f);
 			gm_last_us = now_us;
 		}

@@ -10,8 +10,10 @@ TRANSPORTS = {"usb": None, "puck": (1, 1, 20, 15), "bt": (2, 0, 10, 15)}
 def mk(mode, H=0, W=0, T=0):
     p = Profile(); p.times(H, W, T); p.bind("A", A, B, C, mode=mode); return p
 
+JITTER = None
 def sim(p, tr):
     s = Sim()
+    if JITTER: s.jitter = JITTER
     if tr: s.transport(*tr, seed=7)
     s.use(p); s.run(300)
     s.log = []

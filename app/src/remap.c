@@ -1235,6 +1235,15 @@ void remap_raw_capture(const struct controller_report *r)
 	k_spin_unlock(&raw_lock, key);
 }
 
+uint32_t remap_raw_buttons(void)
+{
+	k_spinlock_key_t key = k_spin_lock(&raw_lock);
+	uint32_t b = raw_state.buttons;
+
+	k_spin_unlock(&raw_lock, key);
+	return b;
+}
+
 void remap_raw_read(uint8_t *out)
 {
 	struct controller_report r;
