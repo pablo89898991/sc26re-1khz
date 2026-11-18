@@ -99,7 +99,7 @@
 <body>
 <div class="top">
   <div class="topin">
-    <div class="brand">SC2 <span class="hz">Remapper</span> <span class="note" id="pagever" title="page version — if it is older than expected, press Ctrl+F5">p.2026-11-18n</span></div>
+    <div class="brand">SC2 <span class="hz">Remapper</span> <span class="note" id="pagever" title="page version — if it is older than expected, press Ctrl+F5">p.2026-11-18v</span></div>
     <button class="primary" id="connect">Connect controller</button>
     <span id="status" class="chip">not connected</span>
     <span class="grow"></span>
@@ -130,6 +130,8 @@
         <button id="read" class="ghost">Reload</button>
         <button id="export" class="ghost">Export</button>
         <label class="ghost btnlike">Import<input type="file" id="import" accept=".json" hidden></label>
+        <label class="ghost btnlike" title="Steam Input controller configuration (.vdf, e.g. from Steam’s controller config folder or a community layout)">Import Steam Input<input type="file" id="vimport" accept=".vdf,.txt" hidden></label>
+        <button id="vexport" class="ghost" title="All 4 profiles as one Steam Input configuration (.vdf): profiles become action sets, the ones used as layers become action layers">Export Steam Input</button>
         <button id="clear" class="ghost danger">Clear</button>
       </div>
       <p id="pstatus" class="note" style="min-height:1.2em;margin:6px 0 0"></p>
@@ -241,17 +243,25 @@
       <p>Stick touch (capsense), grip touch (gripsense), trackpad touch and trackpad clicks are bindable like buttons.</p>
       <h3>Profiles</h3>
       <p>4 profiles. Choose the active one with <b>Steam + D-pad</b> on the controller (up = 1, right = 2, down = 3, left = 4; the beep gets higher with the number), at the top of “Buttons &amp; profiles”, or with a “Switch to profile” action bound to any input. Export / Import saves a profile to a file.</p>
+      <p><b>Steam Input layouts</b>: “Import Steam Input” reads a Steam controller configuration (<code>.vdf</code> — Steam keeps yours in <code>Steam\steamapps\common\Steam Controller Configs\&lt;id&gt;\config\&lt;app&gt;\</code>). Each action set or action layer can go into one of the 4 profiles; mode shifts, long / double / start / release presses, toggle, turbo, delays, haptics, stick and trackpad modes, radial menus, mouse regions, triggers, LED and gyro settings come along. Layouts made for a game’s own Steam Input API use “game actions”: pick the key each one has in the game’s settings (keys the game itself names are filled in). Steam commands (screenshot, overlay, on-screen keyboard) are listed and skipped. “Export Steam Input” writes all 4 profiles as one <code>.vdf</code> for Steam (profiles used as layers become action layers); macros, mouse-move actions, gyro tilt and gyro mouse region have no Steam equivalent and are named when left out.</p>
       <h3>Gyro</h3>
       <p>Gyro settings, gyro as mouse (on/off: <b>LB + RB + View</b>) and gyro as a <b>joystick</b> (right or left stick, with dead zone, anti dead zone, full-deflection speed and response curve) are on the “Gyro &amp; gyro mouse” page, the same for every profile. The mouse also has a response curve and acceleration (off by default, so the real-world sensitivity stays 1:1).</p>
     </div>
   </section>
 </div>
 
+<dialog id="vdlg" style="max-width:760px;width:94vw"><h3 style="margin:0 0 6px">Import a Steam Input configuration</h3><div id="vbody"></div>
+<div class="bar" style="margin-top:12px;justify-content:flex-end"><button class="ghost" id="vcancel">Cancel</button><button class="ghost" id="vload">Load into the editor</button><button class="primary" id="vsave">Load and save to the controller</button></div></dialog>
+<script src="vdf.js"></script>
 <dialog id="dlg"><div id="editor"></div><div class="bar" style="margin-top:12px;justify-content:flex-end"><button id="dlgClear" class="ghost danger">Clear input</button><button class="primary" id="dlgDone">Done</button></div></dialog>
 <script>
 const $=s=>document.querySelector(s);
 /* ---- layout: matches struct remap_profile in app/src/remap.h ---- */
-const PROF_SIZE=2056, CH=40, PROF_VER=6;
+const PROF_SIZE=3144, CH=40, PROF_VER=7, V6_SIZE=2056;
+/* v7 area (struct remap_ext): per binding timing bt[124] x6, xbind[12] x14 (gyro tilt + stick diagonals), anx[12] x12, gyx 16, trig_curve, screen */
+const BT=2056, XBIND=2800, ANX=2968, GYX=3112, TCURVE=3128, SCREEN=3132;
+/* a v6 profile (older firmware / files) becomes v7 with an empty v7 area */
+function upgradeProfile(d){ const b=new Uint8Array(PROF_SIZE); b.set(d.slice(0,Math.min(d.length,PROF_SIZE))); if(b[0]===0xA7&&b[1]===6) b[1]=PROF_VER; return b; }
 const SRC=[
  ["Face buttons",[[0,"A"],[1,"B"],[2,"X"],[3,"Y"]]],
  ["Shoulders and triggers",[[19,"LB"],[9,"RB"],[27,"LT full pull"],[23,"RT full pull"],[58,"LT soft pull"],[59,"RT soft pull"]]],
@@ -259,8 +269,9 @@ const SRC=[
  ["D-pad",[[13,"D-pad up"],[10,"D-pad down"],[12,"D-pad left"],[11,"D-pad right"]]],
  ["Middle and stick clicks",[[6,"Menu"],[14,"View"],[4,"QAM"],[15,"L3 (left stick click)"],[5,"R3 (right stick click)"]]],
  ["Touch sensors",[[24,"Left stick touch","capsense"],[20,"Right stick touch","capsense"],[29,"Left grip touch","gripsense"],[28,"Right grip touch","gripsense"],[25,"Left pad touch"],[21,"Right pad touch"],[26,"Left pad click"],[22,"Right pad click"]]],
- ["Left stick",[[30,"Left stick up"],[31,"Left stick down"],[32,"Left stick left"],[33,"Left stick right"],[60,"Left stick outer ring"]],"ls"],
- ["Right stick",[[34,"Right stick up"],[35,"Right stick down"],[36,"Right stick left"],[37,"Right stick right"],[61,"Right stick outer ring"]],"rs"],
+ ["Left stick",[[30,"Left stick up"],[31,"Left stick down"],[32,"Left stick left"],[33,"Left stick right"],[60,"Left stick outer ring"],[70,"Left stick up-right"],[71,"Left stick down-right"],[72,"Left stick down-left"],[73,"Left stick up-left"]],"ls"],
+ ["Right stick",[[34,"Right stick up"],[35,"Right stick down"],[36,"Right stick left"],[37,"Right stick right"],[61,"Right stick outer ring"],[74,"Right stick up-right"],[75,"Right stick down-right"],[76,"Right stick down-left"],[77,"Right stick up-left"]],"rs"],
+ ["Gyro tilt",[[66,"Gyro tilt forward"],[67,"Gyro tilt back"],[68,"Gyro tilt left"],[69,"Gyro tilt right"]]],
  ["Left trackpad",[[38,"Left pad up"],[39,"Left pad down"],[40,"Left pad left"],[41,"Left pad right"],[46,"Left pad gate top-left"],[47,"Left pad gate top-right"],[48,"Left pad gate bottom-left"],[49,"Left pad gate bottom-right"],[54,"Left pad wheel clockwise"],[55,"Left pad wheel counter-clockwise"],[62,"Left pad outer ring"],[64,"Left pad centre"]],"lp"],
  ["Right trackpad",[[42,"Right pad up"],[43,"Right pad down"],[44,"Right pad left"],[45,"Right pad right"],[50,"Right pad gate top-left"],[51,"Right pad gate top-right"],[52,"Right pad gate bottom-left"],[53,"Right pad gate bottom-right"],[56,"Right pad wheel clockwise"],[57,"Right pad wheel counter-clockwise"],[63,"Right pad outer ring"],[65,"Right pad centre"]],"rp"],
 ];
@@ -301,7 +312,12 @@ const useShift=g=>layer===1&&shBtn(g)>0;
 /* analog: +0 mode, +1 flags, +2 dz_in, +4 dz_out, +6 speed, +8 haptic, +10 curve, +12 ring, +14 anti, +16 press (u16, 0.01 %) */
 const aOffL=(an,L)=>L?shOff(GRP_OF_AN[an])+2:256+AIDX[an]*18;
 const aOff=an=>aOffL(an,useShift(GRP_OF_AN[an])?1:0);
-const bOffL=(s,L)=>L?1412+SIDX[s]*14:488+s*14;
+const bOffL=(s,L)=>L?1412+SIDX[s]*14:(s<66?488+s*14:XBIND+(s-66)*14);
+/* per binding timing: hold10, dbl10, turbo5, delay start10, delay end10, flags (1 = interruptible) */
+const btOffL=(s,L)=>BT+6*(L?66+SIDX[s]:(s<66?s:112+s-66));
+const btOff=s=>btOffL(s,useShift(SGRP[s])?1:0);
+const anxOffL=(an,L)=>ANX+12*(L?4+GRP_OF_AN[an]:AIDX[an]);
+const anxOff=an=>anxOffL(an,useShift(GRP_OF_AN[an])?1:0);
 const bOff=s=>bOffL(s,useShift(SGRP[s])?1:0);
 const U16=(o)=>new DataView(prof[cur].buffer).getUint16(o,true), setU16=(o,v)=>new DataView(prof[cur].buffer).setUint16(o,v,true);
 const S16=(o)=>new DataView(prof[cur].buffer).getInt16(o,true), setS16=(o,v)=>new DataView(prof[cur].buffer).setInt16(o,v,true);
@@ -309,8 +325,8 @@ const softPct=t=>(U16(18+2*t)||5000)/100;
 const RAWBTN=[[0,"A"],[1,"B"],[2,"X"],[3,"Y"],[19,"LB"],[9,"RB"],[27,"LT click"],[23,"RT click"],[17,"L4"],[18,"L5"],[7,"R4"],[8,"R5"],[15,"L3"],[5,"R3"],[6,"Menu"],[14,"View"],[4,"QAM"],[13,"D-pad up"],[10,"D-pad down"],[12,"D-pad left"],[11,"D-pad right"],[26,"Left pad click"],[22,"Right pad click"],[25,"Left pad touch"],[21,"Right pad touch"],[24,"Left stick touch"],[20,"Right stick touch"],[29,"Left grip touch"],[28,"Right grip touch"]];
 const SHBTN=[[0,"— none —"],...RAWBTN.map(([v,n])=>[v+1,n])];
 const shName=g=>(SHBTN.find(([v])=>v===shBtn(g))||[0,"?"])[1];
-const MODES_STICK=[[0,"Analog (to Steam)"],[12,"Xbox stick (to the Xbox pad)"],[1,"D-pad 4-way"],[2,"D-pad 8-way"],[3,"Mouse"],[4,"Scroll"],[7,"Flick stick"]];
-const MODES_PAD=[[0,"To Steam (not remapped)"],[1,"D-pad 4-way"],[2,"D-pad 8-way"],[9,"9 zones (grid)"],[5,"Gates (4 corners)"],[3,"Mouse"],[6,"Joystick"],[7,"Flick stick"],[4,"Scroll wheel (circle)"],[8,"Directional swipe"],[10,"Radial menu"],[11,"Single button (whole pad)"],[12,"Xbox stick (finger position)"]];
+const MODES_STICK=[[0,"Analog (to Steam)"],[12,"Xbox stick (to the Xbox pad)"],[1,"D-pad 4-way"],[2,"D-pad 8-way"],[3,"Mouse"],[4,"Scroll"],[7,"Flick stick"],[10,"Radial menu"],[11,"Single button (whole stick)"],[13,"Mouse region (absolute cursor)"]];
+const MODES_PAD=[[0,"To Steam (not remapped)"],[1,"D-pad 4-way"],[2,"D-pad 8-way"],[9,"9 zones (grid)"],[5,"Gates (4 corners)"],[3,"Mouse"],[6,"Joystick"],[7,"Flick stick"],[4,"Scroll wheel (circle)"],[8,"Directional swipe"],[10,"Radial menu"],[11,"Single button (whole pad)"],[12,"Xbox stick (finger position)"],[13,"Mouse region (absolute cursor)"]];
 const modeNameL=(an,L)=>((isPad(an)?MODES_PAD:MODES_STICK).find(([v])=>v===prof[cur][aOffL(an,L)])||[0,"?"])[1];
 const modeName=an=>modeNameL(an,0)+(shBtn(GRP_OF_AN[an])?` <em>⇧ ${shName(GRP_OF_AN[an])}:</em> ${modeNameL(an,1)}`:"");
 const HAPT=[[0,"off"],[1,"tick (light)"],[2,"click"],[3,"strong"]];
@@ -318,6 +334,10 @@ const HAPT=[[0,"off"],[1,"tick (light)"],[2,"click"],[3,"strong"]];
 function subSources(an,L){ const o=L===undefined?aOff(an):aOffL(an,L), b=prof[cur], m=b[o], pad=isPad(an), base={ls:30,rs:34,lp:38,rp:42}[an], out=[];
   const gt=an==="lp"?46:50, ctr=an==="lp"?64:65;
   if(pad&&m===11) return [[ctr,"Whole pad"]];
+  if(!pad&&m===11) return [[60+AIDX[an],"Whole stick"]];
+  if(!pad&&m===10){ const d=an==="ls"?70:74, L8=[base,d,base+3,d+1,base+1,d+2,base+2,d+3], n=Math.max(2,Math.min(8,prof[cur][anxOffL(an,L===undefined?(useShift(GRP_OF_AN[an])?1:0):L)+6]||8));
+    const list=n===4?[L8[0],L8[2],L8[4],L8[6]]:L8.slice(0,n); return list.map((x,i)=>[x,`Slice ${i+1} (${Math.round(i*360/n)}°)`]); }
+  if(m===13) return [];
   if(pad&&m===10){ const RS=an==="lp"?[38,47,41,49,39,48,40,46,64,54]:[42,51,45,53,43,52,44,50,65,56]; const n=Math.max(2,Math.min(10,U16(o+6)||8));
     return RS.slice(0,n).map((x,i)=>[x,`Slice ${i+1} (${Math.round(i*360/n)}°)`]); }
   if(pad&&m===9) return [[gt,"↖ top-left"],[base,"↑ top"],[gt+1,"↗ top-right"],[base+2,"← left"],[ctr,"• centre"],[base+3,"→ right"],[gt+2,"↙ bottom-left"],[base+1,"↓ bottom"],[gt+3,"↘ bottom-right"],[60+AIDX[an],"Outer ring"]];
@@ -459,13 +479,15 @@ function render(){
   $("#colB").innerHTML=`<div><div class="sect">Stick touch (capsense)</div>${item(24,"Left")}${item(20,"Right")}</div>
     <div><div class="sect">Grip touch (gripsense)</div>${item(29,"Left")}${item(28,"Right")}</div>
     <div><div class="sect">Trackpad touch</div>${item(25,"Left")}${item(21,"Right")}</div>
-    <div><div class="sect">Gyro</div><div class="item" data-s="gyro"><span class="k">settings</span><span class="b">${gyroSummary()}</span></div></div>`;
+    <div><div class="sect">Gyro</div><div class="item" data-s="gyro"><span class="k">settings</span><span class="b">${gyroSummary()}</span></div>
+      <div class="item${sel==="gyp"?" sel":""}" data-s="gyp"><span class="k">this profile</span><span class="b">${GYMODES[b0[GYX]]||"?"}${b0[GYX+1]?" · "+GYSPACE[b0[GYX+1]]:""}</span></div>
+      ${b0[GYX]===1?[66,67,68,69].map(x=>item(x,["Tilt forward","Tilt back","Tilt left","Tilt right"][x-66])).join(""):""}</div>`;
   $("#pic").innerHTML=picture();
   document.querySelectorAll("#v_map [data-s]").forEach(e=>e.onclick=()=>openSel(e.dataset.s));
   editor();
 }
 function openSel(v){ if(v==="gyro"){ showView("gyro"); return; } sel=isNaN(+v)?v:+v; render(); const d=$("#dlg"); if(d.showModal&&!d.open) d.showModal(); }
-const parentOf=s=>{ if(s>=64) return s===64?"lp":"rp"; if(s>=60) return ["ls","rs","lp","rp"][s-60]; if(s>=30&&s<38) return s<34?"ls":"rs";
+const parentOf=s=>{ if(s>=70) return s<74?"ls":"rs"; if(s>=66) return "gyp"; if(s>=64) return s===64?"lp":"rp"; if(s>=60) return ["ls","rs","lp","rp"][s-60]; if(s>=30&&s<38) return s<34?"ls":"rs";
   if(s>=38&&s<58) return ((s>=38&&s<42)||(s>=46&&s<50)||s===54||s===55)?"lp":"rp"; return null; };
 /* slider + exact number box; values in display units */
 const slider=(id,v,lo,hi,step,label,unit,hint)=>`<div class="row2"><label>${label}</label><span class="slw"><input type="range" id="${id}" min="${lo}" max="${hi}" step="${step}" value="${v}"><input type="number" class="num" id="${id}_n" min="${lo}" max="${hi}" step="any" value="${v}"><span class="unit">${unit||""}</span></span>${hint?`<small>${hint}</small>`:""}</div>`;
@@ -494,9 +516,38 @@ function gridSvg(j){ const g=k=>S16(22+j*8+k*2)/10000, L=g(0),R=g(1),T=g(2),B=g(
     <line x1="${X(L)}" y1="0" x2="${X(L)}" y2="100" stroke="#e05a5a" stroke-width="1.5"/><line x1="${X(R)}" y1="0" x2="${X(R)}" y2="100" stroke="#e05a5a" stroke-width="1.5"/>
     <line x1="0" y1="${Y(T)}" x2="100" y2="${Y(T)}" stroke="#e05a5a" stroke-width="1.5"/><line x1="0" y1="${Y(B)}" x2="100" y2="${Y(B)}" stroke="#e05a5a" stroke-width="1.5"/>
     ${[0,1,2].flatMap(r=>[0,1,2].map(c=>`<text x="${cx[c]}" y="${cy[r]+4}" text-anchor="middle" font-size="11" fill="#5fb3ff">${r*3+c+1}</text>`)).join("")}</svg>`; }
+const GYMODES=["gyro settings (mouse / joystick)","tilt → 4 directions","mouse region (absolute cursor)"];
+const GYSPACE=["global","local","player space","world space"];
 function editor(){
   const ed=$("#editor"); if(sel===null){ ed.innerHTML=""; return; }
   const b=prof[cur];
+  if(sel==="gyp"){
+    $("#dlgClear").style.display="none";
+    const gm=b[GYX], any=b[GYX+4]|b[GYX+5]|b[GYX+6]|b[GYX+7], R=(k,d)=>any?b[GYX+4+k]:d;
+    let h=`<h4>Gyro in profile ${cur+1}</h4>
+      <div class="row2"><label>The gyro does</label><select id="gymode">${GYMODES.map((n,i)=>`<option value="${i}">${n}</option>`).join("")}</select><small>the gyro mouse / joystick settings are on the Gyro page (global or this profile’s own)</small></div>
+      <div class="row2"><label>Gyro space</label><select id="gyspace"><option value="0">the global setting</option><option value="1">local — the axis settings</option><option value="2">player space</option><option value="3">world space</option></select><small>player / world: turning about the vertical works the same however you hold the controller (gyro mouse and joystick)</small></div>`;
+    if(gm===1){
+      h+=slider("gtdz",b[GYX+2]||15,3,60,1,"Tilt needed","°","from where the controller was when the profile became active");
+      h+=`<div class="row2"><label></label><label class="note"><input type="checkbox" id="gt8"${b[GYX+3]?" checked":""}> 8-way — diagonal tilts hold two directions</label></div>`;
+      h+=`<div class="sect" style="margin-left:0">Bindings</div><div class="subs">${[[66,"Tilt forward"],[67,"Tilt back"],[68,"Tilt left"],[69,"Tilt right"]].map(([x,n])=>`<div class="item" data-sub="${x}"><span class="k">${n}</span><span class="b${grpText(b,x,0)?"":" none"}">${bindText(x)}</span></div>`).join("")}</div>
+        <p class="note wrap">The centre is the controller’s position when the profile becomes active (switch profiles to centre it again).</p>`;
+    }
+    if(gm===2){
+      h+=slider("grgx",R(0,50),0,100,1,"Area centre X","% of the screen","")+slider("grgy",R(1,50),0,100,1,"Area centre Y","% of the screen","0 = top")+
+         slider("grgw",R(2,100),5,100,1,"Area width","%","")+slider("grgh",R(3,100),5,100,1,"Area height","%","")+
+         slider("grdeg",b[GYX+8]||60,10,180,1,"Turn across the area","°","degrees of turning from the left edge to the right edge");
+      h+=`<p class="note wrap">Turning moves an absolute cursor inside that part of the screen (it stops at the edges). It starts in the centre when the profile becomes active.</p>`;
+    }
+    ed.innerHTML=h;
+    $("#gymode").value=String(gm); $("#gymode").onchange=e=>{ b[GYX]=+e.target.value; setDirty(); render(); };
+    $("#gyspace").value=String(b[GYX+1]); $("#gyspace").onchange=e=>{ b[GYX+1]=+e.target.value; setDirty(); render(); };
+    wireSl("gtdz",v=>{ b[GYX+2]=Math.round(v); }); if($("#gt8")) $("#gt8").onchange=e=>{ b[GYX+3]=e.target.checked?1:0; setDirty(); };
+    ["grgx","grgy","grgw","grgh"].forEach((id,k)=>wireSl(id,v=>{ if(!(b[GYX+4]|b[GYX+5]|b[GYX+6]|b[GYX+7])){ b[GYX+4]=50; b[GYX+5]=50; b[GYX+6]=100; b[GYX+7]=100; } b[GYX+4+k]=Math.round(v); }));
+    wireSl("grdeg",v=>{ b[GYX+8]=Math.round(v); });
+    ed.querySelectorAll("[data-sub]").forEach(e=>e.onclick=()=>openSel(e.dataset.sub));
+    return;
+  }
   if(sel==="prof"){
     $("#dlgClear").style.display="none";
     const mm=+(window.macroSel||0), mo=k=>128+mm*32+k*2;
@@ -506,6 +557,7 @@ function editor(){
       ${slider("phold",U16(118)||250,100,1000,10,"Long press time","ms","how long to hold for “long press”")}
       ${slider("pdbl",U16(120)||250,100,600,10,"Double press window","ms","time for the second press")}
       ${slider("pturbo",U16(122)||100,20,1000,5,"Turbo period","ms",`${(1000/(U16(122)||100)).toFixed(1)} presses per second`)}
+      <div class="row2"><label>Screen size</label><span><input type="number" class="num" id="scrw" min="320" max="16384" value="${U16(SCREEN)||1920}" style="width:80px"> × <input type="number" class="num" id="scrh" min="200" max="16384" value="${U16(SCREEN+2)||1080}" style="width:80px"> <span class="note">px</span></span><small>for mouse regions over the Puck / Bluetooth (the cable sends an absolute position)</small></div>
       <div class="sect" style="margin-left:0">Macros</div>
       <div class="row2"><label>Macro</label><span>${[0,1,2,3].map(i=>`<button class="ghost${i===mm?" on":""}" data-msel="${i}">Macro ${i+1}</button>`).join(" ")}</span><small>bind “Run macro N” to any input; each step holds its action for its time (action “—” = wait); an empty step ends it</small></div>
       <div class="msteps">${steps}</div>
@@ -514,6 +566,8 @@ function editor(){
       <div class="row2"><label>Copy this profile to</label><span>${[0,1,2,3].filter(i=>i!==cur).map(i=>`<button class="ghost" data-pcopy="${i}">Profile ${i+1}</button>`).join(" ")}</span><small>overwrites that profile (Save to controller afterwards)</small></div>
       <div class="row2"><label>Load a preset</label><span>${PRESETS.map((x,i)=>`<button class="ghost" data-pre="${i}">${x[0]}</button>`).join(" ")}</span><small>replaces this profile’s bindings</small></div>`;
     wireSl("phold",v=>setU16(118,Math.round(v))); wireSl("pdbl",v=>setU16(120,Math.round(v))); wireSl("pturbo",v=>setU16(122,Math.round(v)));
+    $("#scrw").onchange=e=>{ const v=Math.round(+e.target.value); setU16(SCREEN,v===1920?0:Math.max(320,Math.min(16384,v))); setDirty(); };
+    $("#scrh").onchange=e=>{ const v=Math.round(+e.target.value); setU16(SCREEN+2,v===1080?0:Math.max(200,Math.min(16384,v))); setDirty(); };
     ed.querySelectorAll("[data-msel]").forEach(x=>x.onclick=()=>{ window.macroSel=+x.dataset.msel; render(); });
     ed.querySelectorAll("[data-ma]").forEach(x=>{ const k=+x.dataset.ma; x.value=String(b[mo(k)]); if(x.value==="") x.value="0"; x.onchange=()=>{ b[mo(k)]=+x.value; if(!b[mo(k)+1]) b[mo(k)+1]=5; setDirty(); render(); }; });
     ed.querySelectorAll("[data-mt]").forEach(x=>{ const k=+x.dataset.mt; x.onchange=()=>{ b[mo(k)+1]=Math.max(0,Math.min(255,Math.round(+x.value/10))); setDirty(); render(); }; });
@@ -589,12 +643,33 @@ function editor(){
       h+=`<div class="row2"><label></label><label class="note"><input type="checkbox" id="tball"${b[o+1]&0x80?" checked":""}> trackball — keeps rolling after the finger leaves</label></div>`;
       if(b[o+1]&0x80) h+=slider("tfric",(U16(o+4)||200)/100,0.2,20,0.1,"Friction","/ s","higher = stops sooner");
     }
+    const xo=anxOff(an), XU=k=>U16(xo+k);
+    if(!pad&&m===10){
+      h+=slider("xsl",prof[cur][xo+6]||8,2,8,1,"Slices","","1 = up, then clockwise; 4 = up / right / down / left, 8 adds the diagonals");
+      h+=pct("dzi",P(2)||30,10,90,"Centre (cancel)","inside it nothing is chosen");
+      h+=`<div class="row2"><label>Chooses</label><select id="xact"><option value="0">when the stick comes back to the centre</option><option value="1">on the stick click</option></select></div>`;
+      h+=`<div class="row2"><label>Zone haptics</label><select id="ahap">${HAPT.map(([v,n])=>`<option value="${v}">${n}</option>`).join("")}</select><small>a tick for every new slice</small></div>`;
+      h+=`<p class="note wrap">Point the stick at a slice and let it go back to the centre (or click) to choose it. No overlay: find the slices by feel.</p>`;
+    }
+    if(!pad&&m===11){ h+=pct("dzi",P(2)||30,5,95,"Pushed past","how far before it counts as pressed"); h+=`<p class="note wrap">The whole stick is one button: bind “Whole stick” below — long / double / turbo and the rest work as on any button.</p>`; }
+    if(m===13){
+      const any=prof[cur][xo+8]|prof[cur][xo+9]|prof[cur][xo+10]|prof[cur][xo+11], R=(k,d)=>any?prof[cur][xo+8+k]:d;
+      h+=slider("rgx",R(0,50),0,100,1,"Area centre X","% of the screen","")+slider("rgy",R(1,50),0,100,1,"Area centre Y","% of the screen","0 = top")+
+         slider("rgw",R(2,100),5,100,1,"Area width","%","")+slider("rgh",R(3,100),5,100,1,"Area height","%","");
+      if(pad) h+=`<div class="row2"><label></label><label class="note"><input type="checkbox" id="rgret"${prof[cur][xo+7]&1?" checked":""}> back to the centre when the finger leaves (else the cursor stays)</label></div>`;
+      else h+=pct("dzi",P(2),0,50,"Dead zone","the stick at rest leaves the cursor alone; let go = back to the centre");
+      h+=`<p class="note wrap">The ${pad?"finger":"stick"} position is the cursor position inside that part of the screen. Over the USB cable the controller sends an absolute position; over the Puck / Bluetooth it moves the cursor into the top-left corner first and then to the spot (set your screen size in Profile settings, and switch off “Enhance pointer precision” in Windows).</p>`;
+    }
+    if(m===3||m===4){
+      h+=slider("xsx",(XU(0)||100),10,400,1,"Horizontal","%","sensitivity left / right")+slider("xsy",(XU(2)||100),10,400,1,"Vertical","%","sensitivity up / down");
+    }
+    if(pad&&m===3) h+=slider("xes",XU(4),0,5000,10,"Edge spin","counts / s","a finger resting at the edge keeps the cursor moving; 0 = off");
     if(m!==0||!pad){
       h+=`<div class="row2"><label>Orientation</label><span><label class="note"><input type="checkbox" id="invx"${b[o+1]&0x20?" checked":""}> invert X</label> <label class="note"><input type="checkbox" id="invy"${b[o+1]&0x40?" checked":""}> invert Y</label></span></div>`;
       h+=slider("rot",((b[o+9]<<24)>>24),-90,90,1,"Rotation","°","turns the input (e.g. a trackpad under an angle)");
     }
     if(!pad&&(m===0||m===3)) h+=`<div class="row2"><label>Curve presets</label><span>${[["Linear",1],["Wide",0.8],["Aggressive",0.6],["Relaxed",1.5],["Precise",2]].map(([n,v])=>`<button class="ghost cpre" data-v="${v}">${n}</button>`).join(" ")}</span></div>`;
-    if(!(pad&&(m===0||m===11))) h+=pct("ring",P(12),0,100,"Outer ring",`its binding (“Outer ring” below) fires ${b[o+1]&2?"inside":"beyond"} this radius; 0 = off`)+
+    if(!(pad&&(m===0||m===11))&&m!==13&&!(!pad&&(m===11||m===10))) h+=pct("ring",P(12),0,100,"Outer ring",`its binding (“Outer ring” below) fires ${b[o+1]&2?"inside":"beyond"} this radius; 0 = off`)+
       `<div class="row2"><label></label><label class="note"><input type="checkbox" id="rinv"${b[o+1]&2?" checked":""}> invert — fire inside the radius (inner ring, e.g. walk)</label></div>`;
     ed.innerHTML=`<h4>${ANAME[an]}${useShift(g)?" <em>⇧ shifted</em>":""}</h4>${shiftBar(g)}
       <div class="row2"><label>Mode</label><select id="amode">${(pad?MODES_PAD:MODES_STICK).map(([v,n])=>`<option value="${v}">${n}</option>`).join("")}</select></div>
@@ -612,12 +687,21 @@ function editor(){
       if(nm===8) setU16(o+2,1500);
       if(pad&&(nm===5||nm===9)&&!b[o+8]) b[o+8]=1;
       if(nm===6||(nm===12&&pad)){ setU16(o+2,1000); setU16(o+4,1000); }
-      if(nm===10){ setU16(o+6,8); setU16(o+2,2500); if(!b[o+8]) b[o+8]=1; }
+      if(nm===10){ setU16(o+6,8); setU16(o+2,pad?2500:3000); if(!b[o+8]) b[o+8]=1; if(!pad&&!b[anxOff(an)+6]) b[anxOff(an)+6]=8; }
+      if(nm===11&&!pad&&U16(o+2)<500) setU16(o+2,3000);
+      if(nm===13){ const xo=anxOff(an); if(!b[xo+10]){ b[xo+8]=50; b[xo+9]=50; b[xo+10]=100; b[xo+11]=100; } if(!pad) setU16(o+2,1000); }
       if(nm===3&&pad){ setU16(o+10,0); setU16(o+4,0); }
       setDirty(); render(); };
     if($("#aact")){ $("#aact").value=String(b[o+1]&0x10?16:b[o+1]&1); $("#aact").onchange=e=>{ b[o+1]=(b[o+1]&~0x11)|+e.target.value; if(+e.target.value===16&&!U16(o+16)) setU16(o+16,3000); setDirty(); render(); }; }
     const W=(id,k,mul=100)=>wireSl(id,v=>setU16(o+k,Math.round(v*mul)));
     W("dzi",2); W("dzo",4); W("anti",14); W("ring",12); W("press",16); W("crv",10);
+    { const xo=anxOff(an);
+      wireSl("xsl",v=>{ prof[cur][xo+6]=Math.round(v); });
+      ["rgx","rgy","rgw","rgh"].forEach((id,k)=>wireSl(id,v=>{ const P8=prof[cur]; if(!(P8[xo+8]|P8[xo+9]|P8[xo+10]|P8[xo+11])){ P8[xo+8]=50; P8[xo+9]=50; P8[xo+10]=100; P8[xo+11]=100; } P8[xo+8+k]=Math.round(v); if(k>=2&&!P8[xo+8+k]) P8[xo+8+k]=5; }));
+      wireSl("xsx",v=>setU16(xo,Math.round(v)===100?0:Math.round(v))); wireSl("xsy",v=>setU16(xo+2,Math.round(v)===100?0:Math.round(v)));
+      wireSl("xes",v=>setU16(xo+4,Math.round(v)));
+      if($("#rgret")) $("#rgret").onchange=e=>{ prof[cur][xo+7]=(prof[cur][xo+7]&~1)|(e.target.checked?1:0); setDirty(); };
+      if($("#xact")){ $("#xact").value=String(b[o+1]&1); $("#xact").onchange=e=>{ b[o+1]=(b[o+1]&~1)|+e.target.value; setDirty(); }; } }
     wireSl("tacc",v=>setU16(o+10,Math.round(v))); wireSl("tfric",v=>setU16(o+4,Math.round(v*100)));
     wireSl("rot",v=>{ b[o+9]=Math.round(v)&255; });
     if($("#tball")) $("#tball").onchange=e=>{ b[o+1]=(b[o+1]&~0x80)|(e.target.checked?0x80:0); if(e.target.checked&&!U16(o+4)) setU16(o+4,200); setDirty(); render(); };
@@ -633,7 +717,7 @@ function editor(){
     wireShift(g); ed.querySelectorAll("[data-sub]").forEach(e=>e.onclick=()=>openSel(e.dataset.sub));
     return;
   }
-  const s=sel, g=SGRP[s], bo=bOff(s), m=b[bo], par=parentOf(s);
+  const s=sel, g=SGRP[s], bo=bOff(s), m=b[bo], par=parentOf(s), bt0=btOff(s);
   $("#dlgClear").style.display="";
   const tt = s===58||s===27?0:s===59||s===23?1:-1;
   let trig = "";
@@ -641,18 +725,23 @@ function editor(){
     trig=`<div class="trigbox"><div class="row2"><label>Trigger mode</label><select id="tmode"><option value="0">Simple threshold — soft and full independent</option><option value="1">Hair trigger — soft on any further pull, off on any release</option><option value="2">Hip fire — quick full pull = full only; slow = soft, then full too</option><option value="3">Hip fire exclusive — soft and full never together</option></select><small>applies to this trigger in this profile</small></div>
       ${tm!==1?pct("tsp",softPct(tt),1,100,"Soft pull point","how far the trigger is pulled before soft pull fires; full pull = the click at the end"):""}
       ${tm>=2?slider("thip",U16(106+2*tt)||75,20,400,5,"Hip fire window","ms","pull to the click faster than this = hip fire (full only); Steam: aggressive ≈ 40, normal ≈ 75, relaxed ≈ 150"):""}
-      ${pct("tra",U16(110+4*tt)/100,0,90,"Analog start","Steam sees 0 until here (when soft pull is not bound)")}${pct("tre",(U16(112+4*tt)||10000)/100,10,100,"Analog end","Steam sees 100 % from here")}</div>`; }
+      ${slider("tcv",(U16(TCURVE+2*tt)||100)/100,0.3,4,0.05,"Analog response curve","×","1.0 linear · above = finer at the start of the pull (to Steam and the Xbox pad)")}${pct("tra",U16(110+4*tt)/100,0,90,"Analog start","Steam sees 0 until here (when soft pull is not bound)")}${pct("tre",(U16(112+4*tt)||10000)/100,10,100,"Analog end","Steam sees 100 % from here")}</div>`; }
   const trigLink = s===27||s===23 ? `<p class="note">Full pull = the click at the end of the trigger. <a href="#" id="tlink">Soft pull →</a></p>` : s===58||s===59 ? `<p class="note"><a href="#" id="tlink">Full pull →</a></p>` : "";
   const back = par||(s>=10&&s<=13?"dp":null);
-  ed.innerHTML=`${back?`<a href="#" id="back" class="note">← ${back==="dp"?"D-pad":ANAME[back]}</a>`:""}<h4>${SRCNAME[s]||"input "+s}${useShift(g)?" <em>⇧ shifted</em>":""}<span class="live" id="lvsel"></span></h4>
+  ed.innerHTML=`${back?`<a href="#" id="back" class="note">← ${back==="dp"?"D-pad":back==="gyp"?"Gyro (this profile)":ANAME[back]}</a>`:""}<h4>${SRCNAME[s]||"input "+s}${useShift(g)?" <em>⇧ shifted</em>":""}<span class="live" id="lvsel"></span></h4>
     ${par||back==="dp"?"":shiftBar(g)}
     ${trig}
     <div class="modes" style="margin:6px 0">${[[1,"long press (hold)",`second set after ${((U16(118)||250)/1000).toFixed(2)} s held`],[2,"double press",`second set on a second press within ${U16(120)||250} ms`],[8,"start press","the first set is tapped the moment you press, not held"],[16,"release press",(par?"tapped when the finger leaves / the click ends (not when sliding to another zone)":"tapped when you let go")],[4,"toggle","each press switches the first set on / off"],[32,"turbo","the first set repeats while held (profile turbo rate)"],[64,"cycle","each press taps the next set in turn: press → hold → double/release"]].map(([bit,n,t])=>`<label title="${t}"><input type="checkbox" data-bit="${bit}"${m&bit?" checked":""}> ${n}</label>`).join("")}</div>
     ${[0,1,2].filter(x=>x===0||(x===1&&(m&1))||(x===2&&(m&18))).map(x=>`<div class="grp"><span>${[m&8?"start":"press","hold",m&16?"release":"double"][x]}</span>${[0,1,2,3].map(i=>`<select data-gi="${x}:${i}">${OPTS}</select>`).join("")}</div>`).join("")}
     ${[0,1,2].some(x=>[0,1,2,3].some(i=>b[bo+1+x*4+i]>=0x76&&b[bo+1+x*4+i]<=0x79))?slider("mvs",U16(38)||1000,50,10000,10,"Mouse move speed","counts / s","for every “Mouse move” action in this profile"):""}
-    ${m&1?slider("bhold",U16(118)||250,100,1000,10,"Long press time","ms","how long to hold (same for every long press in this profile)"):""}
-    ${m&2?slider("bdbl",U16(120)||250,100,600,10,"Double press window","ms","time for the second press (whole profile)"):""}
-    ${m&32?slider("bturbo",U16(122)||100,20,1000,5,"Turbo period","ms",`${(1000/(U16(122)||100)).toFixed(1)} presses per second (whole profile)`):""}
+    <details class="btime"${[0,1,2,3,4].some(k=>b[bt0+k])||b[bt0+5]?" open":""}><summary>Timing of this input <span class="note">(0 = the profile’s: long ${U16(118)||250} ms, double ${U16(120)||250} ms, turbo ${U16(122)||100} ms)</span></summary>
+    ${m&1?slider("bhold",b[bt0]*10,0,2550,10,"Long press time","ms","0 = profile"):""}
+    ${m&2?slider("bdbl",b[bt0+1]*10,0,2550,10,"Double press window","ms","0 = profile"):""}
+    ${m&32?slider("bturbo",b[bt0+2]*5,0,1275,5,"Turbo period","ms","0 = profile"):""}
+    ${slider("bdst",b[bt0+3]*10,0,2550,10,"Delay start","ms","the press acts this much later")}
+    ${slider("bden",b[bt0+4]*10,0,2550,10,"Delay end","ms","the press keeps acting this much longer after you let go")}
+    ${m&1?`<div class="row2"><label></label><label class="note"><input type="checkbox" id="bint"${b[bt0+5]&1?" checked":""}> interruptible — pressing another input while holding cancels the long press (and the short one)</label></div>`:""}
+    </details>
     ${s===16?`<p class="note wrap">While the remapper is on, Steam does not see this button. Bind it to <b>Pad Steam</b> to give it back to Steam. Steam + D-pad (profiles) and holding it to power off work as always.</p>`:""}
     <div class="row2"><label>Chord</label><select id="bchord">${SHBTN.map(([v,n])=>`<option value="${v}">${v?"only while "+n+" is held":"— none (always) —"}</option>`).join("")}</select><small>chorded press: fires only together with that button</small></div>
     <div class="row2"><label>Haptics</label><select id="bhap">${HAPT.map(([v,n])=>`<option value="${v}">${n}</option>`).join("")}</select><small>when it fires</small></div>
@@ -666,14 +755,17 @@ function editor(){
     e.onchange=()=>{ b[bo+1+x*4+i]=+e.value; setDirty(); render(); }; });
   $("#bhap").value=String(b[bo+13]&3); $("#bhap").onchange=e=>{ b[bo+13]=(b[bo+13]&~3)|+e.target.value; setDirty(); };
   $("#bchord").value=String(b[bo+13]>>2); $("#bchord").onchange=e=>{ b[bo+13]=(b[bo+13]&3)|(+e.target.value<<2); setDirty(); render(); };
-  $("#bcopy").onclick=()=>{ bindClip=b.slice(bo,bo+14); $("#bpaste").disabled=false; };
-  $("#bpaste").onclick=()=>{ if(bindClip){ b.set(bindClip,bo); setDirty(); render(); } };
-  wireSl("bhold",v=>setU16(118,Math.round(v))); wireSl("bdbl",v=>setU16(120,Math.round(v))); wireSl("bturbo",v=>setU16(122,Math.round(v)));
+  $("#bcopy").onclick=()=>{ bindClip=[b.slice(bo,bo+14),b.slice(bt0,bt0+6)]; $("#bpaste").disabled=false; };
+  $("#bpaste").onclick=()=>{ if(bindClip){ b.set(bindClip[0],bo); b.set(bindClip[1],bt0); setDirty(); render(); } };
+  wireSl("bhold",v=>{ b[bt0]=Math.min(255,Math.round(v/10)); }); wireSl("bdbl",v=>{ b[bt0+1]=Math.min(255,Math.round(v/10)); }); wireSl("bturbo",v=>{ b[bt0+2]=Math.min(255,Math.round(v/5)); });
+  wireSl("bdst",v=>{ b[bt0+3]=Math.min(255,Math.round(v/10)); }); wireSl("bden",v=>{ b[bt0+4]=Math.min(255,Math.round(v/10)); });
+  if($("#bint")) $("#bint").onchange=e=>{ b[bt0+5]=(b[bt0+5]&~1)|(e.target.checked?1:0); setDirty(); };
   wireSl("tsp",v=>setU16(18+2*tt,Math.round(v*100)));
   if($("#tmode")){ $("#tmode").value=String(b[104+tt]); $("#tmode").onchange=e=>{ b[104+tt]=+e.target.value; setDirty(); render(); }; }
   wireSl("thip",v=>setU16(106+2*tt,Math.round(v)));
   wireSl("tra",v=>{ setU16(110+4*tt,Math.round(v*100)); if(!U16(112+4*tt)) setU16(112+4*tt,10000); });
   wireSl("tre",v=>{ setU16(112+4*tt,Math.round(v*100)); });
+  wireSl("tcv",v=>{ const c=Math.round(v*100); setU16(TCURVE+2*tt,c===100?0:c); });
   wireSl("mvs",v=>setU16(38,Math.round(v)));
   if($("#back")) $("#back").onclick=e=>{ e.preventDefault(); openSel(back); };
   if($("#tlink")) $("#tlink").onclick=e=>{ e.preventDefault(); openSel({27:58,23:59,58:27,59:23}[s]); };
@@ -792,32 +884,78 @@ $("#xiguide").onchange=async e=>{ try{ await cfgSet("xi_guide",e.target.checked?
 $("#padout").onchange=async e=>{ try{ if(padOutBoot===null) padOutBoot=padOutNow; await cfgSet("pad_out",+e.target.value); padOutNow=+e.target.value; updXbWarn(); alert("Saved. Turn the controller off and on (hold Steam, or Steam + Y) for the new pad output to take effect."); }catch(err){ $("#pstatus").innerHTML=`<span class="err">${err.message}</span>`; } };
 $("#activeProf").onchange=async e=>{ try{ await cfgSet("remap_profile",+e.target.value); }catch(err){ $("#pstatus").innerHTML=`<span class="err">${err.message}</span>`; } };
 
-async function readProfile(p){ const b=new Uint8Array(PROF_SIZE); for(let o=0;o<PROF_SIZE;o+=CH){ const d=await read(`sc26re/rmp/${p}/${o.toString(16)}`); b.set(d.slice(0,Math.min(CH,PROF_SIZE-o)),o); } return b; }
+async function readProfile(p){ const b=new Uint8Array(PROF_SIZE);
+  for(let o=0;o<PROF_SIZE;o+=CH){
+    if(o>=V6_SIZE&&b[1]===6) break; /* older firmware: a v6 profile, nothing after it */
+    const d=await read(`sc26re/rmp/${p}/${o.toString(16)}`); b.set(d.slice(0,Math.min(CH,PROF_SIZE-o)),o); }
+  return b[1]===6?upgradeProfile(b.slice(0,V6_SIZE)):b; }
 let bulk=0; /* reading / saving profiles: the live polls wait (they share the link with it) */
 async function readAll(){
   bulk++;
   try{ $("#pstatus").textContent="reading…";
     for(let p=0;p<4;p++){ const b=await readProfile(p); prof[p]=b[0]===0xA7&&b[1]===PROF_VER?b:emptyProfile(); }
+    fwV7=null;
     setDirty(false); render(); $("#pstatus").innerHTML='<span class="ok">profiles loaded from the controller</span>';
   }catch(e){ $("#pstatus").innerHTML=`<span class="err">${e.message}</span>`; }
   finally{ bulk--; }
 }
 $("#read").onclick=readAll;
+let fwV7=null; /* the firmware takes v7 profiles (sc26re v51test37+) */
+async function checkV7(){ if(fwV7!==null) return fwV7; try{ const d=await read(`sc26re/rmp/${cur}/${(PROF_SIZE-8).toString(16)}`); fwV7=!!d&&d.length>0; }catch(e){ fwV7=false; } return fwV7; }
+async function saveSlot(p){ const b=prof[p];
+  if(!await checkV7()) throw new Error("this firmware is older than the page (profile v6): update the controller firmware");
+  for(let o=0;o<PROF_SIZE;o+=CH) await send(`sc26re/rmp/${p}/${o.toString(16)}`,0xEE,Array.from(b.slice(o,Math.min(o+CH,PROF_SIZE))));
+  await send(`sc26re/rmp/${p}`,0xEF);
+  const back=await readProfile(p);
+  return back.every((v,i)=>v===b[i]); }
 $("#write").onclick=async()=>{
   bulk++;
-  try{ collect(); const b=prof[cur]; $("#pstatus").textContent="saving…";
-    for(let o=0;o<PROF_SIZE;o+=CH) await send(`sc26re/rmp/${cur}/${o.toString(16)}`,0xEE,Array.from(b.slice(o,Math.min(o+CH,PROF_SIZE))));
-    await send(`sc26re/rmp/${cur}`,0xEF);
-    const back=await readProfile(cur);
-    const okb=back.every((v,i)=>v===b[i]); if(okb) setDirty(false);
+  try{ collect(); $("#pstatus").textContent="saving…";
+    const okb=await saveSlot(cur); if(okb) setDirty(false);
     $("#pstatus").innerHTML=okb?`<span class="ok">profile ${cur+1} saved to the controller</span>`:'<span class="err">saved, but reading it back differs — try again</span>';
     buildTabs();
   }catch(e){ $("#pstatus").innerHTML=`<span class="err">${e.message}</span>`; }
   finally{ bulk--; }
 };
+/* ---- Steam Input (.vdf) import / export: web/vdf.js ---- */
+const esc=t=>String(t).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+let vImp=null, vName="";
+function vKeyOptions(sel){ const o=[[0,"— skip —"],...Object.entries(MOUSE).filter(([k])=>k<0x76||k>0x79),...Object.entries(MODS),...Object.entries(KEYS)];
+  return o.map(([v,n])=>`<option value="${v}"${+v===sel?" selected":""}>${esc(n)}</option>`).join(""); }
+function vOpts(){ const slots=[0,1,2,3].map(k=>{ const v=$("#vs"+k).value; return v===""?null:+v; });
+  const gameMap={}; document.querySelectorAll("#vgame select").forEach(x=>{ if(+x.value) gameMap[x.dataset.a]=+x.value; });
+  return { slots:slots.map(x=>x==null?-1:x), gameMap, padXbox:$("#vxb").checked }; }
+function vPreview(){ if(!vImp) return null; const o=vOpts(); const im=new SteamVDF.Importer(vImp.tree,o); const r=im.run();
+  $("#vnotes").innerHTML=r.notes.length?r.notes.map(n=>`<li>${esc(n)}</li>`).join(""):"<li>everything maps</li>"; return {r,o}; }
+$("#vimport").onchange=async e=>{ const f=e.target.files[0]; e.target.value=""; if(!f) return;
+  try{ const tree=SteamVDF.parse(await f.text()); const root=SteamVDF.get(tree,"controller_mappings"); if(!root) throw new Error("not a Steam Input configuration (no controller_mappings)");
+    const im=new SteamVDF.Importer(tree), lst=im.list(); if(!lst.length) throw new Error("no action sets in this file");
+    vImp={tree}; vName=SteamVDF.get(root,"title")||f.name; const def=im.defaultSlots(), ga=im.gameActions();
+    const ct=SteamVDF.get(root,"controller_type")||"?";
+    let h=`<p class="note" style="margin:0 0 8px"><b>${esc(vName)}</b> · made for <code>${esc(ct)}</code>${ct!=="controller_triton"?" (another controller: buttons it lacks are skipped, the rest map by name)":""}</p>`;
+    h+=`<div style="display:grid;grid-template-columns:auto 1fr;gap:4px 10px;align-items:center">`;
+    for(let k=0;k<4;k++) h+=`<label>Profile ${k+1}</label><select id="vs${k}"><option value="">— keep the current profile ${k+1} —</option>${lst.map(x=>`<option value="${x.id}"${def[k]===x.id?" selected":""}>${esc(x.title)}${x.layer?" (layer of "+esc((lst.find(y=>y.name===x.parent)||{title:x.parent}).title)+")":" (action set)"}</option>`).join("")}</select>`;
+    h+=`</div><label class="note" style="display:block;margin:8px 0"><input type="checkbox" id="vxb" checked> gamepad buttons and sticks go to the Xbox 360 pad (USB) — untick to send them as Steam controller inputs</label>`;
+    if(ga.length){ h+=`<details${ga.some(a=>!a.def)?" open":""}><summary><b>Game actions</b> (${ga.length}) — this layout uses the game’s Steam Input API actions; pick the key each one is bound to in the game’s own settings, or leave “skip”</summary><div id="vgame" style="max-height:240px;overflow:auto;display:grid;grid-template-columns:1fr auto;gap:3px 10px;margin-top:6px">`;
+      for(const a of ga) h+=`<span title="${esc(a.name)}">${esc(a.title)}</span><select data-a="${esc(a.name)}">${vKeyOptions(a.def)}</select>`;
+      h+=`</div></details>`; }
+    h+=`<p class="note" style="margin:10px 0 2px"><b>Notes</b></p><ul id="vnotes" class="note" style="margin:0;padding-left:18px;max-height:160px;overflow:auto"></ul>`;
+    $("#vbody").innerHTML=h; $("#vbody").querySelectorAll("select,input").forEach(x=>x.onchange=vPreview); vPreview(); $("#vdlg").showModal();
+  }catch(err){ $("#pstatus").innerHTML=`<span class="err">${esc(err.message)}</span>`; } };
+async function vApply(save){ const pv=vPreview(); if(!pv) return; $("#vdlg").close(); collect();
+  const done=[]; pv.r.profiles.forEach((b,k)=>{ if(b){ prof[k]=b; done.push(k); } }); setDirty(); render();
+  if(!save){ $("#pstatus").innerHTML=`<span class="ok">imported into profile ${done.map(k=>k+1).join(", ")} — press Save to controller on each</span>`; return; }
+  bulk++; try{ let bad=[]; for(const k of done){ $("#pstatus").textContent=`saving profile ${k+1}…`; if(!await saveSlot(k)) bad.push(k+1); }
+    if(!bad.length) setDirty(false); buildTabs();
+    $("#pstatus").innerHTML=bad.length?`<span class="err">profile ${bad.join(", ")}: read back differs — save again</span>`:`<span class="ok">imported and saved: profile ${done.map(k=>k+1).join(", ")}</span>`;
+  }catch(e){ $("#pstatus").innerHTML=`<span class="err">${esc(e.message)} (imported profiles are in the editor)</span>`; } finally{ bulk--; } }
+$("#vload").onclick=()=>vApply(false); $("#vsave").onclick=()=>vApply(true); $("#vcancel").onclick=()=>$("#vdlg").close();
+$("#vexport").onclick=()=>{ collect(); saveName(); const r=SteamVDF.exportVDF(prof.map(b=>b&&b[0]===0xA7?b:null),{title:"sc26re: "+prof.map(nameOf).filter(x=>x).join(" / ")});
+  const a=document.createElement("a"); a.href=URL.createObjectURL(new Blob([r.text],{type:"text/plain"})); a.download="sc26re_controller_config.vdf"; a.click();
+  $("#pstatus").innerHTML=`<span class="ok">exported 4 profiles as a Steam Input configuration</span>`+(r.dropped.length?` <span class="warn">— no Steam equivalent, left out: ${esc(r.dropped.join(", "))}</span>`:""); };
 $("#clear").onclick=()=>{ if(confirm(`Clear profile ${cur+1}? (Save to controller afterwards.)`)){ prof[cur]=emptyProfile(); sel=null; setDirty(); render(); } };
 $("#export").onclick=()=>{ collect(); const j=JSON.stringify({sc2remap:1,name:nameOf(prof[cur]),data:Array.from(prof[cur])}); const a=document.createElement("a"); a.href=URL.createObjectURL(new Blob([j],{type:"application/json"})); a.download=`sc2-remap-${(nameOf(prof[cur])||"profile"+(cur+1)).replace(/\W+/g,"_")}.json`; a.click(); };
-$("#import").onchange=async e=>{ const f=e.target.files[0]; if(!f) return; try{ const j=JSON.parse(await f.text()); if(!j.data||j.data.length!==PROF_SIZE) throw new Error("not a profile file for this version"); prof[cur]=new Uint8Array(j.data); setDirty(); render(); $("#pstatus").innerHTML='<span class="ok">imported — press Save to controller</span>'; }catch(err){ $("#pstatus").innerHTML=`<span class="err">${err.message}</span>`; } e.target.value=""; };
+$("#import").onchange=async e=>{ const f=e.target.files[0]; if(!f) return; try{ const j=JSON.parse(await f.text()); if(!j.data||(j.data.length!==PROF_SIZE&&j.data.length!==V6_SIZE)) throw new Error("not a profile file for this version"); prof[cur]=upgradeProfile(new Uint8Array(j.data)); setDirty(); render(); $("#pstatus").innerHTML='<span class="ok">imported — press Save to controller</span>'; }catch(err){ $("#pstatus").innerHTML=`<span class="err">${err.message}</span>`; } e.target.value=""; };
 
 /* ---- gyro + gyro as mouse settings (sc26re cfg values, same as the report meter) ---- */
 const BTNOPTS=[[-1,"— none —"],[0,"A"],[1,"B"],[2,"X"],[3,"Y"],[19,"LB"],[9,"RB"],[27,"LT click"],[23,"RT click"],[17,"L4"],[18,"L5"],[7,"R4"],[8,"R5"],[15,"L3"],[5,"R3"],[6,"Menu"],[14,"View"],[13,"D-pad up"],[10,"D-pad down"],[12,"D-pad left"],[11,"D-pad right"],[26,"Left pad click"],[22,"Right pad click"],[25,"Left pad touch"],[21,"Right pad touch"],[24,"Left stick touch"],[20,"Right stick touch"],[29,"Left grip touch"],[28,"Right grip touch"]];
@@ -871,6 +1009,7 @@ const GY=[
  ["gm_act_button2","Second activation button","sel",BTNOPTS,1,"either button activates the gyro (same mode)"],
  ["gm_smooth","Precision smoothing","num",[0,100,0.5],10,"°/s: slower turns are smoothed (hides hand tremor); 0 = off"],
  ["gm_ratchet","Ratchet (pause) button","sel",BTNOPTS,1,"while held the gyro stops moving — re-centre your hands, then let go"],
+ ["gm_space","Gyro space","sel",[[0,"local (the axis settings below)"],[1,"player space"],[2,"world space"]],1,"player / world: turning about the vertical works the same however you hold the controller; a profile can choose its own"],
  ["gm_haptic","Haptics","sel",[[0,"off"],[1,"tick (light)"],[2,"click"],[3,"strong"]],1,"when the activation button starts the mouse and on quick turns"],
 ];
 const GYI={}; for(const e of GY) if(e[0]!=="#") GYI[e[0]]=e;
@@ -896,6 +1035,7 @@ const CARDS=()=>[
    ${row("Gyro works","button or touch sensor, and how",ctlHtml("gm_act_button")+ctlHtml("gm_act_mode"))}
    ${one("gm_act_button2")}${one("gm_ratchet")}
    ${row("Axes","what each gyro axis moves",labRows([["gm_axis_pitch","Pitch"],["gm_axis_yaw","Yaw"],["gm_axis_roll","Roll"]]))}
+   ${one("gm_space")}
    ${one("gm_haptic")}</div>`,
  `<div class="card"><h3>Gyro output and response</h3>
    ${one("gm_output","what the gyro controls")}
