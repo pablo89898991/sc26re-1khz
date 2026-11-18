@@ -106,6 +106,15 @@ static uint32_t mon_pad;
 static int32_t mon_dx, mon_dy, mon_wheel;
 static bool profile_dirty[REMAP_PROFILES];
 static volatile bool reload_pending; /* a profile was replaced by COMMIT: start clean */
+static volatile uint8_t shutdown_state; /* 1: power-off asked, 2: everything let go */
+
+void remap_power_off(void)
+{
+	/* from the power-off thread: the main loop lets go of every key, button
+	 * and toggle while the radio still works (a toggled auto-run key would
+	 * otherwise stay held at the PC behind the Puck) */
+	shutdown_state = 1U;
+}
 
 struct src_state
 {
@@ -1570,6 +1579,17 @@ void remap_process(struct controller_report *r, float dt)
 		raw &= ~dp_hide;
 	}
 	profile_changed();
+	if(shutdown_state != 0U)
+	{
+		/* powering off: let go of everything once, then nothing new */
+		if(shutdown_state == 1U)
+		{
+			release_all();
+			shutdown_state = 2U;
+		}
+		flush_outputs();
+		return;
+	}
 	{
 		/* turned off by any path (LB+RB+Menu, the page's switch = a plain
 		 * setting write): let go of everything once */

@@ -445,6 +445,16 @@ def regress_turning_on_clears_what_lizard_left():
         s.cfg("remap_on", 1); s.run(300)
         h = s.host(); assert h["mb"] == 0 and h["kbd"] == bytes(8), (tr, h)
 
+@test
+def regress_power_off_lets_go():
+    p = Profile(); p.bind("A", key("w"), mode=M_TOGGLE); p.bind("B", MOUSE_L)
+    for tr in (None, (1, 1, 0, 15), (2, 0, 0, 15)):
+        s = Sim()
+        if tr: s.transport(*tr)
+        s.use(p); s.run(5); s.run(30, A=1); s.run(30, A=0); s.run(30, B=1)
+        s.lib.remap_power_off(); s.run(60)
+        h = s.host(); assert h["kbd"] == bytes(8) and h["mb"] == 0, (tr, h)
+
 if __name__ == "__main__":
     only = sys.argv[1:]; ok = fail = 0
     for t in TESTS:

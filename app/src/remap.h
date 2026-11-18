@@ -174,6 +174,8 @@ struct remap_profile
 extern const uint8_t remap_shift_src[REMAP_SHIFT_SRC_COUNT];
 
 void remap_init(void);
+/* power-off is coming: let go of everything (main loop) */
+void remap_power_off(void);
 bool remap_enabled(void);
 void remap_set_enabled(bool on);
 /* report loop: outputs keyboard/mouse, rewrites the pad report (dt in s) */

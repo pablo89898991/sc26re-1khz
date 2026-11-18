@@ -23,6 +23,7 @@
 #include "battery.h"
 #include "controller.h"
 #include "power.h"
+#include "remap.h"
 #include "haptics.h"
 #include "puck_interface.h"
 #include "rgbw_led.h"
@@ -100,6 +101,9 @@ static void power_arm_systemoff_wake(void)
 
 static void power_prepare_shutdown(void)
 {
+	/* keys / clicks held by the remapper go up while the radio still works */
+	remap_power_off();
+	k_msleep(60);
 #if CONFIG_IBEX_RGBW_LED
 	rgbw_led_prepare_poweroff();
 #endif
