@@ -923,6 +923,17 @@ bool remap_gyro_value(int id, int16_t *value)
 	{
 		return false;
 	}
+	if(id == SC26RE_CFG_GYRO_FSR)
+	{
+		int16_t f = p->gyro_fsr;
+
+		if(f == 250 || f == 500 || f == 1000 || f == 2000)
+		{
+			*value = f;
+			return true;
+		}
+		return false;
+	}
 	for(int k = 0; k < REMAP_GYRO_KEYS; ++k)
 	{
 		if(remap_gyro_keys[k] == id)

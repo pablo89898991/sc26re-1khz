@@ -1669,7 +1669,13 @@ static void imu_fast_thread_main(void *arg1, void *arg2, void *arg3)
 			 * Report units stay the same; a lower range gives finer steps and clips
 			 * above it. Re-reading CTRL6 below picks up the new sensitivity. */
 			static int16_t applied_fsr;
-			int16_t fsr = sc26re_cfg_get(SC26RE_CFG_GYRO_FSR);
+			int16_t fsr;
+
+			/* the active remap profile can carry its own range */
+			if(!remap_gyro_value(SC26RE_CFG_GYRO_FSR, &fsr))
+			{
+				fsr = sc26re_cfg_get(SC26RE_CFG_GYRO_FSR);
+			}
 			uint8_t code = fsr <= 250 ? 1U : fsr <= 500 ? 2U : fsr <= 1000 ? 3U : 4U;
 
 			if(fsr != applied_fsr &&

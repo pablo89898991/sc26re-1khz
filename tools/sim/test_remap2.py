@@ -182,6 +182,17 @@ def gyro_profile_values():
     s = fresh(p)
     return "gm_sens read back via cfg: %d" % s.cfg_get("gm_sens")
 
+@test
+def gyro_fsr_per_profile():
+    a = Profile("fps"); a.flags(PF_GYRO); struct.pack_into("<h", a.b, 124, 500)
+    b = Profile("plain"); struct.pack_into("<h", b.b, 124, 500)  # no own gyro settings -> ignored
+    s = Sim(); s.upload(1, b); s.cfg("gyro_fsr", 1000); s.use(a, 0); s.run(5)
+    assert s.lib.sim_gyro_fsr() == 500, s.lib.sim_gyro_fsr()
+    s.run(20, STEAM=1, DRIGHT=1); s.run(20, STEAM=0, DRIGHT=0)
+    assert s.lib.sim_gyro_fsr() == 1000, s.lib.sim_gyro_fsr()
+    s.run(20, STEAM=1, DUP=1); s.run(20, STEAM=0, DUP=0); assert s.lib.sim_gyro_fsr() == 500
+    s.cfg("remap_on", 0); assert s.lib.sim_gyro_fsr() == 1000, "remapper off = global"
+
 if __name__ == "__main__":
     only = sys.argv[1:]; ok = fail = 0
     for t in TESTS:

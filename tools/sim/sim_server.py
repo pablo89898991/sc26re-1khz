@@ -36,6 +36,8 @@ class H(BaseHTTPRequestHandler):
             self._send(o.hex(), "text/plain")
         elif self.path == "/events":
             with lock: self._send(json.dumps(events))
+        elif self.path == "/fsr":
+            with lock: self._send(json.dumps(sim.lib.sim_gyro_fsr()))
         elif self.path == "/state":
             with lock: self._send(json.dumps({"out": sim.out, "in": sim.state}))
         else: self.send_error(404)

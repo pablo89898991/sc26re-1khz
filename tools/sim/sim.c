@@ -168,3 +168,15 @@ int sim_feature(const uint8_t *req, uint8_t *rsp)
 	}
 	return err;
 }
+
+/* gyro range the IMU would use now (profile override or global) */
+int sim_gyro_fsr(void)
+{
+	int16_t v;
+
+	if(!remap_gyro_value(SC26RE_CFG_GYRO_FSR, &v))
+	{
+		v = sc26re_cfg_get(SC26RE_CFG_GYRO_FSR);
+	}
+	return v;
+}

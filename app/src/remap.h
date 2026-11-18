@@ -162,7 +162,8 @@ struct remap_profile
 	uint16_t hold_ms;          /* long press time (0 = 250) */
 	uint16_t double_ms;        /* double press window (0 = 250) */
 	uint16_t turbo_ms;         /* turbo period (0 = 100) */
-	uint8_t reserved[4];
+	int16_t gyro_fsr;          /* with REMAP_PF_GYRO: gyro range 250/500/1000/2000 dps (0 = global) */
+	uint8_t reserved[2];
 	uint8_t macro[4][REMAP_MACRO_STEPS][2]; /* steps: action, time x10 ms (action 0 = wait; 0,0 = end) */
 	struct remap_analog an[4]; /* left stick, right stick, left pad, right pad */
 	struct remap_shift shift[REMAP_SHIFT_GROUPS];

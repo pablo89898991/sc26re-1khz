@@ -88,7 +88,7 @@ const kbd = evs => evs.filter(e => e.split(' ')[1] === 'K').map(e => e.split(' '
   check('reload from controller = same profile', JSON.stringify(before) === JSON.stringify(after));
 
   // 5. live picture: stick + trackpad dot follow the controller
-  await post('/set', { lsx: 32767, LP_TOUCH: 1, lpx: 20000, lpy: 0 }); await sleep(200);
+  await post('/set', { lsx: 32767, LP_TOUCH: 1, lpx: 20000, lpy: 0 }); await sleep(500);
   const dot = await pg.evaluate(() => { const e = document.getElementById('dot_ls'); const p = document.getElementById('dot_lp'); return [e && (+e.getAttribute('cx') - +e.dataset.x), p && p.getAttribute('opacity')]; });
   check('live stick dot moves / pad finger shown', dot[0] > 5 && dot[1] === '1', JSON.stringify(dot));
   await post('/set', { lsx: 0, LP_TOUCH: 0, lpx: 0 });
@@ -96,6 +96,19 @@ const kbd = evs => evs.filter(e => e.split(' ')[1] === 'K').map(e => e.split(' '
   await pg.screenshot({ path: '/tmp/e2e_radial.png' });
   await pg.click('#dlgDone');
   await pg.screenshot({ path: '/tmp/e2e_main.png' });
+  // 6. gyro range per profile from the Gyro page
+  await pg.click('.view[data-v="gyro"]'); await sleep(300);
+  await pg.selectOption('#gyScope', 'p'); await sleep(200);
+  const fsrOn = await pg.evaluate(() => !document.getElementById('g_gyro_fsr').disabled);
+  check('gyro range editable for the profile', fsrOn);
+  await pg.selectOption('#g_gyro_fsr', '500');
+  await pg.click('#gyApply'); await sleep(100);
+  await pg.click('.view[data-v="map"]'); await sleep(200);
+  await pg.click('#write');
+  await pg.waitForFunction(() => /saved to|differs|err/.test(document.querySelector('#pstatus').textContent) && !/saving/.test(document.querySelector('#pstatus').textContent), null, { timeout: 60000 });
+  await sleep(200);
+  const fsr = await get('/fsr');
+  check('profile gyro range 500 active on the controller', fsr === 500, 'fsr=' + fsr);
   check('no page errors', errs.length === 0, errs.slice(0, 5).join(' | '));
   console.log(`\n${results.filter(r => r[1]).length} passed, ${results.filter(r => !r[1]).length} failed`);
   await br.close();

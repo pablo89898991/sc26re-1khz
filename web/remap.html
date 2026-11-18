@@ -96,7 +96,7 @@
 <body>
 <div class="top">
   <div class="topin">
-    <div class="brand">SC2 <span class="hz">Remapper</span> <span class="note" id="pagever" title="page version — if it is older than expected, press Ctrl+F5">p.2026-11-18d</span></div>
+    <div class="brand">SC2 <span class="hz">Remapper</span> <span class="note" id="pagever" title="page version — if it is older than expected, press Ctrl+F5">p.2026-11-18e</span></div>
     <button class="primary" id="connect">Connect controller</button>
     <span id="status" class="chip">not connected</span>
     <span class="grow"></span>
@@ -785,7 +785,7 @@ const GY=[
  ["gyro_hw_lpf","Hardware filter (in the sensor)","num",[0,8,1],1,"0 off … 8 strongest (default 1)"],
  ["gyro_filter","Smoothing","num",[0,4,1],1,"0 off … 4 strong"],
  ["gyro_deadzone","Dead zone","auto",[0,2000,1],1,"raw units; Steam = follow Steam"],
- ["gyro_fsr","Range (full scale)","sel",[[250,"250 °/s"],[500,"500 °/s"],[1000,"1000 °/s"],[2000,"2000 °/s (default)"]],1,""],
+ ["gyro_fsr","Range (full scale)","sel",[[250,"250 °/s"],[500,"500 °/s"],[1000,"1000 °/s"],[2000,"2000 °/s (default)"]],1,"lower = finer steps from the sensor, faster turns are cut off (500 is common for aiming); can be set per profile"],
  ["gyro_odr","Sample rate in the sensor","sel",[[2000,"2000 Hz (default)"],[4000,"4000 Hz"],[8000,"8000 Hz"]],1,""],
  ["gyro_auto_cal","Auto calibration","num",[0,30,1],1,"seconds lying untouched before it recalibrates; 0 off"],
  ["gyro_chord_mode","LB + RB + X + Y does","sel",[[1,"drift only (default)"],[0,"full calibration (+ dead bands)"]],1,""],
@@ -1032,16 +1032,20 @@ window.addEventListener("pagehide",()=>{ if(devs.length) imuMode(0).catch(()=>{}
 
 /* ---- per-profile gyro (scope) ---- */
 const GKEYS=["gm_output","gm_act_button","gm_act_mode","gm_axis_pitch","gm_axis_yaw","gm_axis_roll","gm_sens","gm_scale_p","gm_scale_y","gm_scale_r","gm_curve","gm_accel","gm_accel_lo","gm_accel_hi","gj_dz","gj_anti","gj_max","gj_curve","gj_tilt","gm_haptic","gm_qt1_btn","gm_qt1_deg","gm_qt2_btn","gm_qt2_deg","gm_qt3_btn","gm_qt3_deg","gm_qt4_btn","gm_qt4_deg","gm_qt_ms","gm_ratchet"];
+/* profile gyro settings outside the gyro[] array: name -> offset in the profile */
+const GPX={gyro_fsr:124};
 const gyScope=()=>$("#gyScope").value;
-function gyInputs(on){ for(const [n,,kind] of GY){ if(n==="#") continue; const prof=GKEYS.includes(n);
+function gyInputs(on){ for(const [n,,kind] of GY){ if(n==="#") continue; const prof=GKEYS.includes(n)||n in GPX;
     document.querySelectorAll(`#gyCards [id^="g_${n}"],#gyCards [id^="ga_${n}"]`).forEach(e=>{ e.disabled=on&&!prof; e.closest(".row")&&e.closest(".row").classList.toggle("dim",on&&!prof); }); } }
 function gyFromProfile(){ const b=prof[cur], dv=new DataView(b.buffer);
-  GKEYS.forEach((n,k)=>{ const e=document.getElementById("g_"+n); if(!e) return; const v=dv.getInt16(44+k*2,true), sc=(GYI[n]||[])[4]||1; e.value=sc!==1?(v/sc).toFixed(2):String(v); }); }
+  GKEYS.forEach((n,k)=>{ const e=document.getElementById("g_"+n); if(!e) return; const v=dv.getInt16(44+k*2,true), sc=(GYI[n]||[])[4]||1; e.value=sc!==1?(v/sc).toFixed(2):String(v); });
+  for(const [n,o] of Object.entries(GPX)){ const e=document.getElementById("g_"+n), v=dv.getInt16(o,true); if(e&&v) e.value=String(v); } }
 function gyToProfile(){ const b=prof[cur], dv=new DataView(b.buffer);
-  GKEYS.forEach((n,k)=>{ const e=document.getElementById("g_"+n); if(!e||e.value==="") return; const sc=(GYI[n]||[])[4]||1; dv.setInt16(44+k*2,Math.round(+e.value*sc),true); }); }
+  GKEYS.forEach((n,k)=>{ const e=document.getElementById("g_"+n); if(!e||e.value==="") return; const sc=(GYI[n]||[])[4]||1; dv.setInt16(44+k*2,Math.round(+e.value*sc),true); });
+  for(const [n,o] of Object.entries(GPX)){ const e=document.getElementById("g_"+n); if(e&&e.value!=="") dv.setInt16(o,+e.value,true); } }
 function gyScopeShow(){ const p=gyScope()==="p", b=prof[cur];
   $("#gyPflags").hidden=!p; $("#gySave").hidden=p; $("#gyApply").textContent=p?"Put in profile":"Apply"; $("#gyOwn").checked=(b[17]&2)!==0; $("#gyAuto").checked=(b[17]&4)!==0;
-  $("#gyScopeNote").innerHTML=p?`Profile ${cur+1}${nameOf(b)?" “"+nameOf(b)+"”":""}: its own gyro mouse / joystick, activation, ratchet and quick turns (greyed settings are global). <b>Apply</b> puts the values in the profile — then <b>Save to controller</b> on “Buttons &amp; profiles”.`
+  $("#gyScopeNote").innerHTML=p?`Profile ${cur+1}${nameOf(b)?" “"+nameOf(b)+"”":""}: its own gyro range, gyro mouse / joystick, activation, ratchet and quick turns (greyed settings are global). <b>Apply</b> puts the values in the profile — then <b>Save to controller</b> on “Buttons &amp; profiles”.`
     :`Global: used by every profile that has no gyro settings of its own (and when the remapper is off) — the same settings as in the report meter. <b>Apply</b> = until power-off, <b>Save</b> = kept.`;
   gyInputs(p); if(p){ if(b[17]&2) gyFromProfile(); } }
 $("#gyScope").onchange=async()=>{ if(gyScope()==="g") await gyRead(); gyScopeShow(); };
