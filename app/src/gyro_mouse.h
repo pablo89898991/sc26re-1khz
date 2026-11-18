@@ -18,6 +18,8 @@ void gyro_mouse_note_sent(int8_t dx, int8_t dy);
 /* one gyro sample: pitch, yaw, roll in deg/s (bias removed, no dead zones) */
 /* report loop: handles the LB+RB+View chord and hides its buttons from the host while held */
 uint32_t gyro_mouse_filter_buttons(uint32_t raw);
+/* the accelerometer on the gyro_mouse_feed axes (pitch, yaw, roll axis), any unit */
+void gyro_mouse_gravity(const float acc[3]);
 void gyro_mouse_feed(const float dps[3], uint32_t buttons, float dt_s);
 /* whole counts to send now (fractions stay for the next report); true if any */
 /* a mouse report could not be sent: keep its movement for the next one */

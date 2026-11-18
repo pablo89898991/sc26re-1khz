@@ -14,7 +14,9 @@ SRC = dict(BTN, LS_UP=30, LS_DOWN=31, LS_LEFT=32, LS_RIGHT=33, RS_UP=34, RS_DOWN
            LP_UP=38, LP_DOWN=39, LP_LEFT=40, LP_RIGHT=41, RP_UP=42, RP_DOWN=43, RP_LEFT=44, RP_RIGHT=45,
            LP_G0=46, LP_G1=47, LP_G2=48, LP_G3=49, RP_G0=50, RP_G1=51, RP_G2=52, RP_G3=53,
            LP_CW=54, LP_CCW=55, RP_CW=56, RP_CCW=57, LT_SOFT=58, RT_SOFT=59,
-           LS_RING=60, RS_RING=61, LP_RING=62, RP_RING=63, LP_CENTER=64, RP_CENTER=65)
+           LS_RING=60, RS_RING=61, LP_RING=62, RP_RING=63, LP_CENTER=64, RP_CENTER=65,
+           GYRO_UP=66, GYRO_DOWN=67, GYRO_LEFT=68, GYRO_RIGHT=69,
+           LS_UR=70, LS_DR=71, LS_DL=72, LS_UL=73, RS_UR=74, RS_DR=75, RS_DL=76, RS_UL=77)
 # keyboard usages
 def key(c):
     if len(c) == 1 and c.isalpha(): return 0x04 + ord(c.lower()) - ord('a')
@@ -26,17 +28,20 @@ PAD, XBOX, PROFILE, LAYER, MACRO, STICK, TRIG_L, TRIG_R = 0x80, 0xA0, 0xC0, 0xC4
 XTRIG_L, XTRIG_R = 0xDA, 0xDB
 M_HOLD, M_DOUBLE, M_TOGGLE, M_START, M_RELEASE, M_TURBO, M_CYCLE = 1, 2, 4, 8, 16, 0x20, 0x40
 PASS, DPAD4, DPAD8, MOUSE, SCROLL, GATES, JOYSTICK, FLICK, SWIPE, GRID, RADIAL = range(11)
-SINGLE, XSTICK = 11, 12
+SINGLE, XSTICK, REGION = 11, 12, 13
+XTRIG_L, XTRIG_R = 0xDA, 0xDB
 AF_CLICK, AF_RING_INV, AF_OTHER, AF_SWREP, AF_PRESS, AF_INVX, AF_INVY, AF_TRACKBALL = 1, 2, 4, 8, 16, 32, 64, 128
 PF_BLOCK, PF_GYRO, PF_GYRO_ON = 1, 2, 4
 
 
 class Profile:
-    SIZE = 2056
+    SIZE = 3144
+    EXT = 2056                      # v7 area: bt[124] x6, xbind[12] x14, anx[12] x12, gyx 16, trig_curve, screen
+    BT, XBIND, ANX, GYX, TCURVE, SCREEN = 2056, 2800, 2968, 3112, 3128, 3132
 
     def __init__(self, name="test"):
         self.b = bytearray(self.SIZE)
-        self.b[0], self.b[1] = 0xA7, 6
+        self.b[0], self.b[1] = 0xA7, 7
         self.b[2:2 + len(name)] = name.encode()
 
     def u8(self, o, v): self.b[o] = v & 255
@@ -59,6 +64,23 @@ class Profile:
         struct.pack_into("<BBHHHBbHHHH", self.b, o, mode, flags, dz_in, dz_out, speed, haptic, rotate, curve,
                          ring, anti, press)
 
+    def btime(self, src, hold=0, dbl=0, turbo=0, dstart=0, dend=0, interrupt=False, shifted_index=None):
+        # per binding timing in ms (0 = the profile's)
+        if isinstance(src, str): src = SRC[src]
+        k = (src if src < 66 else 112 + src - 66) if shifted_index is None else 66 + shifted_index
+        struct.pack_into("<6B", self.b, self.BT + 6 * k, hold // 10, dbl // 10, turbo // 5, dstart // 10, dend // 10,
+                         1 if interrupt else 0)
+
+    def anx(self, i, scale_x=0, scale_y=0, edge_spin=0, slices=0, flags=0, region=(0, 0, 0, 0)):
+        # i: 0..3 sticks / pads, 4 + g shift group
+        struct.pack_into("<HHHBB4B", self.b, self.ANX + 12 * i, scale_x, scale_y, edge_spin, slices, flags, *region)
+
+    def gyx(self, mode=0, space=0, tilt_dz=0, tilt_8way=0, region=(0, 0, 0, 0), region_deg=0):
+        struct.pack_into("<4B4BB", self.b, self.GYX, mode, space, tilt_dz, tilt_8way, *region, region_deg)
+
+    def trig_curve(self, side, x100): self.u16(self.TCURVE + 2 * side, x100)
+    def screen(self, w, h): self.u16(self.SCREEN, w); self.u16(self.SCREEN + 2, h)
+
     def shift(self, g, button, dpad4=0, **an):
         o = 328 + 20 * g
         self.b[o] = 0 if button is None else button + 1
@@ -68,6 +90,7 @@ class Profile:
     def bind(self, src, a0=(), a1=(), a2=(), mode=0, haptic=0, chord=None, shifted_index=None):
         if isinstance(src, str): src = SRC[src]
         o = (488 + 14 * src) if shifted_index is None else (1412 + 14 * shifted_index)
+        if shifted_index is None and src >= 66: o = self.XBIND + 14 * (src - 66)
         self.b[o] = mode
         for g, acts in enumerate((a0, a1, a2)):
             if isinstance(acts, int): acts = (acts,)

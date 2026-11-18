@@ -352,6 +352,74 @@ uint32_t gyro_mouse_filter_buttons(uint32_t raw)
 	return chord_down ? raw & ~(CHORD_MASK | CHORD_CAL_EXTRA) : raw;
 }
 
+static float grav[3];
+static bool grav_ok;
+
+void gyro_mouse_gravity(const float acc[3])
+{
+	float m = sqrtf(acc[0] * acc[0] + acc[1] * acc[1] + acc[2] * acc[2]);
+
+	if(m > 1e-3f)
+	{
+		/* smoothed a little: hand shake is not a change of "up" */
+		for(int i = 0; i < 3; ++i)
+		{
+			grav[i] = grav_ok ? grav[i] + (acc[i] / m - grav[i]) * 0.05f : acc[i] / m;
+		}
+		grav_ok = true;
+	}
+}
+
+/*
+ * Player space / world space (Jibb Smart's gyro spaces): yaw is the turn about
+ * the gravity axis, so turning works the same however the controller is tilted.
+ * Player space mixes in some of the controller's own yaw and roll, world space
+ * uses only the turn about gravity; pitch stays the controller's own (player)
+ * or the turn about the level left-right axis (world).
+ */
+static void gyro_space(float v[3], int16_t space)
+{
+	float g[3], m, wy;
+
+	if(!grav_ok || space < 1 || space > 2)
+	{
+		return;
+	}
+	m = sqrtf(grav[0] * grav[0] + grav[1] * grav[1] + grav[2] * grav[2]);
+	if(m < 1e-3f)
+	{
+		return;
+	}
+	for(int i = 0; i < 3; ++i)
+	{
+		g[i] = grav[i] / m;
+	}
+	{
+		float w0 = v[0], w1 = v[1], w2 = v[2];
+
+		wy = w0 * g[0] + w1 * g[1] + w2 * g[2];
+		if(space == 1)
+		{
+			float lim = sqrtf(w1 * w1 + w2 * w2);
+
+			v[1] = (wy < 0.0f ? -1.0f : 1.0f) * MIN(fabsf(wy) * 1.41f, lim);
+		}
+		else
+		{
+			/* the controller's left-right axis, levelled */
+			float xr[3] = { 1.0f - g[0] * g[0], -g[0] * g[1], -g[0] * g[2] };
+			float xm = sqrtf(xr[0] * xr[0] + xr[1] * xr[1] + xr[2] * xr[2]);
+
+			v[1] = wy;
+			if(xm > 1e-3f)
+			{
+				v[0] = (w0 * xr[0] + w1 * xr[1] + w2 * xr[2]) / xm;
+			}
+		}
+	}
+	v[2] = 0.0f;
+}
+
 void gyro_mouse_feed(const float dps[3], uint32_t buttons, float dt_s)
 {
 	uint32_t pressed = buttons & ~prev_buttons;
@@ -439,6 +507,7 @@ void gyro_mouse_feed(const float dps[3], uint32_t buttons, float dt_s)
 			band(dps[1], gm(SC26RE_CFG_GM_BAND_Y_LO), gm(SC26RE_CFG_GM_BAND_Y_HI), soft),
 			band(dps[2], gm(SC26RE_CFG_GM_BAND_R_LO), gm(SC26RE_CFG_GM_BAND_R_HI), soft),
 		};
+		gyro_space(v, gm(SC26RE_CFG_GM_SPACE));
 		/* counts per degree of controller turn, times real world sensitivity */
 		float k = (float)gyro_mouse_counts_per_360() / 360.0f *
 		          (float)gm(SC26RE_CFG_GM_SENS) * 0.01f * dt_s;

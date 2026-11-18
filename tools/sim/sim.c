@@ -96,6 +96,8 @@ int transport_send_input_report(uint8_t id, const uint8_t *d, size_t len)
 			ev("K %02x %02x %02x %02x %02x %02x %02x", d[0], d[2], d[3], d[4], d[5], d[6], d[7]);
 		else if(id == 0x40 && len >= 5)
 			ev("M %u %d %d %d %d", d[0], (int8_t)d[1], (int8_t)d[2], (int8_t)d[3], (int8_t)d[4]);
+		else if(id == 0x46 && len >= 5)
+			ev("A %u %u", d[1] | (d[2] << 8), d[3] | (d[4] << 8));
 	}
 	return err;
 }
@@ -294,6 +296,11 @@ void sim_step(const uint8_t *in, uint8_t *out, int dt_us)
 		uint32_t b = gm_physical ? r.buttons : (gm_state_valid ? remap_raw_buttons() : 0U); /* as imu.c now */
 		int8_t dx, dy;
 
+		{
+			float ga[3] = { (float)r.accel_x, (float)r.accel_z, -(float)r.accel_y };
+
+			if(ga[0] || ga[1] || ga[2]) gyro_mouse_gravity(ga);
+		}
 		for(int t = 0; t < (dt_us + 999) / 1000; ++t) gyro_mouse_feed(gm_dps, b, 0.001f);
 		if(gyro_mouse_has_counts() && gyro_mouse_take(&dx, &dy))
 		{
@@ -398,7 +405,7 @@ int sim_gyro_key(int k)
 }
 void sim_led(uint8_t *out) { out[0] = led.r; out[1] = led.g; out[2] = led.b; }
 const uint8_t *remap_sim_staging(int *p);
-int sim_staging(uint8_t *out) { int p; const uint8_t *b = remap_sim_staging(&p); memcpy(out, b, 2056); return p; }
+int sim_staging(uint8_t *out) { int p; const uint8_t *b = remap_sim_staging(&p); memcpy(out, b, sizeof(struct remap_profile)); return p; }
 void remap_sim_mouse(float *out);
 void sim_mouse_state(float *out) { remap_sim_mouse(out); }
 /* the PC holds what another producer (lizard mode) sent last */

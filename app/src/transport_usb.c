@@ -97,6 +97,9 @@ static bool pending_state_valid;
 static int32_t pending_mouse_acc[4]; /* x, y, wheel, hwheel */
 static uint8_t pending_mouse_buttons;
 static bool pending_mouse_valid;
+/* absolute pointer (remapper mouse regions): only the newest position matters */
+static uint8_t pending_abs[5];
+static bool pending_abs_valid;
 static uint8_t mouse_turn;
 static uint32_t pending_imu_ts;
 static uint32_t submitted_imu_ts;
@@ -154,6 +157,7 @@ static void usb_input_queue_reset(void)
 	input_transfer_dequeue_on_completion = false;
 	pending_state_valid = false;
 	pending_mouse_valid = false;
+	pending_abs_valid = false;
 	memset(pending_mouse_acc, 0, sizeof(pending_mouse_acc));
 	k_spin_unlock(&input_queue_lock, key);
 }
@@ -182,6 +186,14 @@ static int usb_submit_next_input(void)
 	if(k_msgq_peek(&input_queue, &input_transfer) == 0)
 	{
 		input_transfer_dequeue_on_completion = true;
+	}
+	else if(pending_abs_valid)
+	{
+		input_transfer.len = 6;
+		input_transfer.data[0] = 0x46;
+		memcpy(&input_transfer.data[1], pending_abs, sizeof(pending_abs));
+		pending_abs_valid = false;
+		input_transfer_dequeue_on_completion = false;
 	}
 	else if(pending_mouse_valid || state_ready_locked())
 	{
@@ -291,6 +303,12 @@ static int usb_queue_input_report(uint8_t report_id, const uint8_t *data, size_t
 			pending_mouse_acc[i] += (int8_t)data[1 + i];
 		}
 		pending_mouse_valid = true;
+		err = 0;
+	}
+	else if(report_id == 0x46 && len == sizeof(pending_abs))
+	{
+		memcpy(pending_abs, data, sizeof(pending_abs));
+		pending_abs_valid = true;
 		err = 0;
 	}
 	else if(report_id == ID_TRITON_CONTROLLER_STATE)
@@ -661,7 +679,7 @@ int transport_usb_init(void)
 		return -ENODEV;
 	}
 
-	err = hid_device_register(hid_dev, valve_hid_report_map, valve_hid_report_map_size, &hid_ops);
+	err = hid_device_register(hid_dev, valve_hid_report_map_usb, sizeof(valve_hid_report_map_usb), &hid_ops);
 	if(err)
 	{
 		return err;

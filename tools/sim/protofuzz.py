@@ -27,7 +27,10 @@ def run(seed):
         elif op < .55:  # commit
             p = r.randrange(4)
             s.feature(0xEF, "sc26re/rmp/%d" % p)
-            if stage and stage[0] == p: live[p] = bytes(stage[1]); stage = None
+            if stage and stage[0] == p:
+                if stage[1][0] == 0xA7 and stage[1][1] == 6:   # a v6 profile: the firmware upgrades it (v7 area zeroed)
+                    stage[1][1] = 7; stage[1][Profile.EXT:] = bytes(Profile.SIZE - Profile.EXT)
+                live[p] = bytes(stage[1]); stage = None
         elif op < .7:  # junk
             path = r.choice(PATHS)
             try: path = path % ((r.randrange(-2, 12), r.randrange(0, 70000))[:path.count("%")])

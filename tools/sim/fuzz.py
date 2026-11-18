@@ -2,11 +2,11 @@
 import random, sys, struct, os, json
 from simlib import *
 
-STICK_MODES = [PASS, DPAD4, DPAD8, MOUSE, SCROLL, FLICK]
-PAD_MODES = list(range(11))
+STICK_MODES = [PASS, DPAD4, DPAD8, MOUSE, SCROLL, FLICK, RADIAL, SINGLE, XSTICK, REGION]
+PAD_MODES = list(range(14))
 ACTS = ([key(c) for c in "abcdefgw"] + [0xE0, 0xE1, MOUSE_L, MOUSE_R, MOUSE_M, 0x7B, WHEEL_UP, WHEEL_DOWN, 0x74,
         MOVE_UP, MOVE_RIGHT, PAD + 0, PAD + 9, PAD + 22, XBOX + 1, XBOX + 13, PROFILE + 0, PROFILE + 1, LAYER + 1, LAYER + 2,
-        MACRO + 0, MACRO + 1, STICK + 0, STICK + 6, TRIG_L, TRIG_R])
+        MACRO + 0, MACRO + 1, STICK + 0, STICK + 6, TRIG_L, TRIG_R, XTRIG_L, XTRIG_R])
 
 def rnd_analog(r, pad):
     return dict(mode=r.choice(PAD_MODES if pad else STICK_MODES), flags=r.randrange(256) & (0xFF if pad else 0x66),
@@ -44,6 +44,19 @@ def rnd_profile(r, name):
     for s in range(46):
         if r.random() < .3: rb(1412 + 14 * s)
     for k in range(30): struct.pack_into("<h", p.b, 44 + 2 * k, r.randrange(-1, 5))
+    # v7 area
+    if r.random() < .8:
+        for k in range(124):
+            if r.random() < .25: p.b[Profile.BT + 6 * k: Profile.BT + 6 * k + 6] = bytes([r.choice([0, 5, 30, 255]), r.choice([0, 10, 40]), r.choice([0, 1, 8, 255]), r.choice([0, 0, 3, 20]), r.choice([0, 0, 5, 30]), r.randrange(4)])
+        for s2 in range(66, 78):
+            if r.random() < .5: rb(Profile.XBIND + 14 * (s2 - 66))
+        for k in range(12):
+            if r.random() < .5: p.anx(k, scale_x=r.choice([0, 50, 300]), scale_y=r.choice([0, 25, 200]), edge_spin=r.choice([0, 0, 400, 65535]), slices=r.choice([0, 1, 2, 4, 8, 20]),
+                                     flags=r.randrange(4), region=tuple(r.choice([0, 0, 1, 50, 100, 255]) for _ in range(4)))
+        if r.random() < .6: p.gyx(mode=r.randrange(4), space=r.randrange(5), tilt_dz=r.choice([0, 1, 30, 90, 255]), tilt_8way=r.randrange(2),
+                                  region=tuple(r.choice([0, 1, 50, 100, 255]) for _ in range(4)), region_deg=r.choice([0, 1, 60, 255]))
+        for t in range(2): p.trig_curve(t, r.choice([0, 0, 1, 50, 300, 65535]))
+        if r.random() < .3: p.screen(r.choice([0, 1, 640, 65535]), r.choice([0, 1, 480, 65535]))
     return p
 
 NOSTEAMCHORD = (1 << 16)
@@ -70,6 +83,11 @@ def rnd_input(r, s):
         if r.random() < .25:
             v = r.choice([0, 3000, 10000, 20000, 32767]); kw[k] = v
             b = (b | 1 << bit) if v > 30000 else (b & ~(1 << bit))
+    if r.random() < .15:   # tilt / turn (gyro tilt, gyro region, player / world space)
+        g = r.choice([(0, 0, 4096), (0, 4096, 0), (4096, 0, 0), (2896, 0, 2896), (0, -2896, 2896), (-4096, 0, 0), (0, 0, -4096)])
+        kw["ax"], kw["ay"], kw["az"] = g
+    if r.random() < .15: kw["gx"], kw["gy"], kw["gz"] = (r.choice([0, 0, 3000, -12000, 32767]) for _ in range(3))
+    if (b & 0x84200) == 0x84200: b &= ~(1 << 14)   # not LB + RB + View: the gyro mouse toggle / calibration chord
     st["buttons"] = b
     s.set(**kw)
 
@@ -171,6 +189,14 @@ def round_(seed, profiles=40, seqs=6, steps=150):
                     if not 0 <= s.out[k] <= 32767: found.append((seed, pi, q, "%s out of range %d" % (k, s.out[k])))
             neutral(s)
             probs = check_idle(s, (seed, pi, q))
+            if probs and os.environ.get("FUZZDBG"):
+                print("DBG", probs, "gm cfg", {k: s.cfg_get(k) for k in ("gm_enabled", "gm_output", "gm_space", "remap_profile", "remap_on")})
+                for k, v in (("gm_enabled", 0),):
+                    s.cfg(k, v); print(" after", k, v, Events(s.run(500)).mouse()[:3])
+                s.cfg("gm_enabled", 1)
+                for sp in (0, 1, 2):
+                    s.cfg("gm_space", sp); print(" space", sp, Events(s.run(300)).mouse()[:2])
+                s.cfg("remap_on", 0); print(" remap off", Events(s.run(300)).mouse()[:2])
             if probs:
                 found.append((seed, pi, q, "; ".join(probs)))
                 fn = "/tmp/fuzzfail_%d_%d_%d.json" % (seed, pi, q)

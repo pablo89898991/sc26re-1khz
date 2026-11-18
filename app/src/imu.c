@@ -1563,6 +1563,24 @@ static void gyro_report_axes_dps(const float gyro[3], float out[3])
 	out[2] = -o[1]; /* roll */
 }
 
+/* accelerometer on the same axes as gyro_report_axes_dps (gravity for player / world space) */
+static void accel_report_axes(const float accel[3], float out[3])
+{
+	float o[3];
+
+	for(size_t row = 0; row < 3; ++row)
+	{
+		o[row] = 0.0f;
+		for(size_t col = 0; col < 3; ++col)
+		{
+			o[row] += (float)mounting_matrix[row * 3 + col] * accel[col];
+		}
+	}
+	out[0] = o[0];
+	out[1] = o[2];
+	out[2] = -o[1];
+}
+
 static bool imu_send_mouse(void)
 {
 	int8_t dx, dy;
@@ -1781,6 +1799,12 @@ static void imu_fast_thread_main(void *arg1, void *arg2, void *arg3)
 		report.imu_timestamp_us = (uint32_t)k_ticks_to_us_floor64(k_uptime_ticks());
 		store_cached_imu_report(&report);
 		gyro_report_axes_dps(gyro, gm_dps);
+		{
+			float ga[3];
+
+			accel_report_axes(accel, ga);
+			gyro_mouse_gravity(ga);
+		}
 		k_mutex_unlock(&imu_io_lock);
 		{
 			/* gyro as mouse: feed every sample (also handles its button chords) */

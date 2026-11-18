@@ -9,7 +9,8 @@
 
 #define REMAP_PROFILES 4
 #define REMAP_MAGIC 0xA7
-#define REMAP_VERSION 6
+#define REMAP_VERSION 7
+#define REMAP_VERSION_V6 6 /* still loaded: extended with an empty v7 area */
 
 /* sources: 0..29 controller button bits, then derived inputs */
 enum
@@ -26,8 +27,13 @@ enum
 	REMAP_SRC_RT_SOFT = 59,
 	REMAP_SRC_LS_RING = 60,   /* outer ring: left stick, right stick, left pad, right pad */
 	REMAP_SRC_LPAD_CENTER = 64, /* 9-zone grid centre: left pad, right pad */
-	REMAP_SRC_COUNT = 66,
+	REMAP_BIND_COUNT = 66,      /* sources with a binding in remap_profile.bind */
+	REMAP_SRC_GYRO_UP = 66,     /* gyro tilt: up (forward), down, left, right (bindings in ext.xbind) */
+	REMAP_SRC_LS_DIAG = 70,     /* stick diagonals: up-right, down-right, down-left, up-left (radial menu / 8-way pad) */
+	REMAP_SRC_RS_DIAG = 74,
+	REMAP_SRC_COUNT = 78,
 };
+#define REMAP_XBIND_COUNT (REMAP_SRC_COUNT - REMAP_BIND_COUNT)
 
 /* binding modes (bits) */
 #define REMAP_MODE_HOLD 0x01   /* group 1 when held longer */
@@ -83,6 +89,7 @@ enum
 #define REMAP_ANALOG_GRID 9     /* trackpads: 3 x 3 zones (8 directions + centre), each its own binding */
 #define REMAP_ANALOG_RADIAL 10  /* trackpads: radial menu, 2..10 slices (speed), fires on lift (or click) */
 #define REMAP_ANALOG_SINGLE 11  /* trackpads: the whole pad is one button (the centre source), touch / click / pressure */
+#define REMAP_ANALOG_REGION 13  /* mouse region: the stick / finger position is the cursor position inside a screen area */
 #define REMAP_ANALOG_XBOX 12    /* sticks: to the Xbox pad's stick (dead zones applied); trackpads: finger position = Xbox stick.
                                  * REMAP_AF_OTHER_STICK: the other side's stick. The Steam pad does not get it. */
 
@@ -96,6 +103,46 @@ enum
 #define REMAP_TRIG_HAIR 1     /* soft on any further pull, off on any release */
 #define REMAP_TRIG_HIP 2      /* hip fire: a quick full pull fires only full; a slow one soft, then full too */
 #define REMAP_TRIG_HIP_EXCL 3 /* hip fire exclusive: soft and full never at the same time */
+
+/* per binding timing (v7), 0 = the profile's value */
+#define REMAP_BT_INTERRUPT 0x01 /* long press: another input pressed meanwhile cancels it */
+struct remap_btime
+{
+	uint8_t hold10;   /* long press time, x10 ms */
+	uint8_t dbl10;    /* double press window, x10 ms */
+	uint8_t turbo5;   /* turbo period, x5 ms */
+	uint8_t dstart10; /* delay start: the press acts this much later, x10 ms */
+	uint8_t dend10;   /* delay end: the press keeps acting this much longer, x10 ms */
+	uint8_t flags;    /* REMAP_BT_* */
+} __packed;
+
+/* per stick / pad extras (v7): an[4] then the 8 shift groups' analog */
+struct remap_anx
+{
+	uint16_t scale_x; /* mouse / scroll / joystick output: horizontal %, 0 = 100 */
+	uint16_t scale_y; /* vertical %, 0 = 100 */
+	uint16_t edge_spin; /* trackpad mouse: counts/s while the finger rests at the edge, 0 = off */
+	uint8_t slices;   /* stick radial menu: 2..8 */
+	uint8_t flags;    /* REMAP_AX_* */
+	uint8_t region[4]; /* mouse region: centre x, centre y, width, height, % of the screen (0,0,0,0 = whole screen) */
+} __packed;
+#define REMAP_AX_REGION_RETURN 0x01 /* mouse region (trackpad): the cursor goes back to the centre when the finger leaves */
+
+/* gyro extras (v7): profile settings of their own, also without REMAP_PF_GYRO */
+#define REMAP_GYRO_NORMAL 0  /* the gyro mouse / joystick settings */
+#define REMAP_GYRO_TILT 1    /* tilting fires the gyro direction sources */
+#define REMAP_GYRO_REGION 2  /* turning moves an absolute cursor inside a screen area */
+struct remap_gyx
+{
+	uint8_t mode;      /* REMAP_GYRO_* */
+	uint8_t space;     /* 0 = the global setting, 1 = local (the axis settings), 2 = player space, 3 = world space */
+	uint8_t tilt_dz;   /* tilt: degrees before a direction fires (0 = 15) */
+	uint8_t tilt_8way; /* tilt: 1 = diagonals hold two directions */
+	uint8_t region[4]; /* mouse region: centre x, y, width, height (%) */
+	uint8_t region_deg; /* degrees of turn across the region width (0 = 60) */
+	uint8_t reserved[7];
+} __packed;
+
 
 #define REMAP_AF_CLICK 0x01       /* trackpads: active while clicked (else while touched) */
 #define REMAP_AF_RING_INVERT 0x02 /* outer ring fires inside the radius instead */
@@ -151,6 +198,17 @@ struct remap_binding
 	uint8_t haptic;    /* feedback when it fires: 0 off, 1 tick, 2 click, 3 strong */
 } __packed;
 
+struct remap_ext
+{
+	struct remap_btime bt[REMAP_BIND_COUNT + REMAP_SHIFT_SRC_COUNT + REMAP_XBIND_COUNT]; /* bind, sbind, xbind */
+	struct remap_binding xbind[REMAP_XBIND_COUNT]; /* gyro tilt and stick diagonal sources */
+	struct remap_anx anx[4 + REMAP_SHIFT_GROUPS];
+	struct remap_gyx gyx;
+	uint16_t trig_curve[2]; /* analog trigger output: response exponent x100 (0 = linear) */
+	uint16_t screen[2];     /* screen size in pixels for mouse regions over the Puck (0 = 1920 x 1080) */
+	uint8_t reserved[8];
+} __packed;
+
 struct remap_profile
 {
 	uint8_t magic;
@@ -175,9 +233,11 @@ struct remap_profile
 	uint8_t macro[4][REMAP_MACRO_STEPS][2]; /* steps: action, time x10 ms (action 0 = wait; 0,0 = end) */
 	struct remap_analog an[4]; /* left stick, right stick, left pad, right pad */
 	struct remap_shift shift[REMAP_SHIFT_GROUPS];
-	struct remap_binding bind[REMAP_SRC_COUNT];
+	struct remap_binding bind[REMAP_BIND_COUNT];
 	struct remap_binding sbind[REMAP_SHIFT_SRC_COUNT]; /* shifted bindings, see remap_shift_src */
+	struct remap_ext ext; /* v7 */
 } __packed;
+#define REMAP_PROFILE_V6_SIZE 2056
 
 extern const uint8_t remap_shift_src[REMAP_SHIFT_SRC_COUNT];
 

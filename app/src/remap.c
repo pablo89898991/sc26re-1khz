@@ -35,9 +35,9 @@
 
 LOG_MODULE_REGISTER(remap, LOG_LEVEL_INF);
 
-static uint16_t HOLD_MS = 250;
-static uint16_t DOUBLE_MS = 250;
-static uint16_t TURBO_MS = 100;
+static uint16_t prof_hold_ms = 250;
+static uint16_t prof_double_ms = 250;
+static uint16_t prof_turbo_ms = 100;
 #define TAP_MS 40
 #define RADIO_RELEASE_MS 20 /* a release goes out this long after the press went on air */
 #define RADIO_RELEASE_MAX_WAIT 250 /* ... but never waits longer than this */
@@ -69,7 +69,8 @@ static bool release_ok_now(void)
 #define PATH_PREFIX "sc26re/rmp/"
 #define CHUNK 48
 
-BUILD_ASSERT(sizeof(struct remap_profile) == 2056, "remap profile layout (web/remap.html)");
+BUILD_ASSERT(sizeof(struct remap_profile) == 3144, "remap profile layout (web/remap.html)");
+BUILD_ASSERT(offsetof(struct remap_profile, ext) == REMAP_PROFILE_V6_SIZE, "v7 area after the v6 layout");
 
 static struct remap_profile profiles[REMAP_PROFILES];
 
@@ -131,6 +132,10 @@ struct src_state
 	int64_t release_until; /* release press: group 2 tapped until */
 	uint8_t cycle;         /* cycle: next set */
 	bool block;            /* held when the profile changed: ignored until released */
+	bool interrupted;      /* long press cancelled by another input (per binding option) */
+	bool phys;             /* physically pressed (before delay start / end) */
+	bool phys_seen;        /* pressed at least once (delays have a reference) */
+	int32_t t_pdown, t_pup; /* ms, low 32 bits of the uptime */
 };
 static bool block_pressed; /* this report: block every source that is down */
 static struct src_state st[REMAP_SRC_COUNT];
@@ -150,14 +155,29 @@ static float xbox_stick[2][2]; /* Xbox sticks from "Xbox stick" modes, -1..1 (su
 static int16_t xbox_stick_out[2][2];
 static uint8_t move_dirs; /* mouse move actions held: up, down, left, right */
 /* radial menu slices, clockwise from the top */
-static const uint8_t radial_src[2][10] = {
+static const uint8_t radial_src[4][10] = {
 	{ 38, 47, 41, 49, 39, 48, 40, 46, 64, 54 },
 	{ 42, 51, 45, 53, 43, 52, 44, 50, 65, 56 },
+	/* sticks (2 = left, 3 = right): up, up-right, right, down-right, down, down-left, left, up-left */
+	{ 30, 70, 33, 71, 31, 72, 32, 73, 30, 30 },
+	{ 34, 74, 37, 75, 35, 76, 36, 77, 34, 34 },
 };
-static int8_t radial_of_src[REMAP_SRC_COUNT]; /* pad of a radial slice source, -1 none */
-static int8_t radial_sel[2] = { -1, -1 };
-static int8_t radial_fire[2] = { -1, -1 };
-static bool radial_mode[2], radial_click[2], radial_touch[2];
+/* a stick radial with 4 slices uses up, right, down, left */
+static const uint8_t radial_stick4[4] = { 0, 2, 4, 6 };
+static int8_t radial_of_src[REMAP_SRC_COUNT]; /* radial (0,1 pads, 2,3 sticks) of a slice source, -1 none */
+static int8_t radial_sel[4] = { -1, -1, -1, -1 };
+static int8_t radial_fire[4] = { -1, -1, -1, -1 };
+static bool radial_mode[4], radial_click[4], radial_touch[4];
+static uint8_t gyro_dirs;  /* gyro tilt this report: bit 0 up, 1 down, 2 left, 3 right */
+static float tilt_ref[3];  /* gravity when the tilt was centred */
+static bool tilt_ref_ok;
+/* mouse regions: 0..3 sticks / pads, 4 gyro; position -1..1 (y up) */
+static bool region_on[5], region_was[5];
+static float region_pos[5][2];
+static float gyro_reg[2];
+static bool rel_homed;      /* relative mouse region: the cursor was sent to the corner */
+static float rel_cur[2];    /* ... and is now here (pixels) */
+static uint16_t abs_last[2] = { 0xFFFF, 0xFFFF };
 static int8_t layer_now = -1, layer_next = -1; /* action layer: profile laid over the current one */
 static int8_t layer_holder = -1, layer_holder_next = -1; /* the source holding the layer */
 static int8_t out_src = -1;                     /* source whose actions out_action() is handling */
@@ -291,7 +311,15 @@ static int src_side(int s)
 	{
 		return (s - REMAP_SRC_LS_RING) % 2;
 	}
-	return s - REMAP_SRC_LPAD_CENTER;
+	if(s < REMAP_BIND_COUNT)
+	{
+		return s - REMAP_SRC_LPAD_CENTER;
+	}
+	if(s < REMAP_SRC_LS_DIAG)
+	{
+		return 2; /* gyro: both sides */
+	}
+	return (s - REMAP_SRC_LS_DIAG) / 4;
 }
 
 static void feedback(uint8_t level, int side)
@@ -388,6 +416,14 @@ static void wheel(int j, const struct remap_analog *an, bool active, float fx, f
 
 static bool src_pressed(int s)
 {
+	if(s >= REMAP_SRC_LS_DIAG)
+	{
+		return false; /* stick diagonals: radial menu slices, pulses */
+	}
+	if(s >= REMAP_SRC_GYRO_UP)
+	{
+		return (gyro_dirs & BIT(s - REMAP_SRC_GYRO_UP)) != 0U;
+	}
 	if(s < 30)
 	{
 		return (btn & BIT(s)) != 0U;
@@ -554,11 +590,49 @@ static void drop_hold(struct src_state *s)
 	s->release_until = 0;
 }
 
+static const struct remap_btime zero_bt;
+
+/* the per binding timing of a binding (in whichever profile it lives) */
+static const struct remap_btime *btime_of(const struct remap_binding *b)
+{
+	for(int k = 0; k < REMAP_PROFILES; ++k)
+	{
+		const struct remap_profile *q = &profiles[k];
+
+		if(b >= q->bind && b < q->bind + REMAP_BIND_COUNT)
+		{
+			return &q->ext.bt[b - q->bind];
+		}
+		if(b >= q->sbind && b < q->sbind + REMAP_SHIFT_SRC_COUNT)
+		{
+			return &q->ext.bt[REMAP_BIND_COUNT + (b - q->sbind)];
+		}
+		if(b >= q->ext.xbind && b < q->ext.xbind + REMAP_XBIND_COUNT)
+		{
+			return &q->ext.bt[REMAP_BIND_COUNT + REMAP_SHIFT_SRC_COUNT + (b - q->ext.xbind)];
+		}
+	}
+	return &zero_bt;
+}
+
 static void run_source(const struct remap_binding *b, struct src_state *s, bool down, int64_t now, int src,
-                       bool release_ok)
+                       bool release_ok, bool other_pressed)
 {
 	bool hold = (b->mode & REMAP_MODE_HOLD) != 0U;
 	bool rel = (b->mode & REMAP_MODE_RELEASE) != 0U;
+	const struct remap_btime *bt = btime_of(b);
+	const int64_t hold_ms = bt->hold10 ? (int64_t)bt->hold10 * 10 : (int64_t)prof_hold_ms;
+	const int64_t dbl_ms = bt->dbl10 ? (int64_t)bt->dbl10 * 10 : (int64_t)prof_double_ms;
+	bool interrupt = (bt->flags & REMAP_BT_INTERRUPT) != 0U && hold;
+
+	if(down && !s->down)
+	{
+		s->interrupted = false;
+	}
+	else if(interrupt && down && s->down && other_pressed && s->held_group < 0)
+	{
+		s->interrupted = true; /* another input while waiting for the long press */
+	}
 
 	if(down && !s->down)
 	{
@@ -613,7 +687,7 @@ static void run_source(const struct remap_binding *b, struct src_state *s, bool 
 		{
 			s->held_group = -1;
 		}
-		else if(hold && s->held_group < 0 && now - s->t_down >= HOLD_MS)
+		else if(hold && s->held_group < 0 && !s->interrupted && now - s->t_down >= hold_ms)
 		{
 			activate(b, 1, &s->held_group, src);
 		}
@@ -658,7 +732,7 @@ static void run_source(const struct remap_binding *b, struct src_state *s, bool 
 	if(down && !s->down)
 	{
 		s->t_down = now;
-		if(dbl && s->waiting_double && now - s->t_up <= DOUBLE_MS)
+		if(dbl && s->waiting_double && now - s->t_up <= dbl_ms)
 		{
 			s->waiting_double = false;
 			activate(b, 2, &s->held_group, src); /* second press: group 2 while held */
@@ -678,11 +752,15 @@ static void run_source(const struct remap_binding *b, struct src_state *s, bool 
 
 		s->held_group = -1;
 		s->t_up = now;
-		if(!was_hold && !was_double)
+		if(s->interrupted)
+		{
+			s->interrupted = false; /* cancelled: neither the long nor the short press */
+		}
+		else if(!was_hold && !was_double)
 		{
 			if(dbl)
 			{
-				s->waiting_double = true; /* decide after DOUBLE_MS */
+				s->waiting_double = true; /* decide after dbl_ms */
 			}
 			else
 			{
@@ -690,11 +768,11 @@ static void run_source(const struct remap_binding *b, struct src_state *s, bool 
 			}
 		}
 	}
-	else if(down && hold && s->held_group < 0 && now - s->t_down >= HOLD_MS)
+	else if(down && hold && s->held_group < 0 && !s->interrupted && now - s->t_down >= hold_ms)
 	{
 		activate(b, 1, &s->held_group, src);
 	}
-	if(s->waiting_double && !down && now - s->t_up > DOUBLE_MS)
+	if(s->waiting_double && !down && now - s->t_up > dbl_ms)
 	{
 		s->waiting_double = false;
 		pulse(b, s, src, now);
@@ -702,8 +780,16 @@ static void run_source(const struct remap_binding *b, struct src_state *s, bool 
 	s->down = down;
 }
 
-static void stick_analog(int i, const struct remap_analog *an, int16_t x, int16_t y, float dt)
+static float ax_scale(uint16_t v)
 {
+	return v ? (float)v * 0.01f : 1.0f;
+}
+
+static void stick_analog(int i, const struct remap_analog *an, const struct remap_anx *ax, int16_t x, int16_t y,
+                         float dt)
+{
+	float sx = ax_scale(ax->scale_x), sy = ax_scale(ax->scale_y);
+
 	float fx = (float)x / 32767.0f;
 	float fy = (float)y / 32767.0f;
 	float m = sqrtf(fx * fx + fy * fy);
@@ -722,8 +808,8 @@ static void stick_analog(int i, const struct remap_analog *an, int16_t x, int16_
 		/* speed: counts per second at full deflection, squared response */
 		float k = (float)an->speed * dt * powf(mm, an->curve ? (float)an->curve * 0.01f : 2.0f);
 
-		mouse_acc[0] += fx * k;
-		mouse_acc[1] -= fy * k;
+		mouse_acc[0] += fx * k * sx;
+		mouse_acc[1] -= fy * k * sy;
 	}
 	else if(an->mode == REMAP_ANALOG_SCROLL)
 	{
@@ -731,8 +817,8 @@ static void stick_analog(int i, const struct remap_analog *an, int16_t x, int16_
 		float k = (float)an->speed * 0.01f * dt * mm;
 		float before = scroll_notch[i];
 
-		mouse_acc[2] += fy * k;
-		mouse_acc[3] += fx * k;
+		mouse_acc[2] += fy * k * sy;
+		mouse_acc[3] += fx * k * sx;
 		scroll_notch[i] += k;
 		if(floorf(scroll_notch[i]) != floorf(before))
 		{
@@ -777,8 +863,24 @@ static void stick_dead_zones(const struct remap_analog *an, int16_t *x, int16_t 
 
 static float tb_vel[2][2]; /* trackball: counts per second */
 
-static void pad_mouse(int side, const struct remap_analog *an, bool active, int16_t x, int16_t y, float dt)
+static void pad_mouse(int side, const struct remap_analog *an, const struct remap_anx *ax, bool active, int16_t x,
+                      int16_t y, float dt)
 {
+	float sx = ax_scale(ax->scale_x), sy = ax_scale(ax->scale_y);
+
+	if(active && ax->edge_spin && dt > 0.0f)
+	{
+		/* edge spin: a finger resting near the edge keeps the cursor moving outwards */
+		float fx = (float)x / 32767.0f, fy = (float)y / 32767.0f, m = sqrtf(fx * fx + fy * fy);
+
+		if(m >= 0.85f)
+		{
+			float k = (float)ax->edge_spin * dt * MIN((m - 0.85f) / 0.1f, 1.0f) / m;
+
+			mouse_acc[0] += fx * k * sx;
+			mouse_acc[1] -= fy * k * sy;
+		}
+	}
 	if(!active)
 	{
 		pad_prev_valid[side] = false;
@@ -812,12 +914,12 @@ static void pad_mouse(int side, const struct remap_analog *an, bool active, int1
 
 			k *= 1.0f + (float)an->curve * 0.01f * MIN(v / 100000.0f, 1.0f);
 		}
-		mouse_acc[0] += dx * k;
-		mouse_acc[1] -= dy * k;
+		mouse_acc[0] += dx * k * sx;
+		mouse_acc[1] -= dy * k * sy;
 		if(dt > 0.0f)
 		{
-			tb_vel[side][0] = 0.7f * tb_vel[side][0] + 0.3f * (dx * k / dt);
-			tb_vel[side][1] = 0.7f * tb_vel[side][1] + 0.3f * (-dy * k / dt);
+			tb_vel[side][0] = 0.7f * tb_vel[side][0] + 0.3f * (dx * k * sx / dt);
+			tb_vel[side][1] = 0.7f * tb_vel[side][1] + 0.3f * (-dy * k * sy / dt);
 		}
 		pad_hap_dist[side] += sqrtf(dx * dx + dy * dy);
 		if(pad_hap_dist[side] >= 3000.0f)
@@ -1295,7 +1397,21 @@ bool remap_gyro_value(int id, int16_t *value)
 {
 	const struct remap_profile *p = active();
 
-	if(!remap_enabled() || p->magic != REMAP_MAGIC || p->version != REMAP_VERSION || !(p->flags & REMAP_PF_GYRO))
+	if(!remap_enabled() || p->magic != REMAP_MAGIC || p->version != REMAP_VERSION)
+	{
+		return false;
+	}
+	/* the gyro space is its own profile setting (0 = global), with or without the profile's gyro settings */
+	if(id == SC26RE_CFG_GM_SPACE)
+	{
+		if(p->ext.gyx.space >= 1U && p->ext.gyx.space <= 3U)
+		{
+			*value = (int16_t)(p->ext.gyx.space - 1U);
+			return true;
+		}
+		return false;
+	}
+	if(!(p->flags & REMAP_PF_GYRO))
 	{
 		return false;
 	}
@@ -1493,9 +1609,13 @@ static int analog_of_src(int s)
 	{
 		return s - REMAP_SRC_LS_RING;
 	}
-	if(s >= REMAP_SRC_LPAD_CENTER && s < REMAP_SRC_COUNT)
+	if(s >= REMAP_SRC_LPAD_CENTER && s < REMAP_BIND_COUNT)
 	{
 		return 2 + s - REMAP_SRC_LPAD_CENTER;
+	}
+	if(s >= REMAP_SRC_LS_DIAG && s < REMAP_SRC_COUNT)
+	{
+		return (s - REMAP_SRC_LS_DIAG) / 4;
 	}
 	return -1;
 }
@@ -1516,20 +1636,38 @@ static const struct remap_analog *analog_cfg(const struct remap_profile *p, int 
 	return shifted[g] ? &p->shift[g].an : &p->an[i];
 }
 
+static const struct remap_binding *bind_at(const struct remap_profile *p, int s)
+{
+	return s < REMAP_BIND_COUNT ? &p->bind[s] : &p->ext.xbind[s - REMAP_BIND_COUNT];
+}
+
 static const struct remap_binding *binding(const struct remap_profile *p, int s)
 {
 	int g = src_group[s];
-	const struct remap_binding *b = (g >= 0 && shifted[g]) ? &p->sbind[src_sidx[s]] : &p->bind[s];
+	const struct remap_binding *b = (g >= 0 && shifted[g]) ? &p->sbind[src_sidx[s]] : bind_at(p, s);
 	const struct remap_profile *l = layer_profile();
 
 	/* action layer: its bound inputs win; the input holding the layer keeps its own.
 	 * Layer actions inside a layer are ignored (no nesting): two layers calling
 	 * each other would swap on every report. */
-	if(l != NULL && bound(&l->bind[s]) && !has_layer_action(b) && !has_layer_action(&l->bind[s]))
+	if(l != NULL && bound(bind_at(l, s)) && !has_layer_action(b) && !has_layer_action(bind_at(l, s)))
 	{
-		return &l->bind[s];
+		return bind_at(l, s);
 	}
 	return b;
+}
+
+/* the v7 extras of the stick / pad settings analog_cfg() picks */
+static const struct remap_anx *analog_x(const struct remap_profile *p, int i)
+{
+	int g = REMAP_SHIFT_LS + i;
+	const struct remap_profile *l = layer_profile();
+
+	if(l != NULL && l->an[i].mode != REMAP_ANALOG_PASS && analog_of_src(layer_holder) != i)
+	{
+		return &l->ext.anx[i];
+	}
+	return shifted[g] ? &p->ext.anx[4 + g] : &p->ext.anx[i];
 }
 
 /* stick / pad orientation: invert and rotate the input */
@@ -1580,10 +1718,82 @@ static bool ring_test(const struct remap_analog *an, float fx, float fy)
 	return m2 >= r * r;
 }
 
+/*
+ * Mouse regions: an absolute cursor position. Over the USB cable it is the
+ * absolute pointer report (0x46); over the Puck and Bluetooth (no such report)
+ * the cursor is first pushed into the top-left corner and then moved there with
+ * relative counts, which needs the screen size in pixels and no pointer
+ * acceleration ("Enhance pointer precision" off).
+ */
+static void region_output(const struct remap_profile *p)
+{
+	int k = -1;
+
+	/* trackpads first, then sticks, then the gyro */
+	for(int c = 0; c < 5 && k < 0; ++c)
+	{
+		static const uint8_t order[5] = { 2, 3, 0, 1, 4 };
+
+		if(region_on[order[c]])
+		{
+			k = order[c];
+		}
+	}
+	if(k < 0)
+	{
+		rel_homed = false; /* the real mouse may move the cursor meanwhile */
+		abs_last[0] = abs_last[1] = 0xFFFFU;
+		return;
+	}
+	const uint8_t *rg = k == 4 ? p->ext.gyx.region : analog_x(p, k)->region;
+	float cx = rg[0] || rg[1] || rg[2] || rg[3] ? (float)rg[0] * 0.01f : 0.5f;
+	float cy = rg[0] || rg[1] || rg[2] || rg[3] ? (float)rg[1] * 0.01f : 0.5f;
+	float w = rg[2] ? (float)rg[2] * 0.01f : 1.0f, h = rg[3] ? (float)rg[3] * 0.01f : 1.0f;
+	float tx = CLAMP(cx + region_pos[k][0] * w * 0.5f, 0.0f, 1.0f);
+	float ty = CLAMP(cy - region_pos[k][1] * h * 0.5f, 0.0f, 1.0f);
+
+	if(transport_link_kind() == 0U)
+	{
+		uint16_t ax = (uint16_t)lroundf(tx * 32767.0f), ay = (uint16_t)lroundf(ty * 32767.0f);
+
+		if(ax != abs_last[0] || ay != abs_last[1])
+		{
+			uint8_t rep[5] = { 0, (uint8_t)ax, (uint8_t)(ax >> 8), (uint8_t)ay, (uint8_t)(ay >> 8) };
+
+			if(transport_send_input_report(0x46, rep, sizeof(rep)) == 0)
+			{
+				abs_last[0] = ax;
+				abs_last[1] = ay;
+			}
+		}
+		return;
+	}
+	{
+		float sw = (float)(p->ext.screen[0] ? p->ext.screen[0] : 1920U);
+		float sh = (float)(p->ext.screen[1] ? p->ext.screen[1] : 1080U);
+
+		if(!rel_homed)
+		{
+			mouse_acc[0] -= sw * 2.0f; /* into the corner, whatever the start */
+			mouse_acc[1] -= sh * 2.0f;
+			rel_cur[0] = rel_cur[1] = 0.0f;
+			rel_homed = true;
+		}
+		mouse_acc[0] += tx * sw - rel_cur[0];
+		mouse_acc[1] += ty * sh - rel_cur[1];
+		rel_cur[0] = tx * sw;
+		rel_cur[1] = ty * sh;
+	}
+}
+
 void remap_process(struct controller_report *r, float dt)
 {
 	const struct remap_profile *p;
 	uint32_t raw = r->buttons;
+	static uint32_t raw_prev;
+	uint32_t newp = raw & ~raw_prev; /* inputs pressed this report (interruptible long press) */
+
+	raw_prev = raw;
 	uint8_t keys[6] = { 0 };
 	size_t nk = 0;
 	uint8_t mods = 0;
@@ -1720,13 +1930,15 @@ void remap_process(struct controller_report *r, float dt)
 				release_all();
 				block_pressed = true;
 			}
+			tilt_ref_ok = false; /* gyro tilt: centred where the controller is now */
+			gyro_reg[0] = gyro_reg[1] = 0.0f;
 			last_active = p;
 		}
 	}
 	cur_profile = p;
-	HOLD_MS = p->hold_ms ? p->hold_ms : 250U;
-	DOUBLE_MS = p->double_ms ? p->double_ms : 250U;
-	TURBO_MS = MAX(p->turbo_ms ? p->turbo_ms : 100U, 20U);
+	prof_hold_ms = p->hold_ms ? p->hold_ms : 250U;
+	prof_double_ms = p->double_ms ? p->double_ms : 250U;
+	prof_turbo_ms = MAX(p->turbo_ms ? p->turbo_ms : 100U, 20U);
 	layer_now = layer_next; /* the layer held in the last report */
 	layer_next = -1;
 	layer_holder = layer_holder_next;
@@ -1797,11 +2009,69 @@ void remap_process(struct controller_report *r, float dt)
 		int16_t x = i ? r->stick_right_x : r->stick_left_x;
 		int16_t y = i ? r->stick_right_y : r->stick_left_y;
 
-		ring_on[i] = ring_test(an, (float)x / 32767.0f, (float)y / 32767.0f);
-		dirs[i] = (an->mode == REMAP_ANALOG_DPAD4 || an->mode == REMAP_ANALOG_DPAD8)
-		              ? dir_mask(an->mode, (float)x / 32767.0f, (float)y / 32767.0f,
-		                         (float)MAX(an->dz_in, 500) * 0.0001f)
-		              : 0U;
+		float fx = (float)x / 32767.0f, fy = (float)y / 32767.0f;
+		float dz = (float)MAX(an->dz_in, 500) * 0.0001f;
+		bool out = fx * fx + fy * fy >= dz * dz;
+
+		ring_on[i] = ring_test(an, fx, fy);
+		dirs[i] = (an->mode == REMAP_ANALOG_DPAD4 || an->mode == REMAP_ANALOG_DPAD8) ? dir_mask(an->mode, fx, fy, dz) : 0U;
+		if(an->mode == REMAP_ANALOG_SINGLE)
+		{
+			/* the whole stick is one button (its "outer ring" source): pushed past the dead zone */
+			ring_on[i] = out;
+		}
+		/* radial menu on the stick: the slice it points at fires when it comes back to the centre
+		 * (or on the stick click) */
+		radial_fire[2 + i] = -1;
+		radial_mode[2 + i] = an->mode == REMAP_ANALOG_RADIAL;
+		if(radial_mode[2 + i])
+		{
+			const struct remap_anx *ax = analog_x(p, i);
+			int n = CLAMP(ax->slices ? ax->slices : 8, 2, 8);
+			bool click = (raw & BIT(i ? CONTROLLER_BUTTON_RIGHT_STICK : CONTROLLER_BUTTON_LEFT_STICK)) != 0U;
+			bool fire_now;
+			int8_t prev = radial_sel[2 + i];
+
+			if(out)
+			{
+				float a = atan2f(fx, fy) * 57.29578f; /* 0 = up, clockwise */
+
+				if(a < 0.0f)
+				{
+					a += 360.0f;
+				}
+				radial_sel[2 + i] = (int8_t)(((int)((a + 180.0f / (float)n) / (360.0f / (float)n))) % n);
+			}
+			if(radial_sel[2 + i] >= 0 && radial_sel[2 + i] != prev)
+			{
+				feedback(an->haptic, i);
+			}
+			fire_now = (an->flags & REMAP_AF_CLICK) ? (click && !radial_click[2 + i]) : (!out && radial_touch[2 + i]);
+			if(fire_now && radial_sel[2 + i] >= 0)
+			{
+				int k = n == 4 ? radial_stick4[radial_sel[2 + i]] : radial_sel[2 + i];
+
+				radial_fire[2 + i] = (int8_t)radial_src[2 + i][k];
+			}
+			if(!out && !(an->flags & REMAP_AF_CLICK))
+			{
+				radial_sel[2 + i] = -1;
+			}
+			if(!out && (an->flags & REMAP_AF_CLICK) && !click)
+			{
+				radial_sel[2 + i] = -1;
+			}
+			radial_click[2 + i] = click;
+			radial_touch[2 + i] = out;
+		}
+		/* mouse region: the stick position is the cursor position (back to the centre when let go) */
+		region_on[i] = an->mode == REMAP_ANALOG_REGION && (out || region_was[i]);
+		if(region_on[i])
+		{
+			region_pos[i][0] = out ? fx : 0.0f;
+			region_pos[i][1] = out ? fy : 0.0f;
+		}
+		region_was[i] = an->mode == REMAP_ANALOG_REGION && out;
 	}
 	/* trackpads: active while touched or while clicked */
 	memset(pad_joy, 0, sizeof(pad_joy));
@@ -1946,11 +2216,22 @@ void remap_process(struct controller_report *r, float dt)
 		}
 		if(an->mode == REMAP_ANALOG_MOUSE)
 		{
-			pad_mouse(j, an, act, x, y, dt);
+			pad_mouse(j, an, analog_x(p, 2 + j), act, x, y, dt);
 		}
 		else
 		{
 			pad_prev_valid[j] = false;
+		}
+		{
+			/* mouse region: the finger is the cursor position inside the area */
+			region_on[2 + j] = an->mode == REMAP_ANALOG_REGION &&
+			                   (act || (region_was[2 + j] && (analog_x(p, 2 + j)->flags & REMAP_AX_REGION_RETURN)));
+			if(region_on[2 + j])
+			{
+				region_pos[2 + j][0] = act ? fx : 0.0f;
+				region_pos[2 + j][1] = act ? fy : 0.0f;
+			}
+			region_was[2 + j] = an->mode == REMAP_ANALOG_REGION && act;
 		}
 		swipe_mode[j] = an->mode == REMAP_ANALOG_SWIPE;
 		if(swipe_mode[j])
@@ -2010,6 +2291,75 @@ void remap_process(struct controller_report *r, float dt)
 			{
 				hide |= act_bit;
 			}
+		}
+	}
+	/* gyro (profile gyro settings): tilt directions or a mouse region */
+	gyro_dirs = 0U;
+	region_on[4] = false;
+	{
+		const struct remap_gyx *gx = &p->ext.gyx;
+		static uint8_t gmode_prev = 0xFFU;
+		uint8_t gmode = gx->mode; /* a profile setting of its own (v7), with or without its gyro settings */
+		struct controller_report rs;
+		k_spinlock_key_t key = k_spin_lock(&raw_lock);
+
+		rs = raw_state;
+		k_spin_unlock(&raw_lock, key);
+		if(gmode != gmode_prev)
+		{
+			tilt_ref_ok = false;
+			gyro_reg[0] = gyro_reg[1] = 0.0f;
+			gmode_prev = gmode;
+		}
+		if(gmode == REMAP_GYRO_TILT)
+		{
+			float a[3] = { (float)rs.accel_x, (float)rs.accel_y, (float)rs.accel_z };
+			float m = sqrtf(a[0] * a[0] + a[1] * a[1] + a[2] * a[2]);
+
+			if(m > 1000.0f)
+			{
+				for(int k = 0; k < 3; ++k)
+				{
+					a[k] /= m;
+				}
+				if(!tilt_ref_ok)
+				{
+					memcpy(tilt_ref, a, sizeof(tilt_ref));
+					tilt_ref_ok = true;
+				}
+				/* turn of the gravity vector about the controller's X (forward tilt) and Y (sideways) */
+				float fwd = atan2f(tilt_ref[1] * a[2] - tilt_ref[2] * a[1], tilt_ref[1] * a[1] + tilt_ref[2] * a[2]) * 57.29578f;
+				float side = -atan2f(tilt_ref[2] * a[0] - tilt_ref[0] * a[2], tilt_ref[2] * a[2] + tilt_ref[0] * a[0]) * 57.29578f;
+				static uint8_t last;
+				float dz = (float)(gx->tilt_dz ? gx->tilt_dz : 15U);
+				uint8_t d = 0U;
+
+				/* a little hysteresis: a direction already on stays until 3 degrees back */
+				if(fwd > ((last & 1U) ? dz - 3.0f : dz)) d |= 1U;
+				if(fwd < -((last & 2U) ? dz - 3.0f : dz)) d |= 2U;
+				if(side < -((last & 4U) ? dz - 3.0f : dz)) d |= 4U;
+				if(side > ((last & 8U) ? dz - 3.0f : dz)) d |= 8U;
+				if(!gx->tilt_8way && (d & 3U) && (d & 12U))
+				{
+					d &= fabsf(fwd) >= fabsf(side) ? 3U : 12U; /* 4-way: the bigger tilt */
+				}
+				last = d;
+				gyro_dirs = d;
+			}
+		}
+		else if(gmode == REMAP_GYRO_REGION)
+		{
+			/* turning moves an absolute cursor inside the area; it stops at the edges */
+			float deg = (float)(gx->region_deg ? gx->region_deg : 60U);
+			float w = (float)(gx->region[2] ? gx->region[2] : 100U), h = (float)(gx->region[3] ? gx->region[3] : 100U);
+			float sw = (float)(p->ext.screen[0] ? p->ext.screen[0] : 1920U), sh = (float)(p->ext.screen[1] ? p->ext.screen[1] : 1080U);
+			float degy = deg * (h * sh) / (w * sw);
+
+			gyro_reg[0] = CLAMP(gyro_reg[0] - (float)rs.gyro_z * 0.06103f * dt * 2.0f / deg, -1.0f, 1.0f);
+			gyro_reg[1] = CLAMP(gyro_reg[1] + (float)rs.gyro_x * 0.06103f * dt * 2.0f / MAX(degy, 1.0f), -1.0f, 1.0f);
+			region_on[4] = true;
+			region_pos[4][0] = gyro_reg[0];
+			region_pos[4][1] = gyro_reg[1];
 		}
 	}
 	/* triggers: soft pull point with a little hysteresis */
@@ -2104,6 +2454,24 @@ void remap_process(struct controller_report *r, float dt)
 				}
 			}
 		}
+		if(p->ext.trig_curve[t] && p->ext.trig_curve[t] != 100U)
+		{
+			/* analog response curve (to Steam and the Xbox pad) */
+			int16_t tv = t ? r->trigger_right : r->trigger_left;
+
+			if(tv > 0)
+			{
+				tv = (int16_t)CLAMP(lroundf(32767.0f * powf((float)tv / 32767.0f, (float)p->ext.trig_curve[t] * 0.01f)), 0, 32767);
+				if(t)
+				{
+					r->trigger_right = tv;
+				}
+				else
+				{
+					r->trigger_left = tv;
+				}
+			}
+		}
 		{
 			/* "Xbox LT / RT (whole trigger)" on the soft pull: the analog value
 			 * (with the analog start / end above) goes to the Xbox pad */
@@ -2193,7 +2561,7 @@ void remap_process(struct controller_report *r, float dt)
 			{
 				pj = s - REMAP_SRC_LS_RING - 2;
 			}
-			else if(s >= REMAP_SRC_LPAD_CENTER)
+			else if(s == REMAP_SRC_LPAD_CENTER || s == REMAP_SRC_LPAD_CENTER + 1)
 			{
 				pj = s - REMAP_SRC_LPAD_CENTER;
 			}
@@ -2213,11 +2581,37 @@ void remap_process(struct controller_report *r, float dt)
 				ss->block = src_pressed(s);
 				down = false;
 			}
-			run_source(b, ss, down, now, s, pj < 0 || !pad_act[pj]);
+			{
+				/* per binding delay start / end: the press acts later / longer */
+				const struct remap_btime *bt = btime_of(b);
+				int64_t ds = (int64_t)bt->dstart10 * 10, de = (int64_t)bt->dend10 * 10;
+
+				int32_t n32 = (int32_t)now;
+
+				if(down && !ss->phys)
+				{
+					ss->t_pdown = n32;
+					ss->phys_seen = true;
+				}
+				else if(!down && ss->phys)
+				{
+					ss->t_pup = n32;
+				}
+				ss->phys = down;
+				if((ds || de) && ss->phys_seen)
+				{
+					down = (int32_t)(n32 - ss->t_pdown) >= (int32_t)ds &&
+					       (down || (int32_t)(n32 - ss->t_pup) < (int32_t)(ds + de));
+				}
+			}
+			run_source(b, ss, down, now, s, pj < 0 || !pad_act[pj],
+			           s < 30 ? (newp & ~BIT(s)) != 0U : newp != 0U);
 		}
+		uint16_t turbo_ms = btime_of(b)->turbo5 ? MAX(btime_of(b)->turbo5 * 5U, 20U) : prof_turbo_ms;
+
 		if(ss->held_group >= 0 &&
 		   !((b->mode & REMAP_MODE_TURBO) && ss->held_group == 0 &&
-		     (((now - ss->t_down) / (TURBO_MS / 2)) % 2 == 1 || turbo_waits(b))))
+		     (((now - ss->t_down) / (turbo_ms / 2)) % 2 == 1 || turbo_waits(b))))
 		{
 			for(size_t i = 0; i < 4; ++i)
 			{
@@ -2276,7 +2670,7 @@ void remap_process(struct controller_report *r, float dt)
 			else
 			{
 				flick_on[i] = false;
-				stick_analog(i, an, x, y, dt);
+				stick_analog(i, an, analog_x(p, i), x, y, dt);
 			}
 			x = y = 0;
 		}
@@ -2301,6 +2695,7 @@ void remap_process(struct controller_report *r, float dt)
 		}
 	}
 	flick_step(dt);
+	region_output(p);
 	/* macros: each step holds its action for its time */
 	for(int m = 0; m < 4; ++m)
 	{
@@ -2566,6 +2961,16 @@ bool remap_read(const char *path, uint8_t *buf, size_t capacity, size_t *len)
  * the upload (seconds over the Puck) and left that mix behind when an upload
  * was cut off.
  */
+/* a v6 profile (saved before v7, or written by an older page) becomes v7 with an empty v7 area */
+static void upgrade(struct remap_profile *p)
+{
+	if(p->magic == REMAP_MAGIC && p->version == REMAP_VERSION_V6)
+	{
+		memset(&p->ext, 0, sizeof(p->ext));
+		p->version = REMAP_VERSION;
+	}
+}
+
 static struct remap_profile staging;
 static int8_t staging_p = -1;
 
@@ -2598,6 +3003,7 @@ int remap_commit(const char *path)
 	}
 	if(staging_p == p)
 	{
+		upgrade(&staging);
 		profiles[p] = staging;
 		staging_p = -1;
 		reload_pending = true;
@@ -2614,13 +3020,18 @@ int remap_commit(const char *path)
 
 static int load_cb(const char *key, size_t len, settings_read_cb read_cb, void *cb_arg, void *param)
 {
+	struct remap_profile *p;
+
 	ARG_UNUSED(param);
 	if(key == NULL || key[0] < '0' || key[0] >= '0' + REMAP_PROFILES || key[1] != '\0' ||
-	   len != sizeof(struct remap_profile))
+	   (len != sizeof(struct remap_profile) && len != REMAP_PROFILE_V6_SIZE))
 	{
 		return 0;
 	}
-	(void)read_cb(cb_arg, &profiles[key[0] - '0'], sizeof(struct remap_profile));
+	p = &profiles[key[0] - '0'];
+	memset(p, 0, sizeof(*p));
+	(void)read_cb(cb_arg, p, len);
+	upgrade(p);
 	return 0;
 }
 
@@ -2636,9 +3047,9 @@ void remap_init(void)
 	{
 		radial_of_src[i] = -1;
 	}
-	for(int j = 0; j < 2; ++j)
+	for(int j = 0; j < 4; ++j)
 	{
-		for(int k = 0; k < 10; ++k)
+		for(int k = 0; k < (j < 2 ? 10 : 8); ++k)
 		{
 			radial_of_src[radial_src[j][k]] = (int8_t)j;
 		}
