@@ -46,6 +46,7 @@
   .mon b{color:#d7e3f5;font-weight:600} .mon .k{display:inline-block;padding:0 6px;margin:1px 2px;border-radius:6px;background:#2a3a58;color:#e8f1ff}
   .row.dim{opacity:.4}
   .card.wide{grid-column:1 / -1} .sttable{display:grid;grid-template-columns:1fr auto 1.2fr;gap:8px 14px;align-items:center;margin:8px 0}
+  .trigbox{border:1px solid var(--edge);border-radius:10px;padding:4px 10px;margin:6px 0}
   .modes label{font-size:12px;color:var(--muted);margin-right:8px;white-space:nowrap}
   .live{display:inline-block;width:9px;height:9px;border-radius:50%;background:#33415c;margin-left:6px;vertical-align:middle}
   .live.on{background:#4fc98a;box-shadow:0 0 8px #4fc98a}
@@ -95,7 +96,7 @@
 <body>
 <div class="top">
   <div class="topin">
-    <div class="brand">SC2 <span class="hz">Remapper</span> <span class="note" id="pagever" title="page version — if it is older than expected, press Ctrl+F5">p.2026-11-18a</span></div>
+    <div class="brand">SC2 <span class="hz">Remapper</span> <span class="note" id="pagever" title="page version — if it is older than expected, press Ctrl+F5">p.2026-11-18b</span></div>
     <button class="primary" id="connect">Connect controller</button>
     <span id="status" class="chip">not connected</span>
     <span class="grow"></span>
@@ -169,7 +170,7 @@
           <div class="tools"><button class="primary" id="cStZero">Zero sticks</button></div>
           <p class="note cardnote" id="cStStatus"></p></div>
         <div class="card"><h3>Triggers</h3>
-          <p class="note cardnote"><b>Full range</b> (like Steam’s trigger calibration): follow the steps — it learns the released and the fully pulled position of both triggers. <b>Zero</b> only re-learns the released position (if a trigger reads a little while released).</p>
+      <p><b>Soft pull</b> fires when the trigger passes the point you choose, <b>full pull</b> is the click at the end. <b>Trigger mode</b> (per trigger, per profile): <b>Simple threshold</b> — both independent; <b>Hair trigger</b> — soft fires on any further pull and stops on any release (fast semi-auto); <b>Hip fire</b> — a quick pull to the click fires only full (shoot from the hip), a slow pull fires soft (aim) and then full too; <b>Hip fire exclusive</b> — the same but soft and full never together. The hip fire window sets what counts as quick. <b>Analog start / end</b> trims the range Steam sees. Binding the soft pull takes the analog trigger away from Steam.</p>
           <div class="tools"><button class="primary" id="cTrStart">Full range: start</button><button id="cTrNext" disabled>Next</button><button id="cTrZero" class="ghost">Zero (released)</button></div>
           <p class="note cardnote" id="cTrStatus"></p></div>
         <div class="card"><h3>Gyro mouse — 360° (real-world sensitivity)</h3>
@@ -545,7 +546,13 @@ function editor(){
   }
   const s=sel, g=SGRP[s], bo=bOff(s), m=b[bo], par=parentOf(s);
   $("#dlgClear").style.display="";
-  const trig = s===58||s===59 ? pct("tsp",softPct(s-58),1,100,"Soft pull point","how far the trigger is pulled before this fires; full pull = the click at the end") : "";
+  const tt = s===58||s===27?0:s===59||s===23?1:-1;
+  let trig = "";
+  if(tt>=0){ const tm=b[104+tt];
+    trig=`<div class="trigbox"><div class="row2"><label>Trigger mode</label><select id="tmode"><option value="0">Simple threshold — soft and full independent</option><option value="1">Hair trigger — soft on any further pull, off on any release</option><option value="2">Hip fire — quick full pull = full only; slow = soft, then full too</option><option value="3">Hip fire exclusive — soft and full never together</option></select><small>applies to this trigger in this profile</small></div>
+      ${tm!==1?pct("tsp",softPct(tt),1,100,"Soft pull point","how far the trigger is pulled before soft pull fires; full pull = the click at the end"):""}
+      ${tm>=2?slider("thip",U16(106+2*tt)||75,20,400,5,"Hip fire window","ms","pull to the click faster than this = hip fire (full only); Steam: aggressive ≈ 40, normal ≈ 75, relaxed ≈ 150"):""}
+      ${pct("tra",U16(110+4*tt)/100,0,90,"Analog start","Steam sees 0 until here (when soft pull is not bound)")}${pct("tre",(U16(112+4*tt)||10000)/100,10,100,"Analog end","Steam sees 100 % from here")}</div>`; }
   const trigLink = s===27||s===23 ? `<p class="note">Full pull = the click at the end of the trigger. <a href="#" id="tlink">Soft pull →</a></p>` : s===58||s===59 ? `<p class="note"><a href="#" id="tlink">Full pull →</a></p>` : "";
   const back = par||(s>=10&&s<=13?"dp":null);
   ed.innerHTML=`${back?`<a href="#" id="back" class="note">← ${back==="dp"?"D-pad":ANAME[back]}</a>`:""}<h4>${SRCNAME[s]||"input "+s}${useShift(g)?" <em>⇧ shifted</em>":""}<span class="live" id="lvsel"></span></h4>
@@ -563,7 +570,11 @@ function editor(){
   ed.querySelectorAll("[data-gi]").forEach(e=>{ const [x,i]=e.dataset.gi.split(":").map(Number); e.value=String(b[bo+1+x*4+i]); if(e.value==="") e.value="0";
     e.onchange=()=>{ b[bo+1+x*4+i]=+e.value; setDirty(); render(); }; });
   $("#bhap").value=String(b[bo+13]); $("#bhap").onchange=e=>{ b[bo+13]=+e.target.value; setDirty(); };
-  wireSl("tsp",v=>setU16(18+2*(s-58),Math.round(v*100)));
+  wireSl("tsp",v=>setU16(18+2*tt,Math.round(v*100)));
+  if($("#tmode")){ $("#tmode").value=String(b[104+tt]); $("#tmode").onchange=e=>{ b[104+tt]=+e.target.value; setDirty(); render(); }; }
+  wireSl("thip",v=>setU16(106+2*tt,Math.round(v)));
+  wireSl("tra",v=>{ setU16(110+4*tt,Math.round(v*100)); if(!U16(112+4*tt)) setU16(112+4*tt,10000); });
+  wireSl("tre",v=>{ setU16(112+4*tt,Math.round(v*100)); });
   wireSl("mvs",v=>setU16(38,Math.round(v)));
   if($("#back")) $("#back").onclick=e=>{ e.preventDefault(); openSel(back); };
   if($("#tlink")) $("#tlink").onclick=e=>{ e.preventDefault(); openSel({27:58,23:59,58:27,59:23}[s]); };

@@ -71,6 +71,12 @@ enum
 #define REMAP_PF_GYRO_ON 0x04       /* gyro output on while this profile is active */
 #define REMAP_GYRO_KEYS 30
 
+/* trigger modes (soft pull = its own binding, full pull = the click) */
+#define REMAP_TRIG_SIMPLE 0   /* soft at the threshold, full on the click, both can be on */
+#define REMAP_TRIG_HAIR 1     /* soft on any further pull, off on any release */
+#define REMAP_TRIG_HIP 2      /* hip fire: a quick full pull fires only full; a slow one soft, then full too */
+#define REMAP_TRIG_HIP_EXCL 3 /* hip fire exclusive: soft and full never at the same time */
+
 #define REMAP_AF_CLICK 0x01       /* trackpads: active while clicked (else while touched) */
 #define REMAP_AF_RING_INVERT 0x02 /* outer ring fires inside the radius instead */
 #define REMAP_AF_OTHER_STICK 0x04 /* trackpad joystick: drive the other side's stick */
@@ -135,7 +141,10 @@ struct remap_profile
 	uint8_t led[3];        /* LED colour while this profile is active (0,0,0 = leave it) */
 	uint8_t reserved1;
 	int16_t gyro[REMAP_GYRO_KEYS]; /* with REMAP_PF_GYRO: values of remap_gyro_keys[] */
-	uint8_t reserved[24];
+	uint8_t trig_mode[2];      /* REMAP_TRIG_* */
+	uint16_t trig_hip_ms[2];   /* hip fire window (0 = 75 ms) */
+	uint16_t trig_range[2][2]; /* analog trigger to Steam: start, end (0.01 %; 0,0 = full range) */
+	uint8_t reserved[10];
 	struct remap_analog an[4]; /* left stick, right stick, left pad, right pad */
 	struct remap_shift shift[REMAP_SHIFT_GROUPS];
 	struct remap_binding bind[REMAP_SRC_COUNT];

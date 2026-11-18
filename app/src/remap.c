@@ -154,6 +154,10 @@ static uint8_t dirs[4];    /* per stick / pad: bit 0 up, 1 down, 2 left, 3 right
 static uint8_t gates[2];   /* per pad: bit 0 top-left, 1 top-right, 2 bottom-left, 3 bottom-right */
 static uint8_t wheel_fire[2]; /* per pad this report: bit 0 clockwise, 1 counter-clockwise */
 static bool soft_on[2];
+static bool soft_past[2];
+static int16_t trig_ext[2]; /* hair trigger: lowest / highest point since the last change */
+static uint8_t hip_state[2];
+static int64_t hip_t0[2];
 static float wheel_prev[2], wheel_acc[2];
 static bool wheel_valid[2];
 static float pad_hap_dist[2];
@@ -1233,8 +1237,91 @@ void remap_process(struct controller_report *r, float dt)
 	{
 		int16_t v = t ? r->trigger_right : r->trigger_left;
 		int32_t th = (int32_t)CLAMP(p->trig_soft[t] ? p->trig_soft[t] : 5000, 100, 10000) * 32767 / 10000;
+		bool full = (raw & BIT(t ? CONTROLLER_BUTTON_RIGHT_TRIGGER_CLICK : CONTROLLER_BUTTON_LEFT_TRIGGER_CLICK)) != 0U;
+		bool past = soft_past[t] ? v >= th - 1000 : v >= th; /* past the soft pull point */
+		uint8_t mode = p->trig_mode[t];
 
-		soft_on[t] = soft_on[t] ? v >= th - 1000 : v >= th;
+		if(mode == REMAP_TRIG_HAIR)
+		{
+			/* hair trigger: any pull of 2 % fires, any release of 2 % stops */
+			if(v < 330)
+			{
+				soft_on[t] = false;
+				trig_ext[t] = v;
+			}
+			else if(soft_on[t])
+			{
+				trig_ext[t] = MAX(trig_ext[t], v);
+				if(v < trig_ext[t] - 650)
+				{
+					soft_on[t] = false;
+					trig_ext[t] = v;
+				}
+			}
+			else
+			{
+				trig_ext[t] = MIN(trig_ext[t], v);
+				if(v > trig_ext[t] + 650)
+				{
+					soft_on[t] = true;
+					trig_ext[t] = v;
+				}
+			}
+		}
+		else if(mode == REMAP_TRIG_HIP || mode == REMAP_TRIG_HIP_EXCL)
+		{
+			uint16_t win = p->trig_hip_ms[t] ? p->trig_hip_ms[t] : 75U;
+
+			if(!past)
+			{
+				hip_state[t] = 0; /* released */
+				soft_on[t] = false;
+			}
+			else
+			{
+				if(hip_state[t] == 0)
+				{
+					hip_state[t] = 1; /* deciding */
+					hip_t0[t] = now;
+				}
+				if(hip_state[t] == 1)
+				{
+					if(full)
+					{
+						hip_state[t] = 3; /* quick pull: hip fire, full only */
+					}
+					else if(now - hip_t0[t] >= win)
+					{
+						hip_state[t] = 2; /* slow pull: soft (aim) */
+					}
+				}
+				soft_on[t] = hip_state[t] == 2 && !(mode == REMAP_TRIG_HIP_EXCL && full);
+			}
+		}
+		else
+		{
+			soft_on[t] = past;
+		}
+		soft_past[t] = past;
+		{
+			/* analog trigger to Steam: output range */
+			uint16_t a = p->trig_range[t][0], e = p->trig_range[t][1];
+
+			if((a || e) && e > a + 100U)
+			{
+				int32_t lo = (int32_t)a * 32767 / 10000, hi = (int32_t)e * 32767 / 10000;
+				int16_t o = (int16_t)CLAMP((v - lo) * 32767 / (hi - lo), 0, 32767);
+
+				if(t)
+				{
+					r->trigger_right = o;
+				}
+				else
+				{
+					r->trigger_left = o;
+				}
+			}
+		}
 		if(bound(binding(p, REMAP_SRC_LT_SOFT + t)))
 		{
 			if(t)
