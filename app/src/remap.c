@@ -28,6 +28,7 @@
 #include "gyro_mouse.h"
 #include "haptics.h"
 #include "remap.h"
+#include "imu.h"
 #include "rgbw_led.h"
 #include "sc26re_cfg.h"
 
@@ -820,6 +821,51 @@ bool remap_gyro_value(int id, int16_t *value)
 		}
 	}
 	return false;
+}
+
+static struct controller_report raw_state;
+static struct k_spinlock raw_lock;
+
+void remap_raw_capture(const struct controller_report *r)
+{
+	k_spinlock_key_t key = k_spin_lock(&raw_lock);
+
+	raw_state = *r;
+	k_spin_unlock(&raw_lock, key);
+}
+
+void remap_raw_read(uint8_t *out)
+{
+	struct controller_report r;
+	k_spinlock_key_t key = k_spin_lock(&raw_lock);
+	int16_t ang[3], acc[3];
+	int16_t v[12];
+
+	r = raw_state;
+	k_spin_unlock(&raw_lock, key);
+	imu_raw_take(ang, acc);
+	v[0] = r.trigger_left;
+	v[1] = r.trigger_right;
+	v[2] = r.stick_left_x;
+	v[3] = r.stick_left_y;
+	v[4] = r.stick_right_x;
+	v[5] = r.stick_right_y;
+	v[6] = r.touchpad_left_x;
+	v[7] = r.touchpad_left_y;
+	v[8] = (int16_t)r.touchpad_left_pressure;
+	v[9] = r.touchpad_right_x;
+	v[10] = r.touchpad_right_y;
+	v[11] = (int16_t)r.touchpad_right_pressure;
+	sys_put_le32(r.buttons, &out[0]);
+	for(int i = 0; i < 12; ++i)
+	{
+		sys_put_le16((uint16_t)v[i], &out[4 + 2 * i]);
+	}
+	for(int i = 0; i < 3; ++i)
+	{
+		sys_put_le16((uint16_t)ang[i], &out[28 + 2 * i]);
+		sys_put_le16((uint16_t)acc[i], &out[34 + 2 * i]);
+	}
 }
 
 void remap_monitor(uint8_t *out)

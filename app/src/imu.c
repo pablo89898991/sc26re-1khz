@@ -354,14 +354,53 @@ static void copy_imu_report_fields(struct controller_report *dst,
 }
 
 #if IMU_HAS_DEVICE
+/* raw motion for the 3D overlay: gyro integrated between reads (0.01 deg) and the last accel,
+ * taken before the gyro mouse hides the motion from the pad report */
+static float raw_angle[3];
+static int16_t raw_accel[3];
+static uint32_t raw_last_ts;
+static bool raw_ts_valid;
+
 static void store_cached_imu_report(const struct controller_report *report)
 {
 	k_spinlock_key_t key = k_spin_lock(&cached_imu_report_lock);
+	uint32_t ts = report->imu_timestamp_us;
 
+	if(raw_ts_valid)
+	{
+		float dt = (float)(uint32_t)(ts - raw_last_ts) * 1e-6f;
+
+		if(dt > 0.0f && dt < 0.05f)
+		{
+			raw_angle[0] += (float)report->gyro_x * 0.06103f * dt;
+			raw_angle[1] += (float)report->gyro_y * 0.06103f * dt;
+			raw_angle[2] += (float)report->gyro_z * 0.06103f * dt;
+		}
+	}
+	raw_last_ts = ts;
+	raw_ts_valid = true;
+	raw_accel[0] = report->accel_x;
+	raw_accel[1] = report->accel_y;
+	raw_accel[2] = report->accel_z;
 	copy_imu_report_fields(&cached_imu_report, report);
 	k_spin_unlock(&cached_imu_report_lock, key);
 }
 #endif
+
+void imu_raw_take(int16_t angle[3], int16_t accel[3])
+{
+	k_spinlock_key_t key = k_spin_lock(&cached_imu_report_lock);
+
+	for(int i = 0; i < 3; ++i)
+	{
+		float a = CLAMP(raw_angle[i] * 100.0f, -32767.0f, 32767.0f);
+
+		angle[i] = (int16_t)a;
+		raw_angle[i] -= (float)angle[i] * 0.01f;
+		accel[i] = raw_accel[i];
+	}
+	k_spin_unlock(&cached_imu_report_lock, key);
+}
 
 static void load_cached_imu_report(struct controller_report *report)
 {

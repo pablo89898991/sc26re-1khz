@@ -156,6 +156,10 @@ uint32_t remap_xbox_buttons(void);
 bool remap_gyro_value(int id, int16_t *value);
 /* output monitor for the editor page (30 bytes) */
 void remap_monitor(uint8_t *out);
+/* physical controller state before any remapping (3D overlay) */
+void remap_raw_capture(const struct controller_report *r);
+/* 40 bytes: buttons, triggers, sticks, pads + pressure, gyro turned (0.01 deg), accel */
+void remap_raw_read(uint8_t *out);
 extern const uint8_t remap_gyro_keys[REMAP_GYRO_KEYS];
 bool remap_path(const char *path);
 bool remap_read(const char *path, uint8_t *buf, size_t capacity, size_t *len);

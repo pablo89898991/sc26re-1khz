@@ -636,6 +636,7 @@ int main(void)
 		int64_t now_ms;
 
 		hardware_read_report(&current);
+		remap_raw_capture(&current); /* physical state for the 3D overlay */
 		{
 			bool cal_busy = gyro_chord_poll(&current);
 

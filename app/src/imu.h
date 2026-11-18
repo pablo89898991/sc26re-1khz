@@ -54,3 +54,5 @@ int imu_settings_stage(const char *path, const uint8_t *value, size_t len);
 int imu_settings_commit(const char *path);
 
 void imu_debug_note_scan_us(uint32_t us);
+/* 3D overlay: gyro turned since the last call (0.01 deg, pitch / yaw / roll) and the last accel */
+void imu_raw_take(int16_t angle[3], int16_t accel[3]);
