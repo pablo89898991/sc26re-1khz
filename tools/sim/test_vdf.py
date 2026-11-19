@@ -120,6 +120,16 @@ def regular_press_with_double_press_acts_at_once():
     roundtrip(config([g], [(0, "Default", [(0, "button_diamond active")])]))
 
 @test
+def regular_press_one_shot_action_next_to_a_long_press_fires_at_once():
+    """a wheel step (one-shot action) on the regular press next to a long press: at the press"""
+    g = group(0, "four_buttons", inp("button_y", act(binding="mouse_wheel SCROLL_UP, , "), act("Long_Press", "key_press L, , ", {"long_press_time": "400"})))
+    r, p = one([g], [(0, "button_diamond active")])
+    s = fresh(p); w0 = s.host()["wh"]
+    s.run(60, Y=1); assert s.host()["wh"] > w0, "wheel at the press"
+    s.run(500); assert key("l") in held(s); s.run(60, Y=0); s.run(100)
+    assert s.host()["wh"] - w0 == 1, ("one step", s.host()["wh"] - w0)
+
+@test
 def double_and_release_on_one_input_keep_the_double():
     for order in (0, 1):
         a1 = act("Double_Press", "key_press D, , "); a2 = act("release", "key_press R, , ")
