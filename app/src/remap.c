@@ -2427,13 +2427,15 @@ void remap_process(struct controller_report *r, float dt)
 				float side = -atan2f(tilt_ref[2] * a[0] - tilt_ref[0] * a[2], tilt_ref[2] * a[2] + tilt_ref[0] * a[0]) * 57.29578f;
 				static uint8_t last;
 				float dz = (float)(gx->tilt_dz ? gx->tilt_dz : 15U);
+				/* a little hysteresis: a direction already on stays until 3 degrees back, or
+				 * half way for a small tilt (3 degrees back from 1..3 stayed on when level) */
+				float off = dz - MIN(3.0f, dz * 0.5f);
 				uint8_t d = 0U;
 
-				/* a little hysteresis: a direction already on stays until 3 degrees back */
-				if(fwd > ((last & 1U) ? dz - 3.0f : dz)) d |= 1U;
-				if(fwd < -((last & 2U) ? dz - 3.0f : dz)) d |= 2U;
-				if(side < -((last & 4U) ? dz - 3.0f : dz)) d |= 4U;
-				if(side > ((last & 8U) ? dz - 3.0f : dz)) d |= 8U;
+				if(fwd > ((last & 1U) ? off : dz)) d |= 1U;
+				if(fwd < -((last & 2U) ? off : dz)) d |= 2U;
+				if(side < -((last & 4U) ? off : dz)) d |= 4U;
+				if(side > ((last & 8U) ? off : dz)) d |= 8U;
 				if(!gx->tilt_8way && (d & 3U) && (d & 12U))
 				{
 					d &= fabsf(fwd) >= fabsf(side) ? 3U : 12U; /* 4-way: the bigger tilt */
@@ -2465,7 +2467,9 @@ void remap_process(struct controller_report *r, float dt)
 		int16_t v = t ? r->trigger_right : r->trigger_left;
 		int32_t th = (int32_t)CLAMP(p->trig_soft[t] ? p->trig_soft[t] : 5000, 100, 10000) * 32767 / 10000;
 		bool full = (raw & BIT(t ? CONTROLLER_BUTTON_RIGHT_TRIGGER_CLICK : CONTROLLER_BUTTON_LEFT_TRIGGER_CLICK)) != 0U;
-		bool past = soft_past[t] ? v >= th - 1000 : v >= th; /* past the soft pull point */
+		/* past the soft pull point; it lets go 3 % lower, or half way down for a point below 6 %
+		 * (a fixed 3 % kept a soft pull at 1..3 % on forever: it never got back below 0) */
+		bool past = soft_past[t] ? v >= th - MIN(1000, th / 2) : v >= th;
 		uint8_t mode = p->trig_mode[t];
 
 		if(mode == REMAP_TRIG_HAIR)

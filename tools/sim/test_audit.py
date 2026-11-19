@@ -144,6 +144,41 @@ def turbo_repeats_play_the_binding_haptic():
     n, hap = turbo_run(p, None, ((1000, 1), (300, 0)))
     assert n == 10 and not hap, (n, hap[:3])
 
+@test
+def soft_pull_point_below_3_percent_lets_go():
+    """v51 test 47, tester: a soft pull point under 3.5 % stayed on after the trigger was let go: it let
+    go 3 % below the point, which is below 0. The hysteresis is half the point there, 3 % above 6 %"""
+    T = lambda pct: int(32767 * pct / 100)
+    for pct in (1, 2, 3, 3.5, 6, 50):
+        p = Profile(); p.bind("LT_SOFT", key("q")); p.trig_soft(0, pct)
+        s = fresh(p)
+        s.run(50, tl=T(min(pct * 3, 100))); on = held(s)
+        s.run(50, tl=0)
+        assert on == (key("q"),) and held(s) == (), (pct, on, held(s))
+    for pct, stays, goes in ((3, 2, 1), (50, 48, 46)):         # the hysteresis is still there
+        p = Profile(); p.bind("LT_SOFT", key("q")); p.trig_soft(0, pct)
+        s = fresh(p); s.run(50, tl=T(pct * 2))
+        s.run(50, tl=T(stays)); a = held(s); s.run(50, tl=T(goes))
+        assert a == (key("q"),) and held(s) == (), (pct, a, held(s))
+
+@test
+def gyro_tilt_below_3_degrees_lets_go():
+    """the same for the gyro tilt directions: 3 degrees back from a tilt of 1 or 2 degrees stayed on
+    with the controller level again (the page offers 3 and up, a hand-made profile anything)"""
+    import math
+    def tilt(fwd):
+        a = math.radians(fwd); return dict(ax=0, ay=int(-16000 * math.sin(a)), az=int(16000 * math.cos(a)))
+    for dz in (1, 2, 3, 15):
+        p = Profile(); p.gyx(mode=1, tilt_dz=dz); p.bind("GYRO_UP", key("w"))
+        s = fresh(p, **tilt(0)); s.run(30)
+        s.run(30, **tilt(dz + 10)); on = held(s)
+        s.run(30, **tilt(0))
+        assert on == (key("w"),) and held(s) == (), (dz, on, held(s))
+    p = Profile(); p.gyx(mode=1, tilt_dz=15); p.bind("GYRO_UP", key("w"))   # still 3 degrees of hysteresis
+    s = fresh(p, **tilt(0)); s.run(30); s.run(30, **tilt(20))
+    s.run(30, **tilt(13)); a = held(s); s.run(30, **tilt(11))
+    assert a == (key("w"),) and held(s) == (), (a, held(s))
+
 # ---------------- found by mutation testing (mutate2.py old) ----------------
 @test
 def mouse_backlog_capped_after_a_trackpad_jump():
