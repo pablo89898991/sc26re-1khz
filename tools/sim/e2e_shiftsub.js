@@ -39,6 +39,19 @@ const check = (name, ok, info = '') => { results.push(ok); console.log((ok ? 'PA
   await pg.click('#v_map [data-s="26"]');
   check('the pad click (not part of the modes) opens as before', !/shifted/.test(await pg.textContent('#dlg h4')));
   await pg.click('#dlgDone');
+  // tester: cycle showed only the press row (its other sets hidden, also stale ones it still used)
+  await pg.click('#v_map [data-s="0"]');
+  await pg.check('#dlg [data-bit="64"]');
+  const rows = await pg.$$eval('#dlg .grp > span', x => x.map(e => e.textContent));
+  const cb = await pg.$$eval('#dlg [data-bit]', x => x.map(e => e.dataset.bit));
+  check('cycle shows its three sets and only the cycle mode', rows.join() === 'set 1,set 2,set 3' && cb.join() === '64', rows.join() + ' / ' + cb.join());
+  // tester: the delay box went up by 1 ms, the firmware keeps 10 ms steps
+  await pg.evaluate(() => { const d = document.querySelector('#dlg details.btime'); if (d) d.open = true; });
+  const step = await pg.getAttribute('#bdst_n', 'step');
+  await pg.fill('#bdst_n', '15'); await pg.dispatchEvent('#bdst_n', 'change');
+  const v = await pg.inputValue('#bdst_n');
+  check('delay start steps by 10 ms and snaps to them', step === '10' && v === '20', step + ' ' + v);
+  await pg.click('#dlgDone');
   check('no page errors', !errs.length, errs.join(' | '));
   await br.close();
   console.log(results.length + ' checks, ' + results.filter(x => !x).length + ' failed');

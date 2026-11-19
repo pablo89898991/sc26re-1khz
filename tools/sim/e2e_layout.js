@@ -77,6 +77,8 @@ const FIELDS = {
     const before = (await bytes())[bo]; await pg.click(`#editor [data-bit="${bit}"]`).catch(() => {}); await sleep(20);
     const after = (await bytes())[bo]; checked++; if (((before ^ after) & bit) === 0) fails.push(`binding mode bit ${bit} not at +0`);
   }
+  // cycle hides the other modes (they do not apply to it): off again
+  if ((await bytes())[bo] & 64) { await pg.click('#editor [data-bit="64"]'); await sleep(30); }
   // timing of this binding (v7 bt[3]: hold x10, double x10, turbo x5, delay start x10, delay end x10, flags)
   const bto = BT + 6 * 3;
   for (const [bit, id, off, v, want] of [[1, 'bhold', 0, 550, 55], [2, 'bdbl', 1, 220, 22], [32, 'bturbo', 2, 65, 13], [0, 'bdst', 3, 120, 12], [0, 'bden', 4, 300, 30]]) {

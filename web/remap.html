@@ -99,7 +99,7 @@
 <body>
 <div class="top">
   <div class="topin">
-    <div class="brand">SC2 <span class="hz">Remapper</span> <span class="note" id="pagever" title="page version — if it is older than expected, press Ctrl+F5">p.2026-11-19f</span></div>
+    <div class="brand">SC2 <span class="hz">Remapper</span> <span class="note" id="pagever" title="page version — if it is older than expected, press Ctrl+F5">p.2026-11-19g</span></div>
     <button class="primary" id="connect">Connect controller</button>
     <span id="status" class="chip">not connected</span>
     <span class="grow"></span>
@@ -497,11 +497,13 @@ function openSel(v){ if(v==="gyro"){ showView("gyro"); return; } sel=isNaN(+v)?v
   render(); const d=$("#dlg"); if(d.showModal&&!d.open) d.showModal(); }
 const parentOf=s=>{ if(s>=70) return s<74?"ls":"rs"; if(s>=66) return "gyp"; if(s>=64) return s===64?"lp":"rp"; if(s>=60) return ["ls","rs","lp","rp"][s-60]; if(s>=30&&s<38) return s<34?"ls":"rs";
   if(s>=38&&s<58) return ((s>=38&&s<42)||(s>=46&&s<50)||s===54||s===55)?"lp":"rp"; return null; };
-/* slider + exact number box; values in display units */
-const slider=(id,v,lo,hi,step,label,unit,hint)=>`<div class="row2"><label>${label}</label><span class="slw"><input type="range" id="${id}" min="${lo}" max="${hi}" step="${step}" value="${v}"><input type="number" class="num" id="${id}_n" min="${lo}" max="${hi}" step="any" value="${v}"><span class="unit">${unit||""}</span></span>${hint?`<small>${hint}</small>`:""}</div>`;
+/* slider + exact number box; values in display units. SNAP: the per binding times, which the
+ * firmware keeps in 10 ms (turbo 5 ms) steps: the box steps and snaps like the slider */
+const SNAP=new Set(["bhold","bdbl","bturbo","bdst","bden"]);
+const slider=(id,v,lo,hi,step,label,unit,hint)=>`<div class="row2"><label>${label}</label><span class="slw"><input type="range" id="${id}" min="${lo}" max="${hi}" step="${step}" value="${v}"><input type="number" class="num" id="${id}_n" min="${lo}" max="${hi}" step="${SNAP.has(id)?step:"any"}" value="${v}"><span class="unit">${unit||""}</span></span>${hint?`<small>${hint}</small>`:""}</div>`;
 function wireSl(id,set){ const r=$("#"+id), n=$("#"+id+"_n"); if(!r) return;
   r.oninput=()=>{ n.value=r.value; set(+r.value); setDirty(); };
-  n.onchange=()=>{ let v=+n.value; if(isNaN(v)) v=+r.min; v=Math.max(+n.min,Math.min(+n.max,v)); n.value=v; r.value=v; set(v); setDirty(); render(); };
+  n.onchange=()=>{ let v=+n.value; if(isNaN(v)) v=+r.min; v=Math.max(+n.min,Math.min(+n.max,v)); if(SNAP.has(id)) v=Math.round(v/+r.step)*+r.step; n.value=v; r.value=v; set(v); setDirty(); render(); };
   r.onchange=()=>render(); }
 const pct=(id,v,lo,hi,label,hint)=>slider(id,v,lo,hi,0.5,label,"%",hint);
 function shiftBar(g){
@@ -745,8 +747,9 @@ function editor(){
       return `<div class="shiftbar"><span class="note">Binding of the</span><span class="seg"><button data-l="0" class="${layer?"":"on"}"${n?"":" disabled"}>Normal</button><button data-l="1" class="${layer?"on":""}"${sh?"":" disabled"}>Shifted ⇧ ${shName(g)}</button></span>${n&&sh?"":`<span class="note">(only the ${n?"normal":"shifted"} mode has this input)</span>`}</div>`; })():""}
     ${trig}
     ${tapSrc?`<p class="note">A ${tapSrc} is a tap: pressed and let go at once. Long / double press, toggle, turbo and the rest do not apply; “release press” taps its set right after the press set.</p>`:""}
-    <div class="modes" style="margin:6px 0">${[[1,"long press (hold)",`second set after ${((U16(118)||250)/1000).toFixed(2)} s held`],[2,"double press",`second set on a second press within ${U16(120)||250} ms`],[8,"start press","the first set is tapped the moment you press, not held"],[16,"release press",(par?"tapped when the finger leaves / the click ends (not when sliding to another zone)":"tapped when you let go")],[4,"toggle","each press switches the first set on / off"],[32,"turbo","the first set repeats while held (profile turbo rate)"],[64,"cycle","each press taps the next set in turn: press → hold → double/release"]].filter(([bit])=>!tapSrc||bit===16||(m&bit)).map(([bit,n,t])=>`<label title="${t}"><input type="checkbox" data-bit="${bit}"${m&bit?" checked":""}> ${n}</label>`).join("")}</div>
-    ${[0,1,2].filter(x=>x===0||(x===1&&(m&1))||(x===2&&(m&18))).map(x=>`<div class="grp"><span>${[m&8?"start":"press","hold",m&16?"release":"double"][x]}</span>${[0,1,2,3].map(i=>`<select data-gi="${x}:${i}">${OPTS}</select>`).join("")}</div>`).join("")}
+    <div class="modes" style="margin:6px 0">${[[1,"long press (hold)",`second set after ${((U16(118)||250)/1000).toFixed(2)} s held`],[2,"double press",`second set on a second press within ${U16(120)||250} ms`],[8,"start press","the first set is tapped the moment you press, not held"],[16,"release press",(par?"tapped when the finger leaves / the click ends (not when sliding to another zone)":"tapped when you let go")],[4,"toggle","each press switches the first set on / off"],[32,"turbo","the first set repeats while held (profile turbo rate)"],[64,"cycle","each press taps the next set in turn: press → hold → double/release"]].filter(([bit])=>(m&64)?bit===64:(!tapSrc||bit===16||(m&bit))).map(([bit,n,t])=>`<label title="${t}"><input type="checkbox" data-bit="${bit}"${m&bit?" checked":""}> ${n}</label>`).join("")}</div>
+    ${m&64?`<p class="note">Cycle: each press taps the next set that has actions — set 1 → set 2 → set 3 → set 1 … (empty sets are skipped, so two sets go 1 → 2 → 1 → 2). Long / double press and the other modes do not apply.</p>`:""}
+    ${[0,1,2].filter(x=>x===0||(m&64)||(x===1&&(m&1))||(x===2&&(m&18))).map(x=>`<div class="grp"><span>${m&64?"set "+(x+1):[m&8?"start":"press","hold",m&16?"release":"double"][x]}</span>${[0,1,2,3].map(i=>`<select data-gi="${x}:${i}">${OPTS}</select>`).join("")}</div>`).join("")}
     ${[0,1,2].some(x=>[0,1,2,3].some(i=>b[bo+1+x*4+i]>=0x76&&b[bo+1+x*4+i]<=0x79))?slider("mvs",U16(38)||1000,50,10000,10,"Mouse move speed","counts / s","for every “Mouse move” action in this profile"):""}
     <details class="btime"${[0,1,2,3,4].some(k=>b[bt0+k])||b[bt0+5]?" open":""}><summary>Timing of this input <span class="note">(0 = the profile’s: long ${U16(118)||250} ms, double ${U16(120)||250} ms, turbo ${U16(122)||100} ms)</span></summary>
     ${m&1?slider("bhold",b[bt0]*10,0,2550,10,"Long press time","ms","0 = profile"):""}
