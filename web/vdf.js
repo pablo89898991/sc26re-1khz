@@ -274,7 +274,9 @@
       }
       if (sg.kind === "dpad") {
         const lay = S("layout");
-        if (shiftG == null) b[16] = lay === 1 ? 0 : 1; else b[SH_OFF(1) + 1] = lay === 1 ? 0 : 1;
+        /* layout 0 four way, 1 eight way; none: the physical D-pad's own (both directions of a diagonal) */
+        const four = lay === 0 ? 1 : 0;
+        if (shiftG == null) b[16] = four; else b[SH_OFF(1) + 1] = four;
         const D = { dpad_north: 13, dpad_south: 10, dpad_west: 12, dpad_east: 11 };
         for (const [name, inp] of entries(inputs)) if (name in D) bindAt(D[name], inp);
         if (mode !== "dpad" && mode !== "four_buttons") this.note(`D-pad as “${mode}”: used as a D-pad`);
@@ -402,7 +404,7 @@
       let o, bt;
       if (shiftG != null) { const k = shiftIndex(s); if (k < 0) { this.note("shifted input " + s + ": not available"); return 0; } o = SB_OFF(k); bt = BT + 6 * btIndex(s, k); }
       else { o = B_OFF(s); bt = BT + 6 * btIndex(s); }
-      let bound = 0;
+      let bound = 0, regular = null;
       for (const [aname, act] of entries(get(inp, "activators"))) {
         const an = aname.toLowerCase(), set = get(act, "settings"), S = k => { const v = get(set, k); return v == null ? null : +v; };
         let g = 0;
@@ -437,7 +439,7 @@
         }
         if (!acts.length) continue;
         bound += acts.length;
-        if (an === "long_press") { b[o] |= 1; const t = S("long_press_time"); if (t) b[bt] = Math.min(255, Math.round(t / 10)); if (S("interruptable") === 1 || S("interruptible") === 1) b[bt + 5] |= 1; }
+        if (an === "long_press") { b[o] |= 1; const t = S("long_press_time"); if (t) b[bt] = Math.min(255, Math.round(t / 10)); }
         else if (an === "double_press") { b[o] = (b[o] | 2) & ~16; const t = S("double_tap_time"); if (t) b[bt + 1] = Math.min(255, Math.round(t / 10)); }
         else if (an === "release") b[o] = (b[o] | 16) & ~2;
         else if (an === "start_press") b[o] = (b[o] | 8) & ~4;
@@ -451,7 +453,11 @@
         if (de) b[bt + 4] = Math.min(255, Math.round(de / 10));
         const hp = S("haptic_intensity"); if (hp != null) b[o + 13] = (b[o + 13] & ~3) | Math.max(0, Math.min(3, hp));
         for (const a of acts) this.addAct(ctx, o, g, a);
+        if (an === "full_press" || an === "soft_press") regular = regular || (S("interruptable") === 1 || S("interruptible") === 1 ? "int" : "keep");
       }
+      /* Steam: a regular press next to a long / double press acts at once unless it is
+       * "interruptible" (then a short tap fires it when let go, as our long press does) */
+      if (regular === "keep" && (b[o] & 3) && !(b[o] & 0x0C)) b[bt + 5] |= 2;
       return bound;
     }
     gyro(ctx, mode, set) {
@@ -530,10 +536,12 @@
       const T = []; if (m & 4) T.push(["toggle", "1"]); if (m & 32) { T.push(["hold_repeats", "1"]); if (b[bt + 2]) T.push(["repeat_rate", String(b[bt + 2] * 5)]); }
       if (b[bt + 3]) T.push(["delay_start", String(b[bt + 3] * 10)]); if (b[bt + 4]) T.push(["delay_end", String(b[bt + 4] * 10)]);
       if (m & 64) T.push(["cycle", "1"]);
+      if (m & 3 && !(m & 0x0C)) T.push(["interruptable", b[bt + 5] & 2 ? "0" : "1"]);
       const ch = b[o + 13] >> 2, chName = ch ? (SWITCHNAME[ch - 1] || Object.keys(DIAMOND).find(k => DIAMOND[k] === ch - 1)) : null;
       if (chName) mk("Chorded_Press", 0, [...T, ["chord_button", chName]]);
       else mk(m & 8 ? "Start_Press" : (extra && extra.soft ? "Soft_Press" : "Full_Press"), 0, T);
-      if (m & 1) mk("Long_Press", 1, [...(b[bt] ? [["long_press_time", String(b[bt] * 10)]] : []), ...(b[bt + 5] & 1 ? [["interruptable", "1"]] : [])]);
+      if (m & 1) mk("Long_Press", 1, b[bt] ? [["long_press_time", String(b[bt] * 10)]] : []);
+      if ((m & 1) && (b[bt + 5] & 1)) dropped.add("“another input cancels” on long presses");
       if (m & 2) mk("Double_Press", 2, b[bt + 1] ? [["double_tap_time", String(b[bt + 1] * 10)]] : []);
       if (m & 16) mk("release", 2, []);
       if (ch && !chName) dropped.add("chords on a button Steam cannot chord with");

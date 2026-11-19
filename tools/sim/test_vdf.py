@@ -101,7 +101,35 @@ def delay_start_and_interruptible():
     r, p = one([g], [(0, "button_diamond active")])
     s = fresh(p)
     s.run(60, A=1); assert key("g") not in held(s); s.run(80); assert key("g") in held(s); s.run(150, A=0)
-    assert p.b[Profile.BT + 6 * 1 + 5] & 1
+    # Steam: a regular press next to a long press acts at once (not "interruptible")
+    assert p.b[Profile.BT + 6 * 1 + 5] & 2
+    s.run(40, B=1); assert key("h") in held(s); s.run(300); assert {key("h"), key("i")} <= set(held(s)), held(s)
+    s.run(40, B=0); s.run(40); assert held(s) == ()
+
+@test
+def regular_press_with_double_press_acts_at_once():
+    g = group(0, "four_buttons", inp("button_x", act(binding="key_press J, , "), act("Double_Press", "key_press K, , ", {"double_tap_time": "250"})))
+    r, p = one([g], [(0, "button_diamond active")])
+    s = fresh(p); s.log.clear()
+    s.run(30, X=1); assert key("j") in held(s), "at once"
+    s.run(30, X=0); s.run(400)
+    taps = Events(s.log).taps(key("j")); assert taps == 1, ("one press, no extra tap after the window", taps)
+    s.log.clear(); s.run(30, X=1); s.run(30, X=0); s.run(30, X=1)
+    assert {key("j"), key("k")} <= set(held(s)), held(s)
+    s.run(30, X=0); s.run(300); assert held(s) == ()
+    roundtrip(config([g], [(0, "Default", [(0, "button_diamond active")])]))
+
+@test
+def interruptible_regular_press_waits_for_the_long_press():
+    g = group(0, "four_buttons", inp("button_b", act(binding="key_press H, , ", settings={"interruptable": "1"}), act("Long_Press", "key_press I, , ", {"long_press_time": "300"})))
+    r, p = one([g], [(0, "button_diamond active")])
+    assert not p.b[Profile.BT + 6 * 1 + 5] & 2
+    s = fresh(p); s.log.clear()
+    s.run(100, B=1); assert key("h") not in held(s), "waits"
+    s.run(40, B=0); assert key("h") in set().union(*map(set, Events(s.log).kbd())), "short tap: the press when let go"
+    s.run(100); s.log.clear(); s.run(400, B=1); assert held(s) == (key("i"),), held(s); s.run(40, B=0)
+    assert key("h") not in set().union(*map(set, Events(s.log).kbd())), "long: no short press"
+    roundtrip(config([g], [(0, "Default", [(0, "button_diamond active")])]))
 
 @test
 def mode_shift_on_back_button():

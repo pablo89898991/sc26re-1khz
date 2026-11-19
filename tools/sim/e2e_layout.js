@@ -89,6 +89,8 @@ const FIELDS = {
   await pg.evaluate(() => document.querySelectorAll('details.btime').forEach(d => d.open = true));
   if (!((await bytes())[bo] & 1)) { await pg.click(`#editor [data-bit="1"]`); await sleep(30); await pg.evaluate(() => document.querySelectorAll('details.btime').forEach(d => d.open = true)); }
   await pg.click('#bint'); await sleep(15); checked++; if (!((await bytes())[bto + 5] & 1)) fails.push('interruptible flag not at bt+5');
+  await pg.evaluate(() => document.querySelectorAll('details.btime').forEach(d => d.open = true));
+  await pg.click('#bkeep'); await sleep(15); checked++; if (((await bytes())[bto + 5] & 3) !== 3) fails.push('"press acts at once" flag not at bt+5 bit 1 (REMAP_BT_KEEP)');
   await pg.selectOption('#editor [data-gi="0:2"]', '9'); checked++; if ((await bytes())[bo + 1 + 2] !== 9) fails.push('binding action group 0 slot 2 not at +3');
   await pg.selectOption('#bhap', '2'); checked++; if (((await bytes())[bo + 13] & 3) !== 2) fails.push('binding haptic not at +13 bits 0-1');
   await pg.selectOption('#bchord', { index: 3 }); const ch = await pg.$eval('#bchord', e => +e.value); checked++;

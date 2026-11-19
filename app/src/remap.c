@@ -675,6 +675,14 @@ static void run_source(const struct remap_binding *b, struct src_state *s, bool 
 		return;
 	}
 	bool dbl = (b->mode & REMAP_MODE_DOUBLE) != 0U && !rel; /* release uses the double slot */
+	/* "keep": the press group acts at once and while held (output loop); the long /
+	 * double press come on top of it and nothing is tapped afterwards */
+	bool keep = (bt->flags & REMAP_BT_KEEP) != 0U && (hold || dbl) && !(b->mode & (REMAP_MODE_START | REMAP_MODE_TOGGLE));
+
+	if(keep && down && !s->down)
+	{
+		fire(b, 0, src);
+	}
 
 	/* release press: group 2 tapped when let go (trackpads: only when the finger
 	 * leaves / the click ends, not when it slides into another zone) */
@@ -750,7 +758,10 @@ static void run_source(const struct remap_binding *b, struct src_state *s, bool 
 			/* pressed again just after the window: the first press still
 			 * counts as its own single press */
 			s->waiting_double = false;
-			pulse(b, s, src, now);
+			if(!keep)
+			{
+				pulse(b, s, src, now);
+			}
 		}
 	}
 	else if(!down && s->down)
@@ -770,7 +781,7 @@ static void run_source(const struct remap_binding *b, struct src_state *s, bool 
 			{
 				s->waiting_double = true; /* decide after dbl_ms */
 			}
-			else
+			else if(!keep)
 			{
 				pulse(b, s, src, now);
 			}
@@ -783,7 +794,10 @@ static void run_source(const struct remap_binding *b, struct src_state *s, bool 
 	if(s->waiting_double && !down && now - s->t_up > dbl_ms)
 	{
 		s->waiting_double = false;
-		pulse(b, s, src, now);
+		if(!keep)
+		{
+			pulse(b, s, src, now);
+		}
 	}
 	s->down = down;
 }
@@ -2656,6 +2670,15 @@ void remap_process(struct controller_report *r, float dt)
 		}
 		uint16_t turbo_ms = btime_of(b)->turbo5 ? MAX(btime_of(b)->turbo5 * 5U, 20U) : prof_turbo_ms;
 
+		/* "keep": the press group while held, next to a long / double press */
+		if(ss->down && ss->held_group != 0 && (btime_of(b)->flags & REMAP_BT_KEEP) &&
+		   (b->mode & (REMAP_MODE_HOLD | REMAP_MODE_DOUBLE)) && !(b->mode & (REMAP_MODE_START | REMAP_MODE_TOGGLE | REMAP_MODE_CYCLE)))
+		{
+			for(size_t i = 0; i < 4; ++i)
+			{
+				out_action(b->act[0][i], keys, &nk, &mods, &pad);
+			}
+		}
 		if(ss->held_group >= 0 &&
 		   !((b->mode & REMAP_MODE_TURBO) && ss->held_group == 0 &&
 		     (((now - ss->t_down) / (turbo_ms / 2)) % 2 == 1 || turbo_waits(b))))

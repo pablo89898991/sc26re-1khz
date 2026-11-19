@@ -106,6 +106,9 @@ enum
 
 /* per binding timing (v7), 0 = the profile's value */
 #define REMAP_BT_INTERRUPT 0x01 /* long press: another input pressed meanwhile cancels it */
+#define REMAP_BT_KEEP 0x02      /* with a long / double press: the press still acts at once and while held
+                                 * (Steam's regular press that is not "interruptible"); the long / double
+                                 * press acts as well */
 struct remap_btime
 {
 	uint8_t hold10;   /* long press time, x10 ms */

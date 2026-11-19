@@ -740,7 +740,8 @@ function editor(){
     ${m&32?slider("bturbo",b[bt0+2]*5,0,1275,5,"Turbo period","ms","0 = profile"):""}
     ${slider("bdst",b[bt0+3]*10,0,2550,10,"Delay start","ms","the press acts this much later")}
     ${slider("bden",b[bt0+4]*10,0,2550,10,"Delay end","ms","the press keeps acting this much longer after you let go")}
-    ${m&1?`<div class="row2"><label></label><label class="note"><input type="checkbox" id="bint"${b[bt0+5]&1?" checked":""}> interruptible — pressing another input while holding cancels the long press (and the short one)</label></div>`:""}
+    ${m&3?`<div class="row2"><label></label><label class="note"><input type="checkbox" id="bkeep"${b[bt0+5]&2?" checked":""}> press acts at once — the press works as usual while held, the ${m&1?"long":"double"} press comes on top (Steam: regular press not “interruptible”); off: a short tap fires the press when let go</label></div>`:""}
+    ${m&1?`<div class="row2"><label></label><label class="note"><input type="checkbox" id="bint"${b[bt0+5]&1?" checked":""}> another input cancels — pressing another input while holding cancels the long press (and the short one)</label></div>`:""}
     </details>
     ${s===16?`<p class="note wrap">While the remapper is on, Steam does not see this button. Bind it to <b>Pad Steam</b> to give it back to Steam. Steam + D-pad (profiles) and holding it to power off work as always.</p>`:""}
     <div class="row2"><label>Chord</label><select id="bchord">${SHBTN.map(([v,n])=>`<option value="${v}">${v?"only while "+n+" is held":"— none (always) —"}</option>`).join("")}</select><small>chorded press: fires only together with that button</small></div>
@@ -759,6 +760,7 @@ function editor(){
   $("#bpaste").onclick=()=>{ if(bindClip){ b.set(bindClip[0],bo); b.set(bindClip[1],bt0); setDirty(); render(); } };
   wireSl("bhold",v=>{ b[bt0]=Math.min(255,Math.round(v/10)); }); wireSl("bdbl",v=>{ b[bt0+1]=Math.min(255,Math.round(v/10)); }); wireSl("bturbo",v=>{ b[bt0+2]=Math.min(255,Math.round(v/5)); });
   wireSl("bdst",v=>{ b[bt0+3]=Math.min(255,Math.round(v/10)); }); wireSl("bden",v=>{ b[bt0+4]=Math.min(255,Math.round(v/10)); });
+  if($("#bkeep")) $("#bkeep").onchange=e=>{ b[bt0+5]=(b[bt0+5]&~2)|(e.target.checked?2:0); setDirty(); };
   if($("#bint")) $("#bint").onchange=e=>{ b[bt0+5]=(b[bt0+5]&~1)|(e.target.checked?1:0); setDirty(); };
   wireSl("tsp",v=>setU16(18+2*tt,Math.round(v*100)));
   if($("#tmode")){ $("#tmode").value=String(b[104+tt]); $("#tmode").onchange=e=>{ b[104+tt]=+e.target.value; setDirty(); render(); }; }
