@@ -99,7 +99,7 @@
 <body>
 <div class="top">
   <div class="topin">
-    <div class="brand">SC2 <span class="hz">Remapper</span> <span class="note" id="pagever" title="page version — if it is older than expected, press Ctrl+F5">p.2026-11-19h</span></div>
+    <div class="brand">SC2 <span class="hz">Remapper</span> <span class="note" id="pagever" title="page version — if it is older than expected, press Ctrl+F5">p.2026-11-19i</span></div>
     <button class="primary" id="connect">Connect controller</button>
     <span id="status" class="chip">not connected</span>
     <span class="grow"></span>
@@ -605,6 +605,7 @@ function editor(){
     if(pad&&m!==0){
       const av=b[o+1]&0x10?16:b[o+1]&1;
       h+=`<div class="row2"><label>Works while</label><select id="aact"><option value="0">the pad is touched</option><option value="1">the pad is clicked</option><option value="16">the pad is pressed harder than…</option></select></div>`;
+      if(av===1&&[1,2,5,9,10,11].includes(m)) h+=`<p class="note wrap">The click chooses here: the pad’s own “Click” binding does nothing while this mode is on.</p>`;
       if(av===16) h+=pct("press",P(16)||30,1,100,"Pressure","how hard you must press (light touch ≈ 5 %, click ≈ 60–80 %)");
     }
     if(m===12){ const sd=(an==="ls"||an==="lp")?0:1; h+=`<div class="row2"><label>Drives</label><select id="aoth"><option value="0">the Xbox pad’s ${sd?"right":"left"} stick</option><option value="4">the Xbox pad’s ${sd?"left":"right"} stick</option></select><small>needs Pad output “Steam + Xbox” or “Xbox only” (cable); Steam does not get it</small></div>`; }

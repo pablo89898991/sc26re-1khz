@@ -198,6 +198,25 @@ def release_press_on_a_radial_slice():
         k = run(key("a"), src, pad)
         assert k == [(key("a"),), (), (key("q"),), ()], (src, "press, then release", k)
 
+@test
+def pad_click_belongs_to_a_mode_that_works_on_click():
+    """v51 test 50, tester: left pad scroll wheel, shifted (L5) 9 zones that work while clicked; the
+    click gave the zone's key and the pad's Click binding together. A mode that selects with the
+    click owns it; with a mode on touch (or the scroll wheel) the Click binding acts as before"""
+    def run(p, **hold):
+        s = Sim(); s.use(p); s.run(5); s.log = []
+        s.run(30, LP_TOUCH=1, lpx=0, lpy=0, **hold); s.run(50, LP_CLICK=1); s.run(50, LP_CLICK=0)
+        s.run(30, LP_TOUCH=0, **{k: 0 for k in hold})
+        return set(c for k in Events(s.log).kbd() for c in k)
+    p = Profile(); p.analog(2, SCROLL); p.bind("LP_CLICK", key("q"))
+    p.shift(4, BTN["L5"], mode=9, flags=AF_CLICK); p.bind(64, key("5"), shifted_index=29)   # shifted centre
+    assert run(p, L5=1) == {key("5")}, ("shifted zones on click", run(p, L5=1))
+    assert run(p) == {key("q")}, ("scroll wheel: the Click binding", run(p))
+    p = Profile(); p.analog(2, 9, flags=AF_CLICK); p.bind("LP_CLICK", key("q")); p.bind("LP_CENTER", key("5"))
+    assert run(p) == {key("5")}, run(p)
+    p = Profile(); p.analog(2, 9); p.bind("LP_CLICK", key("q")); p.bind("LP_CENTER", key("5"))
+    assert run(p) == {key("5"), key("q")}, ("zones on touch: the click is its own", run(p))
+
 # ---------------- found by mutation testing (mutate2.py old) ----------------
 @test
 def mouse_backlog_capped_after_a_trackpad_jump():

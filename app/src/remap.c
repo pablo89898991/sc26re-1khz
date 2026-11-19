@@ -284,6 +284,9 @@ static float pad_hap_dist[2];
 static float scroll_notch[2];
 static uint32_t dp4_keep;
 static bool ring_on[4];
+/* the trackpad's click selects a zone / direction / slice of its mode ("works while: clicked"):
+ * the pad's own Click binding does not act then (it fired too, e.g. a number and a mouse move) */
+static bool click_owned[2];
 static bool center_on[2];
 static bool pad_act[2]; /* trackpad active (touched / clicked / pressed) this report */
 static bool swipe_done[2];
@@ -2214,6 +2217,11 @@ void remap_process(struct controller_report *r, float dt)
 		float fx = (float)x / 32767.0f, fy = (float)y / 32767.0f;
 		float dz = (float)an->dz_in * 0.0001f;
 
+		click_owned[j] = (an->flags & REMAP_AF_CLICK) && !(an->flags & REMAP_AF_PRESSURE) &&
+		                 (an->mode == REMAP_ANALOG_DPAD4 || an->mode == REMAP_ANALOG_DPAD8 ||
+		                  an->mode == REMAP_ANALOG_GATES || an->mode == REMAP_ANALOG_GRID ||
+		                  an->mode == REMAP_ANALOG_RADIAL || an->mode == REMAP_ANALOG_SINGLE);
+
 		ring_on[2 + j] = act && ring_test(an, fx, fy);
 		dirs[2 + j] = act && (an->mode == REMAP_ANALOG_DPAD4 || an->mode == REMAP_ANALOG_DPAD8)
 		                  ? dir_mask(an->mode, fx, fy, dz)
@@ -2699,6 +2707,12 @@ void remap_process(struct controller_report *r, float dt)
 			uint8_t chord = REMAP_CHORD(b->haptic);
 			/* chorded: only while the chord button is held too */
 			bool down = src_pressed(s) && (chord == 0U || (chord <= 30U && (raw & BIT(chord - 1U))));
+
+			if((s == CONTROLLER_BUTTON_LEFT_TOUCHPAD_CLICK && click_owned[0]) ||
+			   (s == CONTROLLER_BUTTON_RIGHT_TOUCHPAD_CLICK && click_owned[1]))
+			{
+				down = false; /* the click belongs to the pad's mode now */
+			}
 
 			/* the input that switched the profile (still held) must not act in
 			 * the new one until it is let go, or two profiles switching to each
