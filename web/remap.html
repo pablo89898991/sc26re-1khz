@@ -99,7 +99,7 @@
 <body>
 <div class="top">
   <div class="topin">
-    <div class="brand">SC2 <span class="hz">Remapper</span> <span class="note" id="pagever" title="page version — if it is older than expected, press Ctrl+F5">p.2026-11-19e</span></div>
+    <div class="brand">SC2 <span class="hz">Remapper</span> <span class="note" id="pagever" title="page version — if it is older than expected, press Ctrl+F5">p.2026-11-19f</span></div>
     <button class="primary" id="connect">Connect controller</button>
     <span id="status" class="chip">not connected</span>
     <span class="grow"></span>
@@ -737,11 +737,15 @@ function editor(){
       ${slider("tcv",(U16(TCURVE+2*tt)||100)/100,0.3,4,0.05,"Analog response curve","×","1.0 linear · above = finer at the start of the pull (to Steam and the Xbox pad)")}${pct("tra",U16(110+4*tt)/100,0,90,"Analog start","Steam sees 0 until here (when soft pull is not bound)")}${pct("tre",(U16(112+4*tt)||10000)/100,10,100,"Analog end","Steam sees 100 % from here")}</div>`; }
   const trigLink = s===27||s===23 ? `<p class="note">Full pull = the click at the end of the trigger. <a href="#" id="tlink">Soft pull →</a></p>` : s===58||s===59 ? `<p class="note"><a href="#" id="tlink">Full pull →</a></p>` : "";
   const back = par||(s>=10&&s<=13?"dp":null);
+  /* sources the firmware only ever taps: radial slices, scroll wheel steps, swipes */
+  const pm = par&&par!=="gyp"?b[aOff(par)]:-1;
+  const tapSrc = pm===10?"radial menu slice":isPad(par||"ls")&&pm===4&&s>=54&&s<=57?"scroll wheel step":isPad(par||"ls")&&pm===8&&s>=38&&s<=45?"swipe":"";
   ed.innerHTML=`${back?`<a href="#" id="back" class="note">← ${back==="dp"?"D-pad":back==="gyp"?"Gyro (this profile)":ANAME[back]}</a>`:""}<h4>${SRCNAME[s]||"input "+s}${useShift(g)?" <em>⇧ shifted</em>":""}<span class="live" id="lvsel"></span></h4>
     ${par||back==="dp"?"":shiftBar(g)}${par&&par!=="gyp"&&g!=null&&shBtn(g)?(()=>{ const n=inMode(s,0), sh=inMode(s,1);
       return `<div class="shiftbar"><span class="note">Binding of the</span><span class="seg"><button data-l="0" class="${layer?"":"on"}"${n?"":" disabled"}>Normal</button><button data-l="1" class="${layer?"on":""}"${sh?"":" disabled"}>Shifted ⇧ ${shName(g)}</button></span>${n&&sh?"":`<span class="note">(only the ${n?"normal":"shifted"} mode has this input)</span>`}</div>`; })():""}
     ${trig}
-    <div class="modes" style="margin:6px 0">${[[1,"long press (hold)",`second set after ${((U16(118)||250)/1000).toFixed(2)} s held`],[2,"double press",`second set on a second press within ${U16(120)||250} ms`],[8,"start press","the first set is tapped the moment you press, not held"],[16,"release press",(par?"tapped when the finger leaves / the click ends (not when sliding to another zone)":"tapped when you let go")],[4,"toggle","each press switches the first set on / off"],[32,"turbo","the first set repeats while held (profile turbo rate)"],[64,"cycle","each press taps the next set in turn: press → hold → double/release"]].map(([bit,n,t])=>`<label title="${t}"><input type="checkbox" data-bit="${bit}"${m&bit?" checked":""}> ${n}</label>`).join("")}</div>
+    ${tapSrc?`<p class="note">A ${tapSrc} is a tap: pressed and let go at once. Long / double press, toggle, turbo and the rest do not apply; “release press” taps its set right after the press set.</p>`:""}
+    <div class="modes" style="margin:6px 0">${[[1,"long press (hold)",`second set after ${((U16(118)||250)/1000).toFixed(2)} s held`],[2,"double press",`second set on a second press within ${U16(120)||250} ms`],[8,"start press","the first set is tapped the moment you press, not held"],[16,"release press",(par?"tapped when the finger leaves / the click ends (not when sliding to another zone)":"tapped when you let go")],[4,"toggle","each press switches the first set on / off"],[32,"turbo","the first set repeats while held (profile turbo rate)"],[64,"cycle","each press taps the next set in turn: press → hold → double/release"]].filter(([bit])=>!tapSrc||bit===16||(m&bit)).map(([bit,n,t])=>`<label title="${t}"><input type="checkbox" data-bit="${bit}"${m&bit?" checked":""}> ${n}</label>`).join("")}</div>
     ${[0,1,2].filter(x=>x===0||(x===1&&(m&1))||(x===2&&(m&18))).map(x=>`<div class="grp"><span>${[m&8?"start":"press","hold",m&16?"release":"double"][x]}</span>${[0,1,2,3].map(i=>`<select data-gi="${x}:${i}">${OPTS}</select>`).join("")}</div>`).join("")}
     ${[0,1,2].some(x=>[0,1,2,3].some(i=>b[bo+1+x*4+i]>=0x76&&b[bo+1+x*4+i]<=0x79))?slider("mvs",U16(38)||1000,50,10000,10,"Mouse move speed","counts / s","for every “Mouse move” action in this profile"):""}
     <details class="btime"${[0,1,2,3,4].some(k=>b[bt0+k])||b[bt0+5]?" open":""}><summary>Timing of this input <span class="note">(0 = the profile’s: long ${U16(118)||250} ms, double ${U16(120)||250} ms, turbo ${U16(122)||100} ms)</span></summary>

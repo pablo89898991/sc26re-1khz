@@ -137,6 +137,7 @@ struct src_state
 	bool phys_seen;        /* pressed at least once (delays have a reference) */
 	bool turbo_on;         /* turbo: its press is out in this report */
 	bool turbo_again;      /* turbo: a press went out in this hold already (the next ones are repeats) */
+	bool pulse_rel;        /* a tap source with "release press": its release set is tapped next */
 	int32_t t_pdown, t_pup; /* ms, low 32 bits of the uptime */
 };
 static bool block_pressed; /* this report: block every source that is down */
@@ -590,6 +591,37 @@ static void pulse(const struct remap_binding *b, struct src_state *ss, int s, in
 	ss->pulse_group = 0;
 	ss->pulse_until = now + TAP_MS;
 	fire(b, 0, s);
+}
+
+/* a tap source (radial slice, wheel step, swipe) is pressed and let go at once: with "release
+ * press" its release set follows the press set, or comes alone when there is none (up to v51
+ * test 48 it never came) */
+static void tap(const struct remap_binding *b, struct src_state *ss, int s, int64_t now)
+{
+	bool any = false;
+
+	if(!(b->mode & REMAP_MODE_RELEASE))
+	{
+		pulse(b, ss, s, now);
+		return;
+	}
+	for(size_t i = 0; i < 4; ++i)
+	{
+		any = any || b->act[0][i] != 0U;
+	}
+	if(any)
+	{
+		pulse(b, ss, s, now);
+		ss->pulse_rel = true;
+		return;
+	}
+	if(now < ss->pulse_until + REPEAT_GAP_MS)
+	{
+		return; /* the last one is still going out */
+	}
+	ss->pulse_group = 2;
+	ss->pulse_until = now + TAP_MS;
+	fire(b, 2, s);
 }
 
 /* sources that only fire taps (radial slices, wheel, swipes): nothing may stay
@@ -2627,7 +2659,7 @@ void remap_process(struct controller_report *r, float dt)
 			drop_hold(ss);
 			if(radial_fire[radial_of_src[s]] == s)
 			{
-				pulse(b, ss, s, now);
+				tap(b, ss, s, now);
 			}
 		}
 		else if(s >= REMAP_SRC_LPAD_CW && s < REMAP_SRC_LT_SOFT)
@@ -2637,7 +2669,7 @@ void remap_process(struct controller_report *r, float dt)
 			drop_hold(ss);
 			if(wheel_fire[j] & BIT((s - REMAP_SRC_LPAD_CW) % 2))
 			{
-				pulse(b, ss, s, now);
+				tap(b, ss, s, now);
 			}
 		}
 		else if(s >= REMAP_SRC_LPAD_UP && s < REMAP_SRC_LPAD_GATE && swipe_mode[(s - REMAP_SRC_LPAD_UP) / 4])
@@ -2645,7 +2677,7 @@ void remap_process(struct controller_report *r, float dt)
 			drop_hold(ss);
 			if(swipe_fire[(s - REMAP_SRC_LPAD_UP) / 4] & BIT((s - REMAP_SRC_LPAD_UP) % 4))
 			{
-				pulse(b, ss, s, now);
+				tap(b, ss, s, now);
 			}
 		}
 		else
@@ -2735,7 +2767,17 @@ void remap_process(struct controller_report *r, float dt)
 		}
 		ss->turbo_again = turbo && (ss->turbo_again || !turbo_gap);
 		ss->turbo_on = turbo && !turbo_gap;
-		if(ss->pulse_more && now >= ss->pulse_until + REPEAT_GAP_MS)
+		if(ss->pulse_rel && now >= ss->pulse_until + REPEAT_GAP_MS)
+		{
+			ss->pulse_rel = false;
+			ss->pulse_group = 2;
+			ss->pulse_until = now + REPEAT_TAP_MS;
+			for(size_t i = 0; i < 4; ++i)
+			{
+				edge_action(b->act[2][i]);
+			}
+		}
+		else if(ss->pulse_more && now >= ss->pulse_until + REPEAT_GAP_MS)
 		{
 			ss->pulse_more--;
 			ss->pulse_group = 0;

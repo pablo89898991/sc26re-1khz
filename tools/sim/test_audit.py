@@ -179,6 +179,25 @@ def gyro_tilt_below_3_degrees_lets_go():
     s.run(30, **tilt(13)); a = held(s); s.run(30, **tilt(11))
     assert a == (key("w"),) and held(s) == (), (a, held(s))
 
+@test
+def release_press_on_a_radial_slice():
+    """v51 test 48, tester: "release press" on a radial menu slice never fired (a slice is a tap:
+    pressed and let go at once). Its release set follows the press set, or comes alone"""
+    def run(a0, src, pad):
+        p = Profile()
+        if pad: p.analog(2, RADIAL, dz_in=3000)
+        else: p.analog(0, RADIAL, dz_in=3000); p.anx(0, slices=8)
+        p.bind(src, a0, a2=key("q"), mode=M_RELEASE)
+        s = Sim(); s.use(p); s.run(5); s.log = []
+        if pad: s.run(40, LP_TOUCH=1, lpx=0, lpy=25000); s.run(200, LP_TOUCH=0, lpx=0, lpy=0)
+        else: s.run(40, lsy=30000); s.run(200, lsy=0)
+        return Events(s.log).kbd()
+    for src, pad in (("LS_UP", False), ("LP_UP", True)):
+        k = run((), src, pad)
+        assert k == [(key("q"),), ()], (src, "release only", k)
+        k = run(key("a"), src, pad)
+        assert k == [(key("a"),), (), (key("q"),), ()], (src, "press, then release", k)
+
 # ---------------- found by mutation testing (mutate2.py old) ----------------
 @test
 def mouse_backlog_capped_after_a_trackpad_jump():

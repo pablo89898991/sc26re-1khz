@@ -24,6 +24,8 @@ const check = (name, ok, info = '') => { results.push(ok); console.log((ok ? 'PA
   const seg = await pg.$$eval('#dlg .seg button', b => b.map(x => x.textContent + (x.disabled ? ':off' : ':on')));
   check('a slice only the shifted mode has opens its shifted binding', /shifted/.test(title), title);
   check('the normal one cannot be picked for it', seg.join() === 'Normal:off,Shifted ⇧ L5:on', seg.join());
+  const bits = await pg.$$eval('#dlg [data-bit]', x => x.map(e => e.dataset.bit));
+  check('a radial slice offers only "release press" (it is a tap)', bits.join() === '16' && /is a tap/.test(await pg.textContent('#dlg')), bits.join());
   await pg.selectOption('#dlg [data-gi="0:0"]', '4');
   await pg.click('#dlgDone');
   const [n, sh, txt] = await pg.evaluate(() => [prof[cur][bOffL(38, 0) + 1], prof[cur][bOffL(38, 1) + 1], document.querySelector('#v_map [data-s="38"] .b').textContent]);
