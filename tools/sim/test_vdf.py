@@ -273,6 +273,53 @@ def unbound_activators_leave_nothing():
     r, p = one([g], [(0, "button_diamond active")])
     assert p.b[488] == 0 and p.b[Profile.BT] == 0
 
+@test
+def triton_trigger_switches_and_thresholds():
+    """Triton 'switches' carry left/right_trigger (full pull) and *_threshold (soft pull)"""
+    sw = group(0, "switches", inp("left_trigger", act(binding="key_press Z, , ")) + inp("right_trigger_threshold", act(binding="key_press X, , ")))
+    r, p = one([sw], [(0, "switch active")])
+    assert not r["notes"], r["notes"]
+    s = fresh(p)
+    s.run(40, tl=32767, LT_CLICK=1); assert key("z") in held(s), held(s); s.run(40, tl=0, LT_CLICK=0); assert key("z") not in held(s)
+    s.run(40, tr=26000); assert key("x") in held(s), held(s); s.run(40, tr=0); assert key("x") not in held(s)
+
+@test
+def mode_shift_on_a_trigger_soft_pull():
+    """mode_shift from left_trigger_threshold shifts while the soft pull is held (shift button 31)"""
+    base = group(0, "four_buttons", inp("button_a", act(binding="key_press J, , ")))
+    shifted = group(1, "four_buttons", inp("button_a", act(binding="key_press K, , ")))
+    sw = group(2, "switches", inp("left_trigger_threshold", act(binding="mode_shift button_diamond 1")))
+    r, p = one([base, shifted, sw], [(0, "button_diamond active"), (1, "button_diamond inactive modeshift"), (2, "switch active")])
+    assert not r["notes"], r["notes"]
+    s = fresh(p)
+    s.run(30, A=1); assert key("j") in held(s); s.run(30, A=0)
+    s.run(40, tl=26000); s.run(30, A=1); assert key("k") in held(s) and key("j") not in held(s), held(s)
+    s.run(30, A=0); s.run(40, tl=0)
+    s.run(30, A=1); assert key("j") in held(s); s.run(30, A=0)
+    t = vdf(export=[p.b, None, None, None])["text"]
+    assert "left_trigger" in t and "mode_shift" in t, "export keeps the soft-pull shift"
+    p2 = prof_of(vdf(t)["profiles"][0]); assert p2.b == p.b, "round trip"
+
+@test
+def directional_swipe_imports_as_swipe():
+    g = group(0, "2dscroll", inp("dpad_north", act(binding="key_press UP_ARROW, , ")) + inp("dpad_south", act(binding="key_press DOWN_ARROW, , ")))
+    r, p = one([g], [(0, "right_trackpad active")])
+    assert not [n for n in r["notes"] if "not available" in n], r["notes"]
+    t = vdf(export=[p.b, None, None, None])["text"]
+    assert "2dscroll" in t, "export writes the swipe back as 2dscroll"
+
+@test
+def gyro_activation_mask():
+    gy = group(0, "gyro_to_mouse", settings={"gyro_natural_sensitivity": "200", "gyro_ratchet_button_mask": str(1 << 1)})
+    r, p = one([gy], [(0, "gyro active")])
+    g = lambda k: struct.unpack_from("<h", p.b, 44 + 2 * k)[0]
+    assert g(1) == 27 and g(2) == 1, (g(1), g(2))           # LT held turns the gyro on
+    gy = group(0, "gyro_to_mouse", settings={"gyro_ratchet_button_mask": str((1 << 17) | (1 << 9))})
+    r, p = one([gy], [(0, "gyro active")])
+    assert g(1) == 11 and any("2 buttons" in n for n in r["notes"]), (g(1), r["notes"])
+    t = vdf(export=[p.b, None, None, None])["text"]
+    assert "gyro_ratchet_button_mask" in t and str(1 << 9) in t, "export writes the mask"
+
 def roundtrip(text, opts=None):
     r = vdf(text, opts)
     e = vdf(export=[bytes(x) if x else None for x in r["profiles"]], exportOpts={"layers": r["layers"]})

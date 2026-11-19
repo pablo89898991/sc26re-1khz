@@ -188,6 +188,9 @@ enum
 };
 #define REMAP_SHIFT_SRC_COUNT 46
 
+/* struct remap_shift.button beyond the button bits: the triggers' soft pulls */
+#define REMAP_SHIFT_BY_SOFT_LT 31U
+#define REMAP_SHIFT_BY_SOFT_RT 32U
 struct remap_shift
 {
 	uint8_t button;    /* 0 none, else controller button bit + 1 */

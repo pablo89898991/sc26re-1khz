@@ -332,7 +332,7 @@ const U16=(o)=>new DataView(prof[cur].buffer).getUint16(o,true), setU16=(o,v)=>n
 const S16=(o)=>new DataView(prof[cur].buffer).getInt16(o,true), setS16=(o,v)=>new DataView(prof[cur].buffer).setInt16(o,v,true);
 const softPct=t=>(U16(18+2*t)||5000)/100;
 const RAWBTN=[[0,"A"],[1,"B"],[2,"X"],[3,"Y"],[19,"LB"],[9,"RB"],[27,"LT click"],[23,"RT click"],[17,"L4"],[18,"L5"],[7,"R4"],[8,"R5"],[15,"L3"],[5,"R3"],[6,"Menu"],[14,"View"],[4,"QAM"],[13,"D-pad up"],[10,"D-pad down"],[12,"D-pad left"],[11,"D-pad right"],[26,"Left pad click"],[22,"Right pad click"],[25,"Left pad touch"],[21,"Right pad touch"],[24,"Left stick touch"],[20,"Right stick touch"],[29,"Left grip touch"],[28,"Right grip touch"]];
-const SHBTN=[[0,"— none —"],...RAWBTN.map(([v,n])=>[v+1,n])];
+const SHBTN=[[0,"— none —"],...RAWBTN.map(([v,n])=>[v+1,n]),[31,"LT soft pull (firmware v51 test 61+)"],[32,"RT soft pull (firmware v51 test 61+)"]];
 const shName=g=>(SHBTN.find(([v])=>v===shBtn(g))||[0,"?"])[1];
 const MODES_STICK=[[0,"Analog (to Steam)"],[12,"Xbox stick (to the Xbox pad)"],[1,"D-pad 4-way"],[2,"D-pad 8-way"],[3,"Mouse"],[4,"Scroll"],[7,"Flick stick"],[10,"Radial menu"],[11,"Single button (whole stick)"],[13,"Mouse region (absolute cursor)"]];
 const MODES_PAD=[[0,"To Steam (not remapped)"],[1,"D-pad 4-way"],[2,"D-pad 8-way"],[9,"9 zones (grid)"],[5,"Gates (4 corners)"],[3,"Mouse"],[6,"Joystick"],[7,"Flick stick"],[4,"Scroll wheel (circle)"],[8,"Directional swipe"],[10,"Radial menu"],[11,"Single button (whole pad)"],[12,"Xbox stick (finger position)"],[13,"Mouse region (absolute cursor)"]];

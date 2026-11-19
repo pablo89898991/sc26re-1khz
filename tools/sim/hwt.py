@@ -79,7 +79,7 @@ def sim_run(case, cfg=None):
     for slot, hx in case.get("extra", {}).items():
         q = Profile(); q.b[:] = bytes.fromhex(hx); s.upload(int(slot), q)
     p = Profile(); p.b[:] = bytes.fromhex(case["profile"])
-    s.use(p, slot=SLOT)
+    s.use(p, slot=case.get("slot", SLOT))
     s.lib.sim_xbox(1 if s.cfg_get("pad_out") else 0)  # Xbox actions go to the Xbox pad only while it is on
     s.run(50)
     sb = bytes.fromhex(case["script"])
@@ -201,11 +201,11 @@ def need(cond, msg, probs):
 
 # ---------------- the cases
 CASES = []
-def case(name, what, tol_ms=6, snap=False, rel=0.06):
+def case(name, what, tol_ms=6, snap=False, rel=0.06, slot=None):
     """rel: how far apart analog totals may be (a trackball's speed depends on when the loop
     measures it against the 5 ms steps of the script)"""
     def deco(f):
-        CASES.append(dict(name=name, what=what, f=f, tol=tol_ms, snap=snap, rel=rel)); return f
+        CASES.append(dict(name=name, what=what, f=f, tol=tol_ms, snap=snap, rel=rel, slot=SLOT if slot is None else slot)); return f
     return deco
 
 def S(ms, **st): return (ms, st)
@@ -1258,13 +1258,19 @@ def _region_deg(v):
 _sweep("set_gyro_region_deg", "gyro region %s degrees across", (20, 60, 180), _region_deg)
 
 
+# real Steam Input layouts (hwt_vdf.py)
+sys.modules.setdefault("hwt", sys.modules[__name__])
+import hwt_vdf
+hwt_vdf.register()
+
+
 def build():
     out = []
     for c in CASES:
         _extra.clear()
         p, steps, _ = c["f"]()
         out.append(dict(name=c["name"], what=c["what"], profile=bytes(p.b).hex(), script=script_bytes(steps).hex(),
-                        ms=sum(ms for ms, _ in steps), snap=c["snap"], tol=c["tol"], rel=c["rel"], extra={str(k): bytes(v.b).hex() for k, v in _extra.items()}))
+                        ms=sum(ms for ms, _ in steps), snap=c["snap"], tol=c["tol"], rel=c["rel"], slot=c["slot"], extra={str(k): bytes(v.b).hex() for k, v in _extra.items()}))
     return out
 
 

@@ -33,7 +33,7 @@ async function slot3() { let out = ''; for (let o = 0; o < 3232; ) { const r = a
   await pg.click('#run');
   const done = await pg.waitForFunction(() => /are back|RESTORE FAILED/.test(document.querySelector('#log').textContent), null, { timeout: 600000 }).then(() => true, () => false);
   check('runs every case and restores', done && /are back/.test(await pg.textContent('#log')), (await pg.textContent('#log')).slice(-300));
-  check('the page itself finds no difference from the simulator', / (\d+) of \1 as in the simulator/.test(await pg.textContent('#log')), (await pg.textContent('#log')).match(/\d+ of \d+ as in the simulator/));
+  check('the page itself finds no difference from the simulator', /(?<!\d)(\d+) of \1 as in the simulator/.test(await pg.textContent('#log')), (await pg.textContent('#log')).match(/\d+ of \d+ as in the simulator/));
   const res = await pg.evaluate(() => window.hwtResults);
   check('results for every case, no errors', res && res.results.length > 20 && res.results.every(r => !r.error), res && JSON.stringify(res.results.filter(r => r.error)).slice(0, 300));
   fs.writeFileSync('/tmp/hwt_res.json', JSON.stringify(res));

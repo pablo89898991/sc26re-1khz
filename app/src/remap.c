@@ -2134,7 +2134,11 @@ void remap_process(struct controller_report *r, float dt)
 	for(int g = 0; g < REMAP_SHIFT_GROUPS; ++g)
 	{
 		uint8_t sb = p->shift[g].button;
-		bool on = sb >= 1U && sb <= 30U && (raw & BIT(sb - 1U)) != 0U;
+		/* 1..30: a button (bit + 1); 31 / 32: the left / right trigger's soft pull (Steam's
+		 * "left_trigger_threshold" switch: a mode shift held by a half pulled trigger) - v51 test 61.
+		 * The soft pull of the last report: the triggers are read further down */
+		bool on = (sb >= 1U && sb <= 30U && (raw & BIT(sb - 1U)) != 0U) ||
+		          (sb == REMAP_SHIFT_BY_SOFT_LT && soft_past[0]) || (sb == REMAP_SHIFT_BY_SOFT_RT && soft_past[1]);
 
 		if(sb >= 1U && sb <= 30U)
 		{

@@ -104,6 +104,12 @@
   const SWITCH = { button_escape: 6, button_menu: 14, left_bumper: 19, right_bumper: 9, button_back_left_upper: 17, button_back_left: 18,
     button_back_right_upper: 7, button_back_right: 8, button_capture: 4 };
   const SWITCHNAME = Object.fromEntries(Object.entries(SWITCH).map(([k, v]) => [v, k]));
+  /* Steam's gyro activation mask bit -> button bit, and back */
+  const GYRO_MASK_BTN = { 0: 23, 1: 27, 2: 9, 3: 19, 4: 3, 5: 1, 6: 2, 7: 0, 8: 13, 9: 11, 10: 12, 11: 10, 12: 14, 13: 16, 14: 6, 15: 18, 16: 8, 17: 26, 18: 22, 19: 25, 20: 21, 22: 15, 46: 24, 47: 20 };
+  const GYRO_MASK_BIT = Object.fromEntries(Object.entries(GYRO_MASK_BTN).map(([k, v]) => [v, +k]));
+  const BTN_NAME = { 0: "A", 1: "B", 2: "X", 3: "Y", 6: "Menu", 7: "R4", 8: "R5", 9: "RB", 10: "D-pad down", 11: "D-pad right", 12: "D-pad left", 13: "D-pad up",
+    14: "View", 15: "L3", 16: "Steam", 17: "L4", 18: "L5", 19: "LB", 20: "right stick touch", 21: "right pad touch", 22: "right pad click", 23: "RT click",
+    24: "left stick touch", 25: "left pad touch", 26: "left pad click", 27: "LT click" };
   const DIAMOND = { button_a: 0, button_b: 1, button_x: 2, button_y: 3 };
   /* Steam sources -> analog index (0 LS, 1 RS, 2 LP, 3 RP) / shift group */
   const SOURCES = { switch: { kind: "switch" }, button_diamond: { kind: "diamond", g: 0 }, dpad: { kind: "dpad", g: 1 },
@@ -273,6 +279,10 @@
           if (name in SWITCH) bindAt(SWITCH[name], inp);
           else if (name in DIAMOND) bindAt(DIAMOND[name], inp);
           else if (name === "left_stick_click" || name === "right_stick_click") bindAt(name[0] === "l" ? 15 : 5, inp);
+          /* the Steam Controller 2026's triggers as switches: the full pull (click) and the threshold
+           * (soft pull) - "Left Trigger Enables Gyro" style layouts shift with them */
+          else if (name === "left_trigger" || name === "right_trigger") bindAt(name[0] === "l" ? 27 : 23, inp);
+          else if (name === "left_trigger_threshold" || name === "right_trigger_threshold") bindAt(name[0] === "l" ? 58 : 59, inp);
           else this.note("button " + name + ": not on this controller");
         }
         return;
@@ -358,6 +368,10 @@
           if (mode !== "radial_menu") this.note(`${mode.replace("_", " ")} on ${AN_SRC[i]}: used as a radial menu (no on-screen menu: find the slices by feel)`);
           if (S("touchmenu_button_fire_type") === 1 || S("requires_click") === 1) b[ao + 1] |= 1;
           break; }
+        case "2dscroll": case "directional_swipe":
+          /* Steam's directional swipe: a swipe fires its direction */
+          if (pad) { setMode(8); setU16(b, ao + 2, dzIn(2000)); } else this.note(`${AN_SRC[i]} as “${mode}”: not available, left to Steam`);
+          break;
         case "single_button":
           setMode(11); break;
         case "mouse_region":
@@ -435,7 +449,9 @@
           if (r.act != null) acts.push(r.act);
           else if (r.modeShift) {
             ctx.shiftBtn = ctx.shiftBtn || {};
-            if (s < 30 && shiftG == null) { ctx.shiftBtn[r.modeShift.source + " " + r.modeShift.group] = s; bound++; }
+            /* a button, or a trigger's soft pull (shift button 31 / 32 in the firmware, v51 test 61+) */
+            const sb = s < 30 ? s : s === 58 ? 30 : s === 59 ? 31 : null;
+            if (sb != null && shiftG == null) { ctx.shiftBtn[r.modeShift.source + " " + r.modeShift.group] = sb; bound++; }
             else this.note("mode shift from a stick, pad or shifted input: only a plain button can shift");
           }
           else if (r.profile != null) {
@@ -502,7 +518,23 @@
       const btn = gb != null ? (SWITCH[gb] ?? DIAMOND[gb] ?? null) : null;
       if (btn != null) { G(K("gm_act_button"), btn); G(K("gm_act_mode"), inv === 1 ? 2 : inv === 2 ? 3 : 1); }
       else if (gb != null && gb !== "0" && gb !== "1") this.note("gyro activation button “" + gb + "”: not recognised, the gyro is always on");
-      if (S("gyro_ratchet_button_mask")) this.note("gyro activation buttons: Steam stores them as a button mask this page cannot read — the gyro is on all the time; set the activation button on the Gyro page (“this profile”)");
+      {
+        /* Steam's gyro activation buttons as a mask: the Steam Controller's button bits (0 RT, 1 LT, 2 RB,
+         * 3 LB, 4 Y, 5 B, 6 X, 7 A, 8..11 D-pad up / right / left / down, 12 View, 13 Steam, 14 Menu,
+         * 15 / 16 the lower back buttons, 17 / 18 pad clicks, 19 / 20 pad touches, 22 L3; on the newer
+         * controllers 46 / 47 the stick touches). The firmware takes one button: the first one known */
+        const mstr = get(set, "gyro_ratchet_button_mask");
+        if (mstr != null && mstr !== "0") {
+          const MB = GYRO_MASK_BTN;
+          let m = BigInt(mstr), bits = [];
+          for (let i = 0; m; i++, m >>= 1n) if (m & 1n) bits.push(i);
+          const known = bits.filter(i => MB[i] != null);
+          if (known.length) {
+            G(K("gm_act_button"), MB[known[0]]); G(K("gm_act_mode"), 1);
+            if (bits.length > 1) this.note(`gyro activation: ${bits.length} buttons in Steam, here only the first one (${BTN_NAME[MB[known[0]]] || MB[known[0]]}) turns the gyro on`);
+          } else this.note("gyro activation buttons: none this controller knows (mask " + mstr + "), the gyro is on all the time");
+        }
+      }
       if (S("acceleration")) G(K("gm_accel"), 50);
       if (conv == null && S("invert_x") == null && S("invert_y") == null) { /* nothing */ }
       if (S("haptic_intensity")) G(K("gm_haptic"), Math.min(3, S("haptic_intensity")));
@@ -583,7 +615,8 @@
       if (m === 3) { mode = pad ? "absolute_mouse" : "joystick_mouse"; set.push(["sensitivity", String(Math.round(sp / (pad ? 12 : 15)))]); if (pad) { if (b[ao + 1] & 0x80) { set.push(["trackball", "1"]); set.push(["friction", String(Math.round((u16(b, ao + 4) || 200) / 100))]); } else set.push(["trackball", "0"]); } }
       if (m === 4) mode = "scrollwheel";
       if (m === 1 || m === 2) { mode = "dpad"; set.push(["layout", m === 2 ? "1" : "0"]); }
-      if (m === 5 || m === 9 || m === 8) { mode = "dpad"; dropped.add(m === 5 ? "trackpad gates (as D-pad)" : m === 9 ? "trackpad 9-zone grid (as D-pad)" : "directional swipe (as D-pad)"); }
+      if (m === 5 || m === 9) { mode = "dpad"; dropped.add(m === 5 ? "trackpad gates (as D-pad)" : "trackpad 9-zone grid (as D-pad)"); }
+      if (m === 8) mode = pad ? "2dscroll" : "dpad"; /* Steam's directional swipe */
       if (m === 7) mode = "flickstick";
       if (m === 10) mode = "radial_menu";
       if (m === 11) mode = "single_button";
@@ -655,7 +688,8 @@
         if (!name) {
           const T = { 0: ["button_diamond", "button_a"], 1: ["button_diamond", "button_b"], 2: ["button_diamond", "button_x"], 3: ["button_diamond", "button_y"],
             13: ["dpad", "dpad_north"], 10: ["dpad", "dpad_south"], 12: ["dpad", "dpad_west"], 11: ["dpad", "dpad_east"], 15: ["joystick", "click"], 5: ["right_joystick", "click"],
-            26: ["left_trackpad", "click"], 22: ["right_trackpad", "click"], 27: ["left_trigger", "edge"], 23: ["right_trigger", "edge"] }[bit];
+            26: ["left_trackpad", "click"], 22: ["right_trackpad", "click"], 27: ["left_trigger", "edge"], 23: ["right_trigger", "edge"],
+            30: ["left_trigger", "click"], 31: ["right_trigger", "click"] }[bit];
           const gnode = T && baseIds[T[0]] != null ? groups.find(gr => get(gr, "id") === baseIds[T[0]]) : null;
           if (!gnode) { dropped.add("mode shift on a button Steam cannot shift with"); continue; }
           host = get(gnode, "inputs"); name = T[1];
@@ -672,7 +706,9 @@
         if (g(11)) set.push(["acceleration", "2"]);
         if (g(19)) set.push(["haptic_intensity", String(g(19))]);
         if (g(3) < 0) set.push(["invert_y", "1"]); if (g(4) < 0) set.push(["invert_x", "1"]);
-        const ab = g(1); if (ab >= 0 && SWITCHNAME[ab]) { set.push(["gyro_button", SWITCHNAME[ab]]); set.push(["gyro_button_invert", String(g(2) === 2 ? 1 : g(2) === 3 ? 2 : 0)]); }
+        const ab = g(1);
+        if (ab >= 0 && SWITCHNAME[ab]) { set.push(["gyro_button", SWITCHNAME[ab]]); set.push(["gyro_button_invert", String(g(2) === 2 ? 1 : g(2) === 3 ? 2 : 0)]); }
+        else if (ab >= 0 && GYRO_MASK_BIT[ab] != null && g(2) === 1) set.push(["gyro_ratchet_button_mask", String(1n << BigInt(GYRO_MASK_BIT[ab]))]); /* held: Steam's mask */
         const id = addGroup(out === 0 ? "gyro_to_mouse" : out <= 2 ? "gyro_to_joystick_camera" : "gyro_to_joystick_deflection", [], set);
         gsb.push([id, "gyro active"]);
       }
