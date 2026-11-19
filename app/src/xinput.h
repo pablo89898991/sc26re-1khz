@@ -17,7 +17,7 @@ bool xinput_enabled(void);
 bool xinput_live(void);
 /* diagnostics: [0] bit0 on at power-on, bit1 interface enabled by the host, bit2 class bound;
  * [1] pad_out now; [2..3] reports the host took; [4..5] vendor requests seen */
-void xinput_diag(uint8_t out[6]);
+void xinput_diag(uint8_t out[8]); /* flags, pad_out, reports taken, class requests, MS OS 2.0 reads */
 /* send the final pad state as an Xbox 360 report (only when it changed) */
 void xinput_send(const struct controller_report *r, uint32_t extra);
 /* XInput active: leave only Steam / QAM in the Steam pad report */

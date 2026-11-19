@@ -1138,7 +1138,7 @@ void remap_diag(uint8_t *out)
 #ifndef SC26RE_SIM
 	xinput_diag(&out[8]);
 #else
-	memset(&out[8], 0, 6);
+	memset(&out[8], 0, 8);
 #endif
 }
 

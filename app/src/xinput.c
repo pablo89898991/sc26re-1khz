@@ -149,12 +149,16 @@ static struct xi_bos xi_bos = {
 	},
 };
 
+static uint16_t xi_msos_n; /* diagnostics: the host read the MS OS 2.0 descriptor set */
+static bool xi_setup_err;  /* the BOS descriptor or bcdUSB 2.01 could not be set */
+
 static int xi_msos_to_host(const struct usbd_context *const ctx, const struct usb_setup_packet *const setup,
                            struct net_buf *const buf)
 {
 	ARG_UNUSED(ctx);
 	if(setup->bRequest == XINPUT_VENDOR_CODE && setup->wIndex == MS_OS_20_DESCRIPTOR_INDEX)
 	{
+		xi_msos_n++;
 		xi_msos.function.bFirstInterface = xi_desc.if0.bInterfaceNumber;
 		net_buf_add_mem(buf, &xi_msos, MIN(net_buf_tailroom(buf), MIN(setup->wLength, sizeof(xi_msos))));
 		return 0;
@@ -347,20 +351,22 @@ void xinput_setup(struct usbd_context *ctx, bool on)
 	   usbd_device_set_bcd_usb(ctx, USBD_SPEED_FS, 0x0201) != 0)
 	{
 		LOG_ERR("XInput: MS OS 2.0 descriptor not added");
+		xi_setup_err = true;
 	}
 	/* Windows keeps what it learned about a device per VID / PID / bcdDevice: a release
 	 * number of its own makes it read the descriptors again (with the Xbox interface and
 	 * its compatible ID) instead of using what it stored for the plain Steam Controller */
-	(void)usbd_device_set_bcd_device(ctx, 0x0361); /* changed with the descriptors / requests (v51test41) */
+	(void)usbd_device_set_bcd_device(ctx, 0x0362); /* changed with the descriptors / requests (v51test50) */
 }
 
-void xinput_diag(uint8_t out[6])
+void xinput_diag(uint8_t out[8])
 {
 	out[0] = (uint8_t)((xi_active ? 1U : 0U) | (atomic_get(&xi_enabled) ? 2U : 0U) | (xi_cdata ? 4U : 0U) |
-	                   (xinput_live() ? 8U : 0U));
+	                   (xinput_live() ? 8U : 0U) | (xi_setup_err ? 16U : 0U));
 	out[1] = (uint8_t)sc26re_cfg_get(SC26RE_CFG_PAD_OUT);
 	sys_put_le16(xi_sent_n, &out[2]);
 	sys_put_le16(xi_ctrl_n, &out[4]);
+	sys_put_le16(xi_msos_n, &out[6]);
 }
 
 const char *xinput_class_name(void)
