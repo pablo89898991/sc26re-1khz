@@ -47,6 +47,7 @@
     <div class="bar">
       <button class="primary" id="connect">Connect controller…</button>
       <button id="reset">Reset stats</button>
+      <button id="rec20" title="every state report for 20 s as a CSV file: host time, sequence, IMU timestamp, gyro">Record 20 s (CSV)</button>
       <label class="note">Report ID <select id="rid"><option value="auto">auto</option></select></label>
       <label class="note">Window <select id="win"><option value="1">1 s</option><option value="2" selected>2 s</option><option value="5">5 s</option></select></label>
       <label class="note" title="Stops the controller from switching itself off for inactivity while this page is open (firmware v44+)."><input type="checkbox" id="stayOn" checked> Keep controller on</label>
@@ -1151,8 +1152,15 @@ function onReport(e){
     if(dv.byteLength>=OFF.q+8) rec.q=[0,1,2,3].map(i=>dv.getInt16(OFF.q+2*i,true));
     if(rec.q&&$("#qmode").value==="hap") hapIngest(rec.q,t);
   }
+  if(recBuf&&rec.ts!==undefined) recBuf.push([t.toFixed(3),dv.byteLength>OFF.seq?dv.getUint8(OFF.seq):"",rec.ts,rec.g[0],rec.g[1],rec.g[2]].join(","));
   ev.push(rec);
 }
+let recBuf=null, REC_MS=20000;
+$("#rec20").addEventListener("click",()=>{
+  if(recBuf) return; recBuf=["host_ms,seq,imu_ts_us,gx,gy,gz"]; const b=$("#rec20"); b.textContent="Recording… 20 s";
+  setTimeout(()=>{ const d=recBuf; recBuf=null; b.textContent="Record 20 s (CSV)";
+    downloadBlob(d.join("\n")+"\n",`sc26re-gyro-${new Date().toISOString().slice(0,19).replace(/[:T]/g,"-")}.csv`); },REC_MS);
+});
 
 const med=a=>{if(!a.length)return null;const s=[...a].sort((x,y)=>x-y);return s[s.length>>1];};
 function pct(a,p){if(!a.length)return null;const s=[...a].sort((x,y)=>x-y);return s[Math.min(s.length-1,Math.floor(s.length*p))];}

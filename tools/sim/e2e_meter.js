@@ -29,6 +29,11 @@ const AUTO = -32768;
   await sleep(2500);
   const rate = await pg.textContent('#sRate');
   check('counts the pad reports', /\d/.test(rate) && +rate.replace(/[^\d.]/g, '') > 50, rate);
+  /* the gyro recording for timing problems: one CSV row per state report */
+  { await pg.evaluate(() => { REC_MS = 1500; });
+    const [dl] = await Promise.all([pg.waitForEvent('download', { timeout: 10000 }).catch(() => null), pg.click('#rec20')]);
+    const rows = dl ? require('fs').readFileSync(await dl.path(), 'utf8').trim().split('\n') : [];
+    check('records the gyro as CSV', rows[0] === 'host_ms,seq,imu_ts_us,gx,gy,gz' && rows.length > 50 && rows.slice(1).every(r => r.split(',').length === 6), rows.length + ' ' + rows[1]); }
   /* live settings: the page shows what the firmware has */
   await pg.click('#lsRead');
   check('reads the live settings', await pg.waitForFunction(() => /read|err|fail/.test(document.querySelector('#lsStatus').textContent), null, { timeout: 30000 }).then(() => true, () => false) && /read/.test(await pg.textContent('#lsStatus')), await pg.textContent('#lsStatus'));
