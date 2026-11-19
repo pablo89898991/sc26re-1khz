@@ -1,6 +1,6 @@
 """Profile v7: per binding timing, stick radial / single / mouse region, pad region + edge spin,
 gyro tilt / region, trigger curve, H/V sensitivity, v6 upgrade."""
-import sys, traceback, math, struct
+import math, sys, traceback, math, struct
 from simlib import *
 from test_remap import touch, lift
 
@@ -368,6 +368,52 @@ def wheel_left_and_right():
     s.run(30, B=1); s.run(30, B=0); s.run(30); r = s.host()["pan"] - h0
     s.run(30, X=1); s.run(30, X=0); s.run(30); l = s.host()["pan"] - h0 - r
     assert r > 0 and l < 0, (r, l)
+
+@test
+def region_on_big_screens_over_the_radio():
+    """2560 x 1440 and 3840 x 2160: the way into the corner and out is longer than the backlog a slow
+    link may keep - the cursor must still end on its point, starting from the far corner"""
+    for (W, H) in ((1920, 1080), (2560, 1440), (3840, 2160)):
+        for link, loss, ci in ((1, 0, 15), (2, 0, 15), (2, 0, 45), (1, 150, 15), (2, 100, 45)):
+            p = Profile(); p.analog(2, REGION); p.anx(2, region=(50, 50, 100, 100)); p.screen(W, H)
+            s = Sim(); s.transport(link, 1 if link == 1 else 0, loss=loss, ci=ci); s.use(p, 0); s.run(20); s.log.clear()
+            x, y = W - 1.0, H - 1.0
+            want = []
+            for (px, py) in ((30000, -30000), (-25000, 20000), (0, 0)):
+                s.run(6000, LP_TOUCH=1, lpx=px, lpy=py)
+                for e in s.log:
+                    f = e.split()
+                    if f[1] == "HM": x = min(max(x + int(f[3]), 0), W - 1); y = min(max(y + int(f[4]), 0), H - 1)
+                s.log.clear()
+                tx = (0.5 + px / 32767 * 0.5) * W; ty = (0.5 - py / 32767 * 0.5) * H
+                assert abs(x - tx) <= 3 and abs(y - ty) <= 3, ((W, H), link, loss, ci, (px, py), (round(x), round(y)), (round(tx), round(ty)))
+                s.run(100, LP_TOUCH=0, lpx=0, lpy=0)
+                for e in s.log:
+                    f = e.split()
+                    if f[1] == "HM": x = min(max(x + int(f[3]), 0), W - 1); y = min(max(y + int(f[4]), 0), H - 1)
+                s.log.clear()
+
+@test
+def flick_turns_arrive_whole_over_slow_links():
+    """flick stick: a 180 degree flick and a full stick rotation are exact turns - on a slow link
+    they may arrive later, never shorter (16364 counts per 360 in the simulator)"""
+    for link, loss, ci in ((0, 0, 15), (1, 0, 15), (2, 0, 15), (2, 0, 45), (1, 150, 15), (2, 100, 45)):
+        p = Profile(); p.analog(1, FLICK, dz_in=8000, speed=100)
+        s = Sim(); s.transport(link, 1 if link == 1 else 0, loss=loss, ci=ci); s.use(p, 0); s.run(20)
+        h0 = s.host()["dx"]
+        s.run(60, rsx=0, rsy=-32767)          # flick backwards: 180 degrees
+        s.run(30, rsx=0, rsy=0); s.run(6000)
+        d = s.host()["dx"] - h0
+        assert abs(abs(d) - 16364 / 2) <= 2, (link, loss, ci, "flick", d)
+        h0 = s.host()["dx"]
+        # point up, then turn the stick once round clockwise in 0.5 s, let go
+        s.run(30, rsx=0, rsy=32767)
+        for k in range(1, 101):
+            a = math.radians(k * 3.6)
+            s.run(5, rsx=int(32767 * math.sin(a)), rsy=int(32767 * math.cos(a)))
+        s.run(30, rsx=0, rsy=0); s.run(6000)
+        d = s.host()["dx"] - h0
+        assert abs(d - 16364) <= 3, (link, loss, ci, "rotation", d)
 
 if __name__ == "__main__":
     ok = fail = 0

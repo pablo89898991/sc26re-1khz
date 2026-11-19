@@ -185,6 +185,9 @@ static uint8_t rel_phase;   /* relative mouse region: 0 not homed, 1 on the way 
 static int64_t rel_home_ms;
 static float rel_tgt[2];    /* the last position asked for, 0..1 of the screen */
 static float rel_cur[2];    /* ... and is now here (pixels) */
+/* mouse counts that must all arrive (mouse region, flick stick turns): fed to the mouse a report's
+ * worth at a time, so the backlog cap a slow link puts on ordinary movement never cuts them */
+static float precise_pending[2];
 static uint16_t abs_last[2] = { 0xFFFF, 0xFFFF };
 static int8_t layer_now = -1, layer_next = -1; /* action layer: profile laid over the current one */
 static int8_t layer_holder = -1, layer_holder_next = -1; /* the source holding the layer */
@@ -1258,6 +1261,11 @@ static void release_all(void)
 		st[i].held_group = -1;
 	}
 	memset(mouse_acc, 0, sizeof(mouse_acc));
+	memset(precise_pending, 0, sizeof(precise_pending));
+	rel_phase = 0U;
+	memset(region_on, 0, sizeof(region_on));
+	memset(region_was, 0, sizeof(region_was));
+	abs_last[0] = abs_last[1] = 0xFFFFU;
 	memset(wheel_valid, 0, sizeof(wheel_valid));
 	memset(pad_prev_valid, 0, sizeof(pad_prev_valid));
 	memset(swipe_valid, 0, sizeof(swipe_valid));
@@ -1342,7 +1350,7 @@ static void flick(int i, const struct remap_analog *an, bool active, float fx, f
 	}
 	else
 	{
-		mouse_acc[0] += c360 * wrap180(a - flick_last[i]) / 360.0f;
+		precise_pending[0] += c360 * wrap180(a - flick_last[i]) / 360.0f;
 	}
 	flick_last[i] = a;
 }
@@ -1357,7 +1365,7 @@ static void flick_step(float dt)
 	}
 	step = MIN(fabsf(flick_left), flick_rate * MAX(dt, 0.0005f));
 	step = flick_left > 0.0f ? step : -step;
-	mouse_acc[0] += step;
+	precise_pending[0] += step;
 	flick_left -= step;
 	if(fabsf(flick_left) < 0.001f)
 	{
@@ -1813,8 +1821,8 @@ static void region_output(const struct remap_profile *p)
 
 		if(rel_phase == 0U)
 		{
-			mouse_acc[0] -= sw * 1.25f; /* into the corner, wherever the cursor is */
-			mouse_acc[1] -= sh * 1.25f;
+			precise_pending[0] = -sw * 1.25f; /* into the corner, wherever the cursor is */
+			precise_pending[1] = -sh * 1.25f;
 			rel_cur[0] = rel_cur[1] = 0.0f;
 			rel_phase = 1U;
 			rel_home_ms = now;
@@ -1825,7 +1833,8 @@ static void region_output(const struct remap_profile *p)
 			 * radio queue: the PC stops the cursor at the screen edge, so a move
 			 * out merged into a move in (the Puck merges queued mouse reports)
 			 * would be lost against that edge */
-			if(fabsf(mouse_acc[0]) >= 1.0f || fabsf(mouse_acc[1]) >= 1.0f)
+			if(fabsf(precise_pending[0]) >= 1.0f || fabsf(precise_pending[1]) >= 1.0f || fabsf(mouse_acc[0]) >= 1.0f ||
+			   fabsf(mouse_acc[1]) >= 1.0f)
 			{
 				rel_home_ms = now; /* still on the way */
 				return;
@@ -1836,8 +1845,8 @@ static void region_output(const struct remap_profile *p)
 			}
 			rel_phase = 2U;
 		}
-		mouse_acc[0] += tx * sw - rel_cur[0];
-		mouse_acc[1] += ty * sh - rel_cur[1];
+		precise_pending[0] += tx * sw - rel_cur[0];
+		precise_pending[1] += ty * sh - rel_cur[1];
 		rel_cur[0] = tx * sw;
 		rel_cur[1] = ty * sh;
 		if(k < 0)
@@ -2766,6 +2775,17 @@ void remap_process(struct controller_report *r, float dt)
 	}
 	flick_step(dt);
 	region_output(p);
+	/* region and flick counts: into the mouse a report's worth at a time */
+	for(int i = 0; i < 2; ++i)
+	{
+		if(precise_pending[i] != 0.0f && fabsf(mouse_acc[i]) < 127.0f)
+		{
+			float t = CLAMP(precise_pending[i], -254.0f, 254.0f);
+
+			mouse_acc[i] += t;
+			precise_pending[i] -= t;
+		}
+	}
 	/* macros: each step holds its action for its time */
 	for(int m = 0; m < 4; ++m)
 	{

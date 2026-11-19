@@ -266,12 +266,37 @@ static int xi_control_to_host(struct usbd_class_data *c_data, const struct usb_s
 
 	ARG_UNUSED(c_data);
 	xi_ctrl_n++;
+	/* GET_DEVICE_ID (MS-XUSBI: C0 01 0000 0000, 4 bytes, the device is the recipient): a
+	 * serial number; it reaches this class through the vendor request table below */
+	if(setup->RequestType.type == USB_REQTYPE_TYPE_VENDOR && setup->bRequest == 0x01U &&
+	   setup->RequestType.recipient == USB_REQTYPE_RECIPIENT_DEVICE)
+	{
+		static const uint8_t id[4] = { 0x26, 0x20, 0xDE, 0x28 };
+
+		net_buf_add_mem(buf, id, MIN(MIN(sizeof(id), (size_t)setup->wLength), net_buf_tailroom(buf)));
+		return 0;
+	}
+	/* GET_CAPABILITIES (C1 01, wIndex = this interface) */
 	if(setup->RequestType.type == USB_REQTYPE_TYPE_VENDOR && setup->bRequest == 0x01U)
 	{
 		const uint8_t *d = setup->wValue == 0x0100U ? caps_in : caps_out;
 		size_t n = setup->wValue == 0x0100U ? sizeof(caps_in) : sizeof(caps_out);
 
 		net_buf_add_mem(buf, d, MIN(MIN(n, (size_t)setup->wLength), net_buf_tailroom(buf)));
+		return 0;
+	}
+	/* HID-style GET_REPORT (A1 01 01xx, wIndex = this interface): the last input report */
+	if(setup->RequestType.type == USB_REQTYPE_TYPE_CLASS && setup->bRequest == 0x01U)
+	{
+		uint8_t rep[XINPUT_REPORT_SIZE] = { 0x00, XINPUT_REPORT_SIZE };
+		k_spinlock_key_t key = k_spin_lock(&xi_lock);
+
+		if(xi_last_valid)
+		{
+			memcpy(rep, xi_last, sizeof(rep));
+		}
+		k_spin_unlock(&xi_lock, key);
+		net_buf_add_mem(buf, rep, MIN(MIN(sizeof(rep), (size_t)setup->wLength), net_buf_tailroom(buf)));
 		return 0;
 	}
 	errno = -ENOTSUP;
@@ -282,8 +307,14 @@ static int xi_control_to_dev(struct usbd_class_data *c_data, const struct usb_se
                              const struct net_buf *const buf)
 {
 	ARG_UNUSED(c_data);
-	ARG_UNUSED(setup);
-	ARG_UNUSED(buf);
+	xi_ctrl_n++;
+	/* HID-style SET_REPORT (21 09 0200): output data, as on the OUT endpoint (rumble) */
+	if(setup->RequestType.type == USB_REQTYPE_TYPE_CLASS && setup->bRequest == 0x09U && buf != NULL &&
+	   buf->len >= 5U && buf->data[0] == 0x00U && buf->data[1] == 0x08U)
+	{
+		haptics_xinput_rumble(buf->data[3], buf->data[4]);
+	}
+	/* SET_CONTROL (41 00), SET_BIND_INFO (40 01): accepted */
 	return 0;
 }
 
@@ -297,7 +328,10 @@ static struct usbd_class_api xi_api = {
 	.control_to_dev = xi_control_to_dev,
 };
 
-USBD_DEFINE_CLASS(xinput_0, &xi_api, NULL, NULL);
+/* device-level vendor request 0x01 (GET_DEVICE_ID) comes to this class */
+static const struct usbd_cctx_vendor_req xi_vreqs = USBD_VENDOR_REQ(0x01);
+
+USBD_DEFINE_CLASS(xinput_0, &xi_api, NULL, &xi_vreqs);
 
 /* ---- API ---- */
 
@@ -316,7 +350,7 @@ void xinput_setup(struct usbd_context *ctx, bool on)
 	/* Windows keeps what it learned about a device per VID / PID / bcdDevice: a release
 	 * number of its own makes it read the descriptors again (with the Xbox interface and
 	 * its compatible ID) instead of using what it stored for the plain Steam Controller */
-	(void)usbd_device_set_bcd_device(ctx, 0x0360);
+	(void)usbd_device_set_bcd_device(ctx, 0x0361); /* changed with the descriptors / requests (v51test41) */
 }
 
 void xinput_diag(uint8_t out[6])

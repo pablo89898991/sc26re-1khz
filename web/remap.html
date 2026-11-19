@@ -557,7 +557,7 @@ function editor(){
       ${slider("phold",U16(118)||250,100,1000,10,"Long press time","ms","how long to hold for “long press”")}
       ${slider("pdbl",U16(120)||250,100,600,10,"Double press window","ms","time for the second press")}
       ${slider("pturbo",U16(122)||100,20,1000,5,"Turbo period","ms",`${(1000/(U16(122)||100)).toFixed(1)} presses per second`)}
-      <div class="row2"><label>Screen size</label><span><input type="number" class="num" id="scrw" min="320" max="16384" value="${U16(SCREEN)||1920}" style="width:80px"> × <input type="number" class="num" id="scrh" min="200" max="16384" value="${U16(SCREEN+2)||1080}" style="width:80px"> <span class="note">px</span></span><small>for mouse regions over the Puck / Bluetooth (the cable sends an absolute position)</small></div>
+      <div class="row2"><label>Screen size</label><span><input type="number" class="num" id="scrw" min="320" max="16384" value="${U16(SCREEN)||1920}" style="width:80px"> × <input type="number" class="num" id="scrh" min="200" max="16384" value="${U16(SCREEN+2)||1080}" style="width:80px"> <span class="note">px</span> <button class="ghost" id="scrme" title="the size of the screen this page is on">this screen</button></span><small>for mouse regions over the Puck / Bluetooth (the cable sends an absolute position); Windows: “Enhance pointer precision” off</small></div>
       <div class="sect" style="margin-left:0">Macros</div>
       <div class="row2"><label>Macro</label><span>${[0,1,2,3].map(i=>`<button class="ghost${i===mm?" on":""}" data-msel="${i}">Macro ${i+1}</button>`).join(" ")}</span><small>bind “Run macro N” to any input; each step holds its action for its time (action “—” = wait); an empty step ends it</small></div>
       <div class="msteps">${steps}</div>
@@ -567,6 +567,7 @@ function editor(){
       <div class="row2"><label>Load a preset</label><span>${PRESETS.map((x,i)=>`<button class="ghost" data-pre="${i}">${x[0]}</button>`).join(" ")}</span><small>replaces this profile’s bindings</small></div>`;
     wireSl("phold",v=>setU16(118,Math.round(v))); wireSl("pdbl",v=>setU16(120,Math.round(v))); wireSl("pturbo",v=>setU16(122,Math.round(v)));
     $("#scrw").onchange=e=>{ const v=Math.round(+e.target.value); setU16(SCREEN,v===1920?0:Math.max(320,Math.min(16384,v))); setDirty(); };
+    $("#scrme").onclick=()=>{ const [w,h]=screenPx(); $("#scrw").value=w; $("#scrh").value=h; setU16(SCREEN,w===1920?0:w); setU16(SCREEN+2,h===1080?0:h); setDirty(); };
     $("#scrh").onchange=e=>{ const v=Math.round(+e.target.value); setU16(SCREEN+2,v===1080?0:Math.max(200,Math.min(16384,v))); setDirty(); };
     ed.querySelectorAll("[data-msel]").forEach(x=>x.onclick=()=>{ window.macroSel=+x.dataset.msel; render(); });
     ed.querySelectorAll("[data-ma]").forEach(x=>{ const k=+x.dataset.ma; x.value=String(b[mo(k)]); if(x.value==="") x.value="0"; x.onchange=()=>{ b[mo(k)]=+x.value; if(!b[mo(k)+1]) b[mo(k)+1]=5; setDirty(); render(); }; });
@@ -949,8 +950,13 @@ $("#vimport").onchange=async e=>{ const f=e.target.files[0]; e.target.value=""; 
     h+=`<p class="note" style="margin:10px 0 2px"><b>Notes</b></p><ul id="vnotes" class="note" style="margin:0;padding-left:18px;max-height:160px;overflow:auto"></ul>`;
     $("#vbody").innerHTML=h; $("#vbody").querySelectorAll("select,input").forEach(x=>x.onchange=vPreview); vPreview(); $("#vdlg").showModal();
   }catch(err){ $("#pstatus").innerHTML=`<span class="err">${esc(err.message)}</span>`; } };
+/* the screen this page is on, in pixels (Windows scaling included) */
+function screenPx(){ const r=window.devicePixelRatio||1; return [Math.max(320,Math.min(16384,Math.round(screen.width*r))), Math.max(200,Math.min(16384,Math.round(screen.height*r)))]; }
+/* a profile with a mouse region and no screen size: this screen's */
+function regionScreen(b){ const uses=[0,1,2,3].some(i=>b[256+18*i]===13)||[...Array(8).keys()].some(g=>b[328+20*g+2]===13)||b[GYX]===2;
+  if(uses&&!(b[SCREEN]|b[SCREEN+1]|b[SCREEN+2]|b[SCREEN+3])){ const [w,h]=screenPx(), dv=new DataView(b.buffer,b.byteOffset); if(w!==1920) dv.setUint16(SCREEN,w,true); if(h!==1080) dv.setUint16(SCREEN+2,h,true); } }
 async function vApply(save){ const pv=vPreview(); if(!pv) return; $("#vdlg").close(); collect();
-  const done=[]; pv.r.profiles.forEach((b,k)=>{ if(b){ prof[k]=b; done.push(k); setDirty(true,k); } }); render();
+  const done=[]; pv.r.profiles.forEach((b,k)=>{ if(b){ regionScreen(b); prof[k]=b; done.push(k); setDirty(true,k); } }); render();
   if(!save){ $("#pstatus").innerHTML=`<span class="ok">imported into profile ${done.map(k=>k+1).join(", ")} — Save to controller writes them all</span>`; return; }
   bulk++; try{ let bad=[]; for(const k of done){ $("#pstatus").textContent=`saving profile ${k+1}…`; if(await saveSlot(k)) setDirty(false,k); else bad.push(k+1); }
     buildTabs();
