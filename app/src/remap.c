@@ -156,7 +156,7 @@ static float xbox_stick[2][2]; /* Xbox sticks from "Xbox stick" modes, -1..1 (su
 bool sim_xbox_live(void);
 #define xbox_live() sim_xbox_live()
 #else
-#define xbox_live() xinput_enabled()
+#define xbox_live() xinput_live()
 #endif
 static int16_t xbox_stick_out[2][2];
 static uint8_t move_dirs; /* mouse move actions held: up, down, left, right */

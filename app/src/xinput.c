@@ -174,6 +174,7 @@ static bool xi_last_valid;
 static bool xi_active; /* pad_out = 1 at power-on */
 static struct k_spinlock xi_lock;
 static uint16_t xi_sent_n, xi_ctrl_n; /* diagnostics: reports the host took, vendor requests seen */
+static int64_t xi_busy_since;          /* when the report now waiting was queued */
 
 static int xi_submit_out(struct usbd_class_data *const c_data)
 {
@@ -355,7 +356,8 @@ void xinput_setup(struct usbd_context *ctx, bool on)
 
 void xinput_diag(uint8_t out[6])
 {
-	out[0] = (uint8_t)((xi_active ? 1U : 0U) | (atomic_get(&xi_enabled) ? 2U : 0U) | (xi_cdata ? 4U : 0U));
+	out[0] = (uint8_t)((xi_active ? 1U : 0U) | (atomic_get(&xi_enabled) ? 2U : 0U) | (xi_cdata ? 4U : 0U) |
+	                   (xinput_live() ? 8U : 0U));
 	out[1] = (uint8_t)sc26re_cfg_get(SC26RE_CFG_PAD_OUT);
 	sys_put_le16(xi_sent_n, &out[2]);
 	sys_put_le16(xi_ctrl_n, &out[4]);
@@ -369,6 +371,11 @@ const char *xinput_class_name(void)
 bool xinput_enabled(void)
 {
 	return xi_active && atomic_get(&xi_enabled) != 0;
+}
+
+bool xinput_live(void)
+{
+	return xinput_enabled() && !(atomic_get(&xi_in_busy) && k_uptime_get() - xi_busy_since > 250);
 }
 
 static int16_t clamp16(int32_t v)
@@ -447,6 +454,7 @@ void xinput_send(const struct controller_report *r, uint32_t extra)
 		k_spin_unlock(&xi_lock, key);
 		return;
 	}
+	xi_busy_since = k_uptime_get();
 	atomic_set(&xi_in_busy, 1);
 	memcpy(xi_last, rep, sizeof(rep));
 	xi_last_valid = true;
@@ -470,7 +478,7 @@ void xinput_send(const struct controller_report *r, uint32_t extra)
 
 void xinput_neutral_pad(struct controller_report *r)
 {
-	if(!xinput_enabled() || sc26re_cfg_get(SC26RE_CFG_PAD_OUT) != 1)
+	if(!xinput_live() || sc26re_cfg_get(SC26RE_CFG_PAD_OUT) != 1)
 	{
 		return;
 	}

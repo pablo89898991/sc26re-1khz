@@ -12,6 +12,9 @@ void xinput_setup(struct usbd_context *ctx, bool on);
 const char *xinput_class_name(void);
 /* XInput interface on and configured by the host */
 bool xinput_enabled(void);
+/* ... and a driver reads it: a report waiting longer than 250 ms means nothing reads the Xbox
+ * pad (no driver bound): its outputs then go to the Steam pad, the Steam pad stays whole */
+bool xinput_live(void);
 /* diagnostics: [0] bit0 on at power-on, bit1 interface enabled by the host, bit2 class bound;
  * [1] pad_out now; [2..3] reports the host took; [4..5] vendor requests seen */
 void xinput_diag(uint8_t out[6]);

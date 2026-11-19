@@ -1274,7 +1274,7 @@ setInterval(async()=>{
   let diag=""; if(monDiagOk!==false){ try{ const g=await read("sc26re/rmp_diag"); if(g&&g.length>=6){ monDiagOk=true; const gv=new DataView(g.buffer,g.byteOffset); if(linkNow!==g[5]){ linkNow=g[5]; updXbWarn(); }
     diag=`<br><span class="note">keyboard reports sent ${gv.getUint16(0,true)}, refused ${gv.getUint16(2,true)}${gv.getUint16(2,true)?` (last error ${(g[4]<<24>>24)})`:""} · link ${["USB cable","Bluetooth","Puck","none"][g[5]]||"?"}</span>`;
     if(g.length>=14&&(g[8]&1||g[9])){ const xs=gv.getUint16(10,true);
-      diag+=`<br><span class="note">Xbox pad: ${!(g[8]&1)?"off until the controller is turned off and on":g[5]!==0?"only over the USB cable":!(g[8]&2)?"<b>Windows has not started it</b> (no Xbox 360 driver on the interface)":`running · ${xs} reports taken by Windows`}</span>`; } } }catch(e){ if(monDiagOk===null) monDiagOk=false; } }
+      diag+=`<br><span class="note">Xbox pad: ${!(g[8]&1)?"off until the controller is turned off and on":g[5]!==0?"only over the USB cable":!(g[8]&2)?"<b>Windows has not started it</b> (no Xbox 360 driver on the interface)":!(g[8]&8)?"<b>started, but nothing reads it</b> (no Xbox 360 driver bound) — its buttons go to the Steam pad meanwhile":`running · ${xs} reports taken by Windows`}</span>`; } } }catch(e){ if(monDiagOk===null) monDiagOk=false; } }
   $("#mon").innerHTML=`<b>Output</b> · profile ${b[0]+1} · remapper ${b[1]===1?"on":b[1]===2?"on (empty profile)":"off"}<br>${all||"<span>nothing pressed</span>"}${diag}`;
 },150);
 
