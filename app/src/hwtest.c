@@ -16,16 +16,40 @@ static size_t hb_size;
 static uint8_t n_steps;
 static uint8_t step;
 static bool armed, running, overflow, aborted, final_pending, snapshot;
-static uint8_t snap_step;
 static int64_t t0, step_end, last_move;
 static uint16_t log_n, read_off, end_ms;
 static uint8_t last_entry[HWT_ENTRY_SIZE];
 static uint8_t base_fb;
 static int32_t base_mv[3]; /* the monitor's mouse / wheel totals when the script started */
 
+static uint8_t snap_e[HWT_ENTRY_SIZE]; /* snapshot mode: the outputs of the last pass */
+static bool snap_have;
+
 static size_t log_cap(void)
 {
 	return hb_size > HWT_LOG_OFF ? (hb_size - HWT_LOG_OFF) / HWT_ENTRY_SIZE : 0U;
+}
+
+static void put_entry(const uint8_t *e)
+{
+	if(log_n >= log_cap())
+	{
+		overflow = true;
+		return;
+	}
+	memcpy(&hb[HWT_LOG_OFF + log_n * HWT_ENTRY_SIZE], e, HWT_ENTRY_SIZE);
+	memcpy(last_entry, e, HWT_ENTRY_SIZE);
+	log_n++;
+}
+
+/* snapshot mode: a step ends, its last pass's outputs go in the log */
+static void snap_step_end(void)
+{
+	if(snapshot && snap_have)
+	{
+		put_entry(snap_e);
+		snap_have = false;
+	}
 }
 
 static void stop(void)
@@ -95,11 +119,12 @@ void hwtest_apply(struct controller_report *r, int64_t now_ms)
 	}
 	while(running && now_ms >= step_end)
 	{
+		snap_step_end();
 		if(++step >= n_steps || step_end - t0 >= (int64_t)HWT_MAX_MS)
 		{
 			end_ms = (uint16_t)(now_ms - t0);
 			stop();
-			final_pending = true; /* the last movement totals still go in the log */
+			final_pending = !snapshot; /* the last movement totals still go in the log */
 			return;
 		}
 		step_end += sys_get_le16(&hb[step * HWT_STEP_SIZE]);
@@ -110,7 +135,7 @@ void hwtest_apply(struct controller_report *r, int64_t now_ms)
 void hwtest_log(const struct controller_report *r, int64_t now_ms)
 {
 	uint8_t mon[30], e[HWT_ENTRY_SIZE];
-	bool moved, final = final_pending, snap_now = false;
+	bool moved, final = final_pending;
 
 	final_pending = false;
 	if((!running && !final) || hb == NULL)
@@ -156,13 +181,10 @@ void hwtest_log(const struct controller_report *r, int64_t now_ms)
 	sys_put_le16((uint16_t)r->trigger_right, &e[52]);
 	if(snapshot)
 	{
-		/* one entry at the end of each step (and the last state) */
-		snap_now = final || (running && step != snap_step && now_ms >= step_end - 2);
-		if(!snap_now)
-		{
-			return;
-		}
-		snap_step = step;
+		/* one entry per step: the outputs of its last pass (written when the step ends) */
+		memcpy(snap_e, e, sizeof(e));
+		snap_have = true;
+		return;
 	}
 	else
 	{
@@ -178,14 +200,7 @@ void hwtest_log(const struct controller_report *r, int64_t now_ms)
 			last_move = now_ms;
 		}
 	}
-	if(log_n >= log_cap())
-	{
-		overflow = true;
-		return;
-	}
-	memcpy(&hb[HWT_LOG_OFF + log_n * HWT_ENTRY_SIZE], e, sizeof(e));
-	memcpy(last_entry, e, sizeof(e));
-	log_n++;
+	put_entry(e);
 }
 
 void hwtest_buffer_lost(void)
@@ -238,7 +253,7 @@ int hwtest_set(const uint8_t *v, size_t len)
 		}
 		n_steps = v[1];
 		snapshot = len >= 3U && (v[2] & 1U); /* 1: one entry at the end of each step */
-		snap_step = 0xFF;
+		snap_have = false;
 		log_n = 0;
 		read_off = 0;
 		end_ms = 0;
@@ -273,7 +288,7 @@ bool hwtest_read(const char *path, uint8_t *buf, size_t capacity, size_t *len)
 		sys_put_le16(end_ms, &buf[4]);
 		sys_put_le16((uint16_t)log_cap(), &buf[6]);
 		buf[8] = HWT_MAX_STEPS;
-		buf[9] = 2; /* version: 2 = gyro / accel in the steps; Steam pad, Xbox analog, haptics, profile in the log; snapshots */
+		buf[9] = 3; /* version: 2 = gyro / accel in the steps; Steam pad, Xbox analog, haptics, profile in the log; snapshots; 3 = a snapshot at the end of every step */
 		*len = 10;
 		return true;
 	}

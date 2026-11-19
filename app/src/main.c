@@ -777,13 +777,17 @@ int main(void)
 		}
 		{
 			/* on-controller remapper: keyboard/mouse out, mapped inputs leave the pad report */
-			static int64_t remap_last_ms;
+			static int64_t remap_last_us;
 			int64_t remap_now = k_uptime_get();
+			int64_t remap_now_us = (int64_t)k_ticks_to_us_floor64(k_uptime_ticks());
 
 			uint32_t raw_buttons = current.buttons;
 
-			remap_process(&current, remap_last_ms ? (float)(remap_now - remap_last_ms) * 0.001f : 0.001f);
-			remap_last_ms = remap_now;
+			/* the time since the last pass in microseconds: the loop also wakes on input changes,
+			 * so in whole milliseconds dt was 0, 1 or 2 ms in turn and rate estimates (the
+			 * trackball's speed) came out up to twice too high (hardware test, v51 test 56) */
+			remap_process(&current, remap_last_us ? (float)(remap_now_us - remap_last_us) * 1e-6f : 0.001f);
+			remap_last_us = remap_now_us;
 			gyro_mouse_joystick(&current);
 			/* the gyro mouse's buttons (its chord, ratchet, quick turns, 360 calibration) leave
 			 * the report before the Xbox 360 output takes the pad from it: filtered further

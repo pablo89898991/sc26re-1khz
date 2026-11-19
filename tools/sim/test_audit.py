@@ -347,6 +347,30 @@ def stick_mouse_ticks_while_moving():
     assert 5 <= len(e.haptics()) <= 12, len(e.haptics())
     e = s.run(500, lsx=0); assert not e.haptics()
 
+@test
+def trackball_speed_does_not_depend_on_the_loop_rate():
+    """v51 test 56 (hardware test): the trackball's kept speed was measured per pass of the report
+    loop, which also wakes on other input changes: on the controller it rolled twice as far as in
+    the simulator. Now measured over 8 ms or more: the same swipe rolls as far at 4 passes per ms."""
+    import ctypes, struct as st
+    def run(sub):
+        p = Profile(); p.analog(3, MOUSE, flags=AF_TRACKBALL, speed=100, dz_out=200)
+        s = Sim(); s.use(p); s.run(20)
+        base = s.lib.sim_time()
+        outb = ctypes.create_string_buffer(RSIZE)
+        t = 0
+        for ms in range(1300):
+            touching = ms < 100
+            s.state.update(rpx=(-15000 + (ms // 5) * 1500) if touching else 0, rpy=0)
+            s.state["buttons"] = (1 << BTN["RP_TOUCH"]) if touching else 0
+            inb = st.pack(RFMT, *[s.state[k] for k in RFIELDS])
+            s.lib.sim_set_time(base + ms + 1)
+            for i in range(sub): s.lib.sim_step(inb, outb, 1000 // sub)
+        e = Events([x for x in s.lib.sim_events().decode().splitlines() if x])
+        return sum(m[1] for m in e.mouse())
+    a, b = run(1), run(4)
+    assert a > 0 and abs(a - b) <= max(4, 0.15 * a), (a, b)
+
 if __name__ == "__main__":
     ok = bad = 0
     for t in TESTS:

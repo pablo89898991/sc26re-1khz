@@ -547,6 +547,14 @@ static void out_action(uint8_t a, uint8_t keys[6], size_t *nk, uint8_t *mods, ui
 }
 
 /* edge actions: run once when the group becomes active */
+static void profile_save(struct k_work *w)
+{
+	ARG_UNUSED(w);
+	(void)sc26re_cfg_set(SC26RE_CFG_REMAP_PROFILE, sc26re_cfg_get(SC26RE_CFG_REMAP_PROFILE), true);
+}
+
+K_WORK_DEFINE(profile_save_work, profile_save);
+
 static void edge_action(uint8_t a)
 {
 	switch(a)
@@ -566,7 +574,10 @@ static void edge_action(uint8_t a)
 			}
 			else if(a >= REMAP_ACT_PROFILE && a < REMAP_ACT_PROFILE + REMAP_PROFILES)
 			{
-				(void)sc26re_cfg_set(SC26RE_CFG_REMAP_PROFILE, (int16_t)(a - REMAP_ACT_PROFILE), true);
+				/* switched at once; stored by the system work queue: the flash write
+				 * stalled the report loop ~7 ms on every in-game switch (hardware test) */
+				(void)sc26re_cfg_set(SC26RE_CFG_REMAP_PROFILE, (int16_t)(a - REMAP_ACT_PROFILE), false);
+				(void)k_work_submit(&profile_save_work);
 				(void)haptics_play_beep((uint16_t)(700 + 150 * (a - REMAP_ACT_PROFILE)), 80);
 			}
 			break;
@@ -954,6 +965,7 @@ static void stick_dead_zones(const struct remap_analog *an, int16_t *x, int16_t 
 }
 
 static float tb_vel[2][2]; /* trackball: counts per second */
+static float tb_win[2][3]; /* trackball speed window: counts x, y, seconds */
 
 static void pad_mouse(int side, const struct remap_analog *an, const struct remap_anx *ax, bool active, int16_t x,
                       int16_t y, float dt)
@@ -1008,10 +1020,17 @@ static void pad_mouse(int side, const struct remap_analog *an, const struct rema
 		}
 		mouse_acc[0] += dx * k * sx;
 		mouse_acc[1] -= dy * k * sy;
-		if(dt > 0.0f)
+		/* the speed the trackball keeps: measured over at least 8 ms. Per pass it depended on
+		 * how often the report loop ran between two trackpad scans (it also wakes on other
+		 * input changes): the controller rolled twice as far as the simulator (v51 test 56) */
+		tb_win[side][0] += dx * k * sx;
+		tb_win[side][1] += -dy * k * sy;
+		tb_win[side][2] += dt;
+		if(tb_win[side][2] >= 0.008f)
 		{
-			tb_vel[side][0] = 0.7f * tb_vel[side][0] + 0.3f * (dx * k * sx / dt);
-			tb_vel[side][1] = 0.7f * tb_vel[side][1] + 0.3f * (-dy * k * sy / dt);
+			tb_vel[side][0] = 0.5f * tb_vel[side][0] + 0.5f * (tb_win[side][0] / tb_win[side][2]);
+			tb_vel[side][1] = 0.5f * tb_vel[side][1] + 0.5f * (tb_win[side][1] / tb_win[side][2]);
+			tb_win[side][0] = tb_win[side][1] = tb_win[side][2] = 0.0f;
 		}
 		pad_hap_dist[side] += sqrtf(dx * dx + dy * dy);
 		if(pad_hap_dist[side] >= 3000.0f)
@@ -1023,6 +1042,7 @@ static void pad_mouse(int side, const struct remap_analog *an, const struct rema
 	else
 	{
 		tb_vel[side][0] = tb_vel[side][1] = 0.0f;
+		tb_win[side][0] = tb_win[side][1] = tb_win[side][2] = 0.0f;
 	}
 	pad_prev[side][0] = x;
 	pad_prev[side][1] = y;
@@ -1992,7 +2012,8 @@ void remap_process(struct controller_report *r, float dt)
 				{
 					release_all();
 				}
-				(void)sc26re_cfg_set(SC26RE_CFG_REMAP_PROFILE, (int16_t)i, true);
+				(void)sc26re_cfg_set(SC26RE_CFG_REMAP_PROFILE, (int16_t)i, false);
+				(void)k_work_submit(&profile_save_work); /* stored off the report loop */
 				(void)haptics_play_beep((uint16_t)(700 + 150 * i), 80);
 			}
 		}
