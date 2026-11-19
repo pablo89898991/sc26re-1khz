@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>SC2 remapper hardware test</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  body { font: 15px/1.45 system-ui, sans-serif; background: #0f1520; color: #dfe6f0; margin: 0; padding: 24px; }
+  main { max-width: 900px; margin: 0 auto; }
+  h1 { font-size: 22px; margin: 0 0 6px; }
+  button { font: inherit; padding: 8px 14px; border-radius: 8px; border: 1px solid #3a4a66; background: #1b2638; color: #dfe6f0; cursor: pointer; }
+  button.primary { background: #2f6fed; border-color: #2f6fed; color: #fff; }
+  button:disabled { opacity: .5; cursor: default; }
+  .note { color: #93a3ba; font-size: 13px; }
+  .bar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin: 14px 0; }
+  #log { background: #0a0f17; border: 1px solid #263248; border-radius: 8px; padding: 10px; font: 12px/1.5 ui-monospace, monospace; white-space: pre-wrap; max-height: 55vh; overflow: auto; }
+  .ok { color: #6fdc8c; } .err { color: #ff7b7b; } .warn { color: #f2c94c; }
+</style>
+</head>
+<body>
+<main>
+  <h1>SC2 remapper hardware test <span class="note" id="ver">p.2026-11-19a</span></h1>
+  <p class="note">Needs a <b>test build (v51 test 54 or newer)</b>. The page saves a copy of Profile 4 (and any profile a test needs as a layer) and of the active profile setting, runs every test on the controller and puts everything back. During the run the controller ignores its own buttons, sticks and pads; <b>leave it lying still</b>. Pressing the <b>Steam button</b> stops the test at once. Close the remapper and report meter tabs first.</p>
+  <div class="bar">
+    <button id="connect">Connect controller…</button>
+    <button class="primary" id="run" disabled>Run all tests</button>
+    <button id="stop" disabled>Stop</button>
+    <span id="status" class="note"></span>
+  </div>
+  <div id="log"></div>
+</main>
+<script>
+const $=s=>document.querySelector(s);
+const log=(t,c)=>{ const d=document.createElement("div"); if(c) d.className=c; d.textContent=t; $("#log").appendChild(d); $("#log").scrollTop=1e9; };
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+/* ---- WebHID, same protocol as the remapper page ---- */
+let dev=null;
+const pathTag=p=>{ let t=0xA5; for(const c of p) t=((t<<1)^(t>>7)^c.charCodeAt(0))&255; return t; };
+function pathCmd(op,path,data=[]){ const p=new TextEncoder().encode(path), buf=new Uint8Array(63); buf[0]=op; buf[1]=p.length+1+data.length; buf.set(p,2); buf.set(data,2+p.length+1); return buf; }
+let chain=Promise.resolve();
+function serial(fn){ const run=()=>Promise.race([Promise.resolve().then(fn),new Promise((_,r)=>setTimeout(()=>r(new Error("no reply from the controller")),8000))]); const p=chain.then(run,run); chain=p.catch(()=>{}); return p; }
+async function send(path,op,data){ return serial(async()=>{ for(let a=0;;a++){ try{ return await dev.sendFeatureReport(1,pathCmd(op,path,data)); }catch(e){ if(a>=5) throw e; await sleep(40+a*30); } } }); }
+async function read(path){ const tag=pathTag(path);
+  return serial(async()=>{ let last=null, empty=0;
+    for(let a=0;a<8;a++){ try{
+      await dev.sendFeatureReport(1,pathCmd(0xED,path));
+      let r=null,o=-1; for(let k=0;k<6;k++){ try{ r=new Uint8Array((await dev.receiveFeatureReport(1)).buffer); o=r[0]===0xED?0:(r[1]===0xED?1:-1); if(o>=0) break; }catch(e){} await sleep(10+k*10); }
+      if(o<0) throw new Error("no reply");
+      const data=r.slice(o+2,o+2+r[o+1]);
+      if(!data.length){ if(++empty>=3) return data; throw new Error("empty"); }
+      empty=0; if(data[0]!==tag) throw new Error("reply for another request (Steam?)");
+      return data.slice(1);
+    }catch(e){ last=e; await sleep(40+a*30); } }
+    throw last; }); }
+const s16=(b,i)=>{ const v=b[i]|(b[i+1]<<8); return v>32767?v-65536:v; };
+const u16=(b,i)=>b[i]|(b[i+1]<<8);
+async function cfgGet(n){ const b=await read("sc26re/"+n); return b.length>=2?s16(b,0):null; }
+async function cfgSet(n,v){ await send("sc26re/"+n,0xEE,[v&255,(v>>8)&255]); await send("sc26re/"+n,0xEF); }
+const hex=s=>Uint8Array.from(s.match(/../g).map(h=>parseInt(h,16)));
+const tohex=b=>Array.from(b,x=>x.toString(16).padStart(2,"0")).join("");
+const PSIZE=3232;
+async function profRead(slot){ const out=new Uint8Array(PSIZE); let o=0;
+  while(o<PSIZE){ const d=await read(`sc26re/rmp/${slot}/${o.toString(16)}`); if(!d.length) throw new Error("profile read failed"); out.set(d.slice(0,PSIZE-o),o); o+=d.length; }
+  return out; }
+async function profWrite(slot,b){ for(let o=0;o<PSIZE;o+=40) await send(`sc26re/rmp/${slot}/${o.toString(16)}`,0xEE,Array.from(b.slice(o,o+40))); await send(`sc26re/rmp/${slot}`,0xEF); }
+function download(text,name){ const a=document.createElement("a"); a.href=URL.createObjectURL(new Blob([text],{type:"application/json"})); a.download=name; a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),5000); }
+
+async function open(d){ if(!d.opened) await d.open(); dev=d; }
+async function pick(list){
+  for(const d of list){ if(d.vendorId!==0x28de||!d.collections.some(c=>c.featureReports&&c.featureReports.length)) continue;
+    try{ await open(d); const st=await read("sc26re/hwt_st"); if(st.length>=10) return st; }catch(e){} }
+  return null; }
+async function connect(list){
+  const st=await pick(list);
+  if(!st){ $("#status").innerHTML=dev?`<span class="err">this firmware has no hardware test: flash v51 test 54 or newer</span>`:`<span class="err">no controller</span>`; return false; }
+  $("#status").innerHTML=`<span class="ok">connected · ${dev.productName} · hardware test v${st[9]}</span>`;
+  $("#run").disabled=false; return true; }
+$("#connect").onclick=async()=>{ try{ await connect(await navigator.hid.requestDevice({filters:[{vendorId:0x28de}]})); }catch(e){ $("#status").innerHTML=`<span class="err">${e.message}</span>`; } };
+navigator.hid&&navigator.hid.getDevices().then(l=>l.length&&connect(l));
+
+let stopReq=false; window.hwtResults=null;
+$("#stop").onclick=()=>{ stopReq=true; };
+async function runCase(c,slot){
+  for(const [s,h] of Object.entries(c.extra||{})) await profWrite(+s,hex(h));
+  await profWrite(slot,hex(c.profile));
+  await read("sc26re/awake");
+  await sleep(150);
+  const sb=hex(c.script);
+  for(let o=0;o<sb.length;o+=40) await send("sc26re/hwt",0xEE,[1,o&255,o>>8,...sb.slice(o,o+40)]);
+  await send("sc26re/hwt",0xEE,[2,sb.length/30]);
+  await sleep(c.ms+150);
+  let st; for(let k=0;k<50;k++){ st=await read("sc26re/hwt_st"); if(!(st[0]&6)) break; await sleep(100); }
+  if(st[0]&6) throw new Error("the test did not finish");
+  const n=u16(st,2), raw=new Uint8Array(n*30);
+  await send("sc26re/hwt",0xEE,[4,0,0]);
+  for(let i=0;i<n;){ const d=await read("sc26re/hwt_log"); const idx=u16(d,0);
+    if(idx!==i){ await send("sc26re/hwt",0xEE,[4,i&255,i>>8]); continue; }
+    raw.set(d.slice(2,32),i*30); i++; }
+  await send("sc26re/hwt",0xEE,[3]);
+  return {name:c.name, flags:st[0], end_ms:u16(st,4), log:tohex(raw)};
+}
+$("#run").onclick=async()=>{
+  $("#run").disabled=true; $("#stop").disabled=false; stopReq=false; $("#log").textContent="";
+  let doc, backup=null;
+  try{
+    doc=await (await fetch("hwtests.json?"+Date.now())).json();
+    const slot=doc.slot, used=new Set([slot]); for(const c of doc.cases) for(const s of Object.keys(c.extra||{})) used.add(+s);
+    log(`${doc.cases.length} tests. Saving a copy of profile slot(s) ${[...used].map(s=>s+1).join(", ")} and the active profile…`);
+    backup={slots:{}, remap_profile:await cfgGet("remap_profile"), remap_on:await cfgGet("remap_on"), gm_enabled:await cfgGet("gm_enabled")};
+    for(const s of used) backup.slots[s]=tohex(await profRead(s));
+    download(JSON.stringify(backup),`sc26re-hwtest-backup-${new Date().toISOString().slice(0,19).replace(/[:T]/g,"-")}.json`);
+    /* the gyro mouse off for the run (its movement is not part of the test) */
+    if(backup.gm_enabled) await cfgSet("gm_enabled",0);
+    await cfgSet("remap_profile",slot); await cfgSet("remap_on",1);
+    const cfg={}; for(const n of doc.cfg){ try{ const v=await cfgGet(n); if(v!==null) cfg[n]=v; }catch(e){} }
+    const results=[];
+    for(const c of doc.cases){
+      if(stopReq){ log("stopped","warn"); break; }
+      try{ const r=await runCase(c,slot); results.push(r);
+        log(`${r.flags&16?"!! ":"   "}${c.name}: ${r.log.length/60} entries${r.flags&8?" (log full)":""}${r.flags&16?" — stopped by the Steam button or an upload":""}`, r.flags&16?"warn":""); }
+      catch(e){ results.push({name:c.name,error:e.message}); log(`   ${c.name}: ${e.message}`,"err"); }
+    }
+    window.hwtResults={version:doc.version, page:$("#ver").textContent, product:dev.productName, cfg, results};
+    download(JSON.stringify(window.hwtResults),`sc26re-hwtest-results-${new Date().toISOString().slice(0,19).replace(/[:T]/g,"-")}.json`);
+    log("results downloaded","ok");
+  }catch(e){ log("error: "+e.message,"err"); }
+  if(backup){
+    try{
+      log("putting your profiles back…");
+      for(const [s,h] of Object.entries(backup.slots)){ await profWrite(+s,hex(h)); const back=tohex(await profRead(+s)); if(back!==h) throw new Error(`profile ${+s+1} differs after restoring (the backup file was downloaded)`); }
+      if(backup.remap_profile!==null) await cfgSet("remap_profile",backup.remap_profile);
+      if(backup.remap_on!==null) await cfgSet("remap_on",backup.remap_on);
+      if(backup.gm_enabled) await cfgSet("gm_enabled",backup.gm_enabled);
+      log("your profiles and settings are back","ok");
+    }catch(e){ log("RESTORE FAILED: "+e.message+" — import the backup file in the remapper","err"); }
+  }
+  $("#run").disabled=false; $("#stop").disabled=true;
+};
+</script>
+</body>
+</html>

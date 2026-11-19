@@ -28,6 +28,9 @@
 #include "gyro_mouse.h"
 #include "haptics.h"
 #include "remap.h"
+#if defined(CONFIG_IBEX_HWTEST) || defined(SC26RE_SIM)
+#include "hwtest.h"
+#endif
 #include "xinput.h"
 #include "imu.h"
 #include "rgbw_led.h"
@@ -3210,6 +3213,28 @@ static void upgrade(struct remap_profile *p)
 static struct remap_profile staging;
 static int8_t staging_p = -1;
 
+#if defined(CONFIG_IBEX_HWTEST) || defined(SC26RE_SIM)
+/* hardware test (hwtest.c): the staging buffer is free between uploads; -2 = lent to it */
+uint8_t *remap_hwtest_buffer(size_t *size)
+{
+	if(staging_p >= 0)
+	{
+		return NULL;
+	}
+	staging_p = -2;
+	*size = sizeof(staging);
+	return (uint8_t *)&staging;
+}
+
+void remap_hwtest_release(void)
+{
+	if(staging_p == -2)
+	{
+		staging_p = -1;
+	}
+}
+#endif
+
 int remap_stage(const char *path, const uint8_t *value, size_t len)
 {
 	int p, o;
@@ -3219,6 +3244,12 @@ int remap_stage(const char *path, const uint8_t *value, size_t len)
 		return -EINVAL;
 	}
 	len = MIN(len, sizeof(struct remap_profile) - (size_t)o);
+#if defined(CONFIG_IBEX_HWTEST) || defined(SC26RE_SIM)
+	if(staging_p == -2)
+	{
+		hwtest_buffer_lost(); /* an upload ends the hardware test */
+	}
+#endif
 	if(staging_p != p)
 	{
 		staging = profiles[p];

@@ -19,6 +19,9 @@
 #include "gyro_mouse.h"
 #include "remap.h"
 #include "xinput.h"
+#ifdef CONFIG_IBEX_HWTEST
+#include "hwtest.h"
+#endif
 #include "stick_test.h"
 #include "lizard.h"
 #include "power.h"
@@ -642,6 +645,9 @@ int main(void)
 		int64_t now_ms;
 
 		hardware_read_report(&current);
+#ifdef CONFIG_IBEX_HWTEST
+		hwtest_apply(&current, k_uptime_get()); /* remapper hardware test: the script's inputs */
+#endif
 		remap_raw_capture(&current); /* physical state for the 3D overlay */
 		{
 			bool cal_busy = gyro_chord_poll(&current);
@@ -788,6 +794,9 @@ int main(void)
 			/* Xbox 360 output (USB, pad_out = 1): the game gets the pad there */
 			xinput_send(&current, remap_xbox_buttons());
 			xinput_neutral_pad(&current);
+#ifdef CONFIG_IBEX_HWTEST
+			hwtest_log(remap_now);
+#endif
 		}
 		bool changed = first || memcmp(&current, &previous, sizeof(current)) != 0;
 		bool refresh_due = k_uptime_get() - last_input_sent >= INPUT_REFRESH_MS;

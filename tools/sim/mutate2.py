@@ -47,7 +47,7 @@ if sys.argv[1:2] == ["old"]:
 
 def build(tmp, flavour):
     out = os.path.join(HERE, "libsim_mut%s.so" % flavour)
-    srcs = ["sim.c", os.path.join(tmp, "remap.c"), os.path.join(tmp, "sc26re_cfg.c")]
+    srcs = ["sim.c", os.path.join(tmp, "remap.c"), os.path.join(SRC, "hwtest.c"), os.path.join(tmp, "sc26re_cfg.c")]
     flags = ["-O1", "-g", "-fPIC", "-shared", "-Wall", "-Wno-unused-function", "-Iinc", "-I" + tmp, "-I" + SRC, "-DSC26RE_SIM", "-include", "zephyr/kernel.h"]
     if flavour == "gm": flags.append("-DWITH_GM"); srcs.append(os.path.join(tmp, "gyro_mouse.c"))
     else: srcs.append(os.path.join(SRC, "xinput_guide.c"))

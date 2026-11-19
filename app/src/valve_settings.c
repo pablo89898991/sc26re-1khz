@@ -22,6 +22,9 @@
 #include "sc26re_cfg.h"
 #include "valve_feature.h"
 #include "valve_settings.h"
+#ifdef CONFIG_IBEX_HWTEST
+#include "hwtest.h"
+#endif
 #include "power.h"
 
 /* Report meter: stick/grip capacitive thresholds (live via STAGE, saved via COMMIT). */
@@ -653,6 +656,12 @@ bool valve_settings_read(const char *path, uint8_t *buf, size_t capacity, size_t
 		*len = 16;
 		return true;
 	}
+#ifdef CONFIG_IBEX_HWTEST
+	if(hwtest_read(path, buf, capacity, len))
+	{
+		return true;
+	}
+#endif
 	if(strcmp(path, "sc26re/rmp_out") == 0 && capacity >= 30)
 	{
 		remap_monitor(buf);
@@ -845,6 +854,12 @@ int valve_settings_stage(const char *path, const uint8_t *value, size_t len)
 	{
 		return sc26re_cfg_stage(path, value, len);
 	}
+#ifdef CONFIG_IBEX_HWTEST
+	if(strcmp(path, "sc26re/hwt") == 0)
+	{
+		return hwtest_set(value, len);
+	}
+#endif
 	if(strcmp(path, SC26RE_CAPSENSE_PATH) == 0)
 	{
 		/* applied live; COMMIT stores it */

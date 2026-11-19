@@ -34,6 +34,7 @@ target_sources(app PRIVATE
 	src/stick_test.c
 )
 
+target_sources_ifdef(CONFIG_IBEX_HWTEST app PRIVATE src/hwtest.c)
 target_sources_ifdef(CONFIG_HAPTICS_PWM_NRF app PRIVATE src/haptics_pwm_nrf.c)
 if(CONFIG_IBEX_HAPTICS_PWM)
 	set(IBEX_HAPTICS_WAVEFORMS_H ${PROJECT_BINARY_DIR}/generated/haptics_waveforms.h)

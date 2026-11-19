@@ -315,11 +315,13 @@ void sim_gm_physical(int on) { gm_physical = on; }
 #endif
 
 #include "triton_state_report.h"
+#include "hwtest.h"
 static struct controller_report sim_last_out;
 void sim_step(const uint8_t *in, uint8_t *out, int dt_us)
 {
 	struct controller_report r;
 	memcpy(&r, in, sizeof(r));
+	hwtest_apply(&r, now_ms); /* main.c: right after hardware_read_report */
 #ifdef WITH_GM
 	{
 		/* imu.c: every gyro sample feeds the gyro mouse, its counts go out as mouse reports */
@@ -393,6 +395,7 @@ void sim_step(const uint8_t *in, uint8_t *out, int dt_us)
 	r.buttons = gyro_mouse_filter_buttons(r.buttons, remap_raw_buttons()); /* as main.c */
 	gm_state = r; gm_state_valid = true;  /* hardware_store_state */
 #endif
+	hwtest_log(now_ms); /* main.c: after the remapper and the Xbox output */
 	memcpy(out, &r, sizeof(r));
 	sim_last_out = r;
 }
@@ -450,6 +453,7 @@ int sim_feature(const uint8_t *req, uint8_t *rsp)
 		bool ok = false;
 		if(strcmp(path, "sc26re/awake") == 0) { cur[0] = 1; len = 1; ok = true; } /* meter keep-alive, as valve_settings.c */
 		else if(strcmp(path, "sc26re/raw") == 0) { remap_raw_read(cur); len = REMAP_RAW_SIZE; ok = true; }
+		else if(hwtest_read(path, cur, 60, &len)) ok = true;
 		else if(strcmp(path, "sc26re/rmp_out") == 0) { remap_monitor(cur); len = 30; ok = true; }
 		else if(strcmp(path, "sc26re/rmp_diag") == 0) { remap_diag(cur); len = 16; ok = true; }
 		else if(remap_path(path)) ok = remap_read(path, cur, 60, &len);
@@ -477,6 +481,7 @@ int sim_feature(const uint8_t *req, uint8_t *rsp)
 	if(op == 0xEE)
 	{
 		if(remap_path(path)) err = remap_stage(path, data, dlen);
+		else if(strcmp(path, "sc26re/hwt") == 0) err = hwtest_set(data, dlen);
 		else if(sc26re_cfg_path(path)) err = sc26re_cfg_stage(path, data, dlen);
 		else if(strcmp(path, "user/haptic_boot_level") == 0) err = (dlen >= 1 && data[0] <= 2) ? (boot_level = data[0], 0) : -EINVAL;
 		else if(strcmp(path, "sc26re/capsense") == 0 && dlen >= 6)

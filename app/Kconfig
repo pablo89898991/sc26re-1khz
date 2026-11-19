@@ -138,6 +138,14 @@ config IBEX_IMU_DEBUG_IN_QUAT
 	  y = batch period (us), z = gyro frames per batch x100. Averages over
 	  256 batches. For measurement builds only.
 
+config IBEX_HWTEST
+	bool "Remapper hardware test (test builds only, off for releases)"
+	default y
+	help
+	  The hardware test page plays a script of inputs (RAM only, at most
+	  10 s, stopped by the Steam button) and reads back the remapper's
+	  output. Turn off for release builds.
+
 config IBEX_ANALOG_STAY_POWERED_ON_USB
 	bool "Keep the stick/trigger supply on between scans while on USB"
 	default y
