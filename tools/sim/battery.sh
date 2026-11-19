@@ -9,7 +9,7 @@ run() { name=$1; shift; out=$("$@" 2>&1 | grep -v "agent-proxy\|connect_rejected
 ( for sd in $1 $(( $1 + 1 )); do run "fuzz asan $sd" env LD_PRELOAD=$A ASAN_OPTIONS=detect_leaks=0 SIMLIB=libsim_asan.so timeout 900 python3 fuzz.py $sd 20; done ) > /tmp/b_fuzz.log 2>&1 &
 ( run "fuzz gm asan" env LD_PRELOAD=$A ASAN_OPTIONS=detect_leaks=0 SIMLIB=libsim_gm_asan.so timeout 900 python3 fuzz.py $(( $1 + 5 )) 15 ) > /tmp/b_fuzzgm.log 2>&1 &
 ( for m in 0 1 2; do run "wfuzz $m" timeout 900 python3 wfuzz.py $1 $m x 10; done; run "wfuzz gm" env SIMLIB=libsim_gm.so timeout 900 python3 wfuzz.py $(( $1 + 3 )) 2 x 6 ) > /tmp/b_wfuzz.log 2>&1 &
-( run protofuzz timeout 600 python3 protofuzz.py $1 300; for f in $U/5d181df4*.vdf $U/f802*.vdf $U/0289a2b4*.vdf; do run "vdf_fuzz $(basename $f | cut -c1-8)" node vdf_fuzz.js $1 $f; done ) > /tmp/b_proto.log 2>&1 &
+( run protofuzz timeout 600 python3 protofuzz.py $1 $(( $1 + 100 )); for f in $U/5d181df4*.vdf $U/f802*.vdf $U/0289a2b4*.vdf; do run "vdf_fuzz $(basename $f | cut -c1-8)" node vdf_fuzz.js $1 $f; done ) > /tmp/b_proto.log 2>&1 &
 wait
 pgrep -f sim_server.py >/dev/null || (python3 sim_server.py 8765 >/tmp/srv.log 2>&1 &)
 pgrep -f "http.server 8766" >/dev/null || (cd ../../web && python3 -m http.server 8766 >/tmp/http.log 2>&1 &)
