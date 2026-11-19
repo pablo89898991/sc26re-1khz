@@ -832,19 +832,32 @@ int main(void)
 		 * the interval, button changes still go out immediately.
 		 */
 		{
-			static uint32_t last_state_cyc;
+			/*
+			 * On a schedule: the next report is due one period after the last one was due,
+			 * and a pass up to 400 us early takes it. Measured from the last send, the loop
+			 * (about 1 ms per pass) missed the due time by a fraction and waited a whole pass
+			 * more: 223 reports/s at 250, 411 at 500 (firmware test, v51 test 60).
+			 */
+			static uint32_t next_due_us;
 			int16_t rate = sc26re_cfg_get(SC26RE_CFG_REPORT_RATE);
+			uint32_t now_us = (uint32_t)k_ticks_to_us_floor64(k_uptime_ticks());
 
-			if(rate > 0 && rate < 1000 && !first && current.buttons == previous.buttons &&
-			   k_cyc_to_us_floor32(k_cycle_get_32() - last_state_cyc) < 1000000U / (uint32_t)rate)
+			if(rate > 0 && rate < 1000)
 			{
-				changed = false;
-				refresh_due = false;
-				esb_state_boundary = false;
-			}
-			if(changed || refresh_due || esb_state_boundary)
-			{
-				last_state_cyc = k_cycle_get_32();
+				uint32_t period = 1000000U / (uint32_t)rate;
+
+				if(!first && current.buttons == previous.buttons && (int32_t)(now_us + 400U - next_due_us) < 0)
+				{
+					changed = false;
+					refresh_due = false;
+					esb_state_boundary = false;
+				}
+				if(changed || refresh_due || esb_state_boundary)
+				{
+					/* keep the phase; after a pause (or a button report out of turn) start anew */
+					next_due_us = (int32_t)(now_us - next_due_us) > (int32_t)period ? now_us + period
+					                                                                 : next_due_us + period;
+				}
 			}
 		}
 		hardware_store_state(&current);

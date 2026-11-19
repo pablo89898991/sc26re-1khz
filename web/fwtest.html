@@ -19,8 +19,8 @@
 </head>
 <body>
 <main>
-  <h1>SC2 firmware test <span class="note" id="ver">p.2026-11-19a</span></h1>
-  <p class="note">Needs a <b>test build (v51 test 59 or newer)</b>. Checks the firmware itself, not only the remapper: every setting (range, clamping, “auto”), report rates, the gyro / accelerometer at every range and rate (timestamps, sample rate, noise at rest), the settings channel under load, the pad report the firmware builds from known inputs, and the diagnostics it reports. Settings are changed <b>live only</b> (never saved) and put back. <b>Leave the controller lying still</b>; Steam can stay open (the pad report part sends sticks and triggers to it for a few seconds).</p>
+  <h1>SC2 firmware test <span class="note" id="ver">p.2026-11-19b</span></h1>
+  <p class="note">Needs a <b>test build (v51 test 59 or newer; report rates right from test 60)</b>. Checks the firmware itself, not only the remapper: every setting (range, clamping, “auto”), report rates, the gyro / accelerometer at every range and rate (timestamps, sample rate, noise at rest), the settings channel under load, the pad report the firmware builds from known inputs, and the diagnostics it reports. Settings are changed <b>live only</b> (never saved) and put back. <b>Leave the controller lying still</b>; Steam can stay open (the pad report part sends sticks and triggers to it for a few seconds).</p>
   <div class="bar">
     <button id="connect">Connect controller…</button>
     <button class="primary" id="run" disabled>Run firmware tests</button>
@@ -106,10 +106,10 @@ async function testSettings(names){
 }
 
 async function testRates(){
-  log("— report rates");
+  log("— report rates (gyro on, so every report has something new)");
   const o=await cfgRead("report_rate");
   for(const r of [250,500,1000]){
-    await stage("report_rate",r); await sleep(400);
+    await stage("report_rate",r); await imuMode(0x1C); await sleep(500);
     const s=stats(await capture(2000));
     check(`report rate ${r}/s`, Math.abs(s.rate-r)<r*0.06 && s.seqgap===0, `${s.rate.toFixed(0)}/s, sequence gaps ${s.seqgap}`);
   }
