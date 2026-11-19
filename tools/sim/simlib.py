@@ -223,6 +223,18 @@ class Sim:
         self.log += ev
         return Events(ev)
 
+    def truth(self):
+        """degrees the virtual controller turned about x / y / z since the link reset (oracle)"""
+        a = (ctypes.c_double * 3)(); self.lib.sim_gyro_truth(a); return [a[0], a[1], a[2]]
+
+    def truth_q(self):
+        """the orientation those turns give (w, x, y, z), turns about the controller's own axes"""
+        a = (ctypes.c_double * 4)(); self.lib.sim_gyro_truth_q(a); return [a[0], a[1], a[2], a[3]]
+
+    def report42(self):
+        """the 0x42 pad report body as the firmware packs it (triton_state_report.h)"""
+        b = ctypes.create_string_buffer(64); n = self.lib.sim_report42(b); return b.raw[:n]
+
     def transport(self, mode, one=0, loss=0, ci=15, seed=1):
         self.lib.sim_transport(mode, one, loss, ci, seed)
 

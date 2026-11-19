@@ -8,7 +8,7 @@
     collections: [{ usagePage: 0xff00, featureReports: [{ reportId: 1 }], inputReports: [{ reportId: 0x42 }] }],
     async open() { this.opened = true; },
     async close() { this.opened = false; },
-    addEventListener(t, f) { (ls[t] = ls[t] || []).push(f); },
+    addEventListener(t, f) { const a = (ls[t] = ls[t] || []); if (!a.includes(f)) a.push(f); },
     removeEventListener(t, f) { ls[t] = (ls[t] || []).filter(x => x !== f); },
     async sendFeatureReport(id, buf) {
       const b = new Uint8Array(buf.buffer || buf, buf.byteOffset || 0, buf.byteLength);
@@ -19,23 +19,37 @@
     },
     async receiveFeatureReport(id) {
       if (!reply) throw new DOMException("no data");
-      const r = reply; return new DataView(r.buffer);
+      /* the controller has one reply buffer: another page's request may have replaced it */
+      const h = await (await fetch(SRV + "/reply")).text();
+      const r = h ? new Uint8Array(h.match(/../g).map(x => parseInt(x, 16))) : reply; return new DataView(r.buffer);
     },
   };
   window.__vdev = dev;
+  const hidLs = {};
   const hid = {
     async requestDevice() { return [dev]; },
     async getDevices() { return dev.opened ? [dev] : []; },
-    addEventListener() {}, removeEventListener() {},
+    addEventListener(t, f) { const a = (hidLs[t] = hidLs[t] || []); if (!a.includes(f)) a.push(f); },
+    removeEventListener(t, f) { hidLs[t] = (hidLs[t] || []).filter(x => x !== f); },
   };
+  /* a test unplugs the controller and plugs it in again (the same device the page may use) */
+  window.__unplug = () => { dev.opened = false; (hidLs.disconnect || []).forEach(f => f({ device: dev })); };
+  window.__plug = () => { (hidLs.connect || []).forEach(f => f({ device: dev })); };
   Object.defineProperty(navigator, "hid", { value: hid, configurable: true });
-  setInterval(async () => {
-    if (!dev.opened) return;
-    try {
-      const h = await (await fetch(SRV + "/report")).text();
-      const b = new Uint8Array(1 + h.length / 2); b.set(h.match(/../g).map(x => parseInt(x, 16)), 1);
-      const ev = { reportId: 0x42, device: dev, data: new DataView(b.buffer) };
-      (ls.inputreport || []).forEach(f => f(ev));
-    } catch (e) {}
-  }, 15);
+  /* every pad report, in order, like WebHID (the server runs the controller in 5 ms steps) */
+  let seen = -1;
+  (async function poll() {
+    for (;;) {
+      await new Promise(r => setTimeout(r, 15));
+      if (!dev.opened) continue;
+      try {
+        const j = await (await fetch(SRV + "/reports42?after=" + seen)).json(); seen = j.n;
+        for (const h of j.r) {
+          const b = new Uint8Array(h.match(/../g).map(x => parseInt(x, 16)));
+          const ev = { reportId: 0x42, device: dev, data: new DataView(b.buffer) };
+          (ls.inputreport || []).forEach(f => f(ev));
+        }
+      } catch (e) {}
+    }
+  })();
 })();

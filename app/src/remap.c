@@ -1494,12 +1494,13 @@ void remap_raw_read(uint8_t *out)
 {
 	struct controller_report r;
 	k_spinlock_key_t key = k_spin_lock(&raw_lock);
-	int16_t ang[3], acc[3];
+	int16_t quat[4];
+	int16_t acc[3];
 	int16_t v[12];
 
 	r = raw_state;
 	k_spin_unlock(&raw_lock, key);
-	imu_raw_take(ang, acc);
+	imu_raw_read(quat, acc);
 	v[0] = r.trigger_left;
 	v[1] = r.trigger_right;
 	v[2] = r.stick_left_x;
@@ -1512,6 +1513,7 @@ void remap_raw_read(uint8_t *out)
 	v[9] = r.touchpad_right_x;
 	v[10] = r.touchpad_right_y;
 	v[11] = (int16_t)r.touchpad_right_pressure;
+	memset(out, 0, REMAP_RAW_SIZE);
 	sys_put_le32(r.buttons, &out[0]);
 	for(int i = 0; i < 12; ++i)
 	{
@@ -1519,9 +1521,13 @@ void remap_raw_read(uint8_t *out)
 	}
 	for(int i = 0; i < 3; ++i)
 	{
-		sys_put_le16((uint16_t)ang[i], &out[28 + 2 * i]);
 		sys_put_le16((uint16_t)acc[i], &out[34 + 2 * i]);
 	}
+	for(int i = 0; i < 4; ++i)
+	{
+		sys_put_le16((uint16_t)quat[i], &out[40 + 2 * i]);
+	}
+	sys_put_le32((uint32_t)k_ticks_to_us_floor64(k_uptime_ticks()), &out[52]);
 }
 
 void remap_monitor(uint8_t *out)

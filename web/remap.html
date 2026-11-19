@@ -99,7 +99,7 @@
 <body>
 <div class="top">
   <div class="topin">
-    <div class="brand">SC2 <span class="hz">Remapper</span> <span class="note" id="pagever" title="page version — if it is older than expected, press Ctrl+F5">p.2026-11-18v</span></div>
+    <div class="brand">SC2 <span class="hz">Remapper</span> <span class="note" id="pagever" title="page version — if it is older than expected, press Ctrl+F5">p.2026-11-19a</span></div>
     <button class="primary" id="connect">Connect controller</button>
     <span id="status" class="chip">not connected</span>
     <span class="grow"></span>
@@ -830,7 +830,7 @@ $("#connect").onclick=async()=>{
 navigator.hid&&navigator.hid.addEventListener("disconnect",e=>{ devs=devs.filter(d=>d!==e.device); if(ctlDev===e.device) ctlDev=null; $("#status").textContent=devs.length?"":"disconnected"; $("#status").className="chip"; });
 let lastBtn=0;
 let lastRep=null;
-let remapOn=false, rawAt=0;
+let remapOn=false, rawAt=0, rawTsR=null;
 function onReport(e){ if(e.reportId!==0x42) return; rate.set(e.device,1); if(!ctlDev) ctlDev=e.device; if(e.device!==ctlDev||e.data.byteLength<5) return;
   if(performance.now()-rawAt<300) return; /* the physical state comes from sc26re/raw */
   lastBtn=e.data.getUint32(1,true); if(e.data.byteLength>=29) lastRep=e.data; }
@@ -840,6 +840,9 @@ setInterval(async()=>{
   if(!remapOn||!devs.length||$("#v_map").hidden||bulk||document.hidden) return; /* hidden tab: leave the settings channel to the 3D overlay */
   let b; try{ b=await read("sc26re/raw"); }catch(e){ return; }
   if(!b||b.length<28) return;
+  /* v51 test 43+: the reply's time. The previous reply again (asked too early over the Puck or
+   * Bluetooth) would show an older state for a moment */
+  if(b.length>=56){ const ts=(b[52]|(b[53]<<8)|(b[54]<<16)|(b[55]<<24))>>>0; if(rawTsR!==null){ const d=(ts-rawTsR)|0; if(d<=0&&d>-1000000) return; } rawTsR=ts; }
   const u=new Uint8Array(1+b.length); u.set(b,1); const dv=new DataView(u.buffer);
   rawAt=performance.now(); lastBtn=dv.getUint32(1,true); lastRep=dv;
 },40);

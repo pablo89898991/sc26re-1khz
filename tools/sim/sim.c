@@ -1,6 +1,7 @@
 #include <stdint.h>
 /* Host build of the remapper: the real remap.c and sc26re_cfg.c with the rest of
  * the firmware replaced by recording stubs. Driven from Python (ctypes). */
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -13,6 +14,11 @@
 #include "rgbw_led.h"
 
 static int64_t now_ms;
+#include "imu_raw.h"
+static struct imu_raw_orient sim_raw_orient = { .q = { 1, 0, 0, 0 } }; /* imu.c raw_orient / raw_accel (3D overlay) */
+static double sim_truth[3];      /* the gyro integrated by the test bench, never read by firmware code */
+static double sim_truth_q[4] = { 1, 0, 0, 0 }; /* and the orientation it gives (w, x, y, z, body frame) */
+static int16_t sim_raw_accel[3];
 int64_t k_uptime_get(void) { return now_ms; }
 uint32_t k_uptime_get_32(void) { return (uint32_t)now_ms; }
 
@@ -216,6 +222,9 @@ void sim_reset_link(void)
 	qn = 0; stk_n = 0; state_pending = 0; burst_left = 0; last_mb_queued = 0; link_up = 1;
 	memset(host_kbd, 0, sizeof(host_kbd)); host_mb = 0; host_dx = host_dy = host_wh = host_pan = 0; host_lost = 0;
 	tmode = 0; esb_one = 0; lossy_pct = 0; ble_ci = 15; xbox_pad = 1;
+	imu_raw_orient_init(&sim_raw_orient); memset(sim_raw_accel, 0, sizeof(sim_raw_accel));
+	memset(sim_truth, 0, sizeof(sim_truth));
+	sim_truth_q[0] = 1; sim_truth_q[1] = sim_truth_q[2] = sim_truth_q[3] = 0;
 }
 void sim_host(int32_t *out)
 {
@@ -233,7 +242,13 @@ static bool gm_on;
 void gyro_mouse_set_enabled(bool on) { gm_on = on; (void)sc26re_cfg_set(SC26RE_CFG_GM_ENABLED, on ? 1 : 0, false); ev("G %d", on); } /* as gyro_mouse.c */
 int32_t gyro_mouse_counts_per_360(void) { return 16364; }
 #endif
-void imu_raw_take(int16_t a[3], int16_t b[3]) { memset(a, 0, 6); memset(b, 0, 6); }
+/* as imu.c: the gyro integrated since power-on (imu_raw.h, the firmware's code) and the last
+ * accel, for the 3D overlay */
+void imu_raw_read(int16_t a[4], int16_t b[3])
+{
+	imu_raw_orient_get(&sim_raw_orient, a);
+	for(int i = 0; i < 3; ++i) b[i] = sim_raw_accel[i];
+}
 void ibex_settings_notify(uint8_t id) { (void)id; }
 
 /* ---- settings store in memory ---- */
@@ -299,6 +314,8 @@ void sim_gyro(float x, float y, float z) { gm_dps[0] = x; gm_dps[1] = y; gm_dps[
 void sim_gm_physical(int on) { gm_physical = on; }
 #endif
 
+#include "triton_state_report.h"
+static struct controller_report sim_last_out;
 void sim_step(const uint8_t *in, uint8_t *out, int dt_us)
 {
 	struct controller_report r;
@@ -331,6 +348,44 @@ void sim_step(const uint8_t *in, uint8_t *out, int dt_us)
 #endif
 	now_ms += 0; /* time advanced by the driver (sub-ms steps) */
 	for(int t = 0; t < (dt_us + 999) / 1000; ++t) transport_tick();
+	/* imu.c store_cached_imu_report: the physical motion for the overlay */
+	{
+		/* the IMU sample period: 1 ms steps, as the IMU feeds it */
+		const int16_t g[3] = { r.gyro_x, r.gyro_y, r.gyro_z };
+
+		for(int t = 0; t < (dt_us + 999) / 1000; ++t) imu_raw_orient_add(&sim_raw_orient, g, (float)dt_us * 1e-6f / (float)((dt_us + 999) / 1000));
+	}
+	sim_raw_accel[0] = r.accel_x; sim_raw_accel[1] = r.accel_y; sim_raw_accel[2] = r.accel_z;
+	sim_truth[0] += r.gyro_x * 0.06103 * dt_us * 1e-6;
+	sim_truth[1] += r.gyro_y * 0.06103 * dt_us * 1e-6;
+	sim_truth[2] += r.gyro_z * 0.06103 * dt_us * 1e-6;
+	{
+		/* q = q * rotation(w dt), the turn about the controller's own axes */
+		double w[3] = { r.gyro_x * 0.06103 * M_PI / 180, r.gyro_y * 0.06103 * M_PI / 180, r.gyro_z * 0.06103 * M_PI / 180 };
+		double a = sqrt(w[0] * w[0] + w[1] * w[1] + w[2] * w[2]) * dt_us * 1e-6;
+
+		if(a > 0)
+		{
+			double k = sin(a / 2) / (a / (dt_us * 1e-6)), d[4] = { cos(a / 2), w[0] * k, w[1] * k, w[2] * k };
+			double *q = sim_truth_q, o[4] = {
+				q[0] * d[0] - q[1] * d[1] - q[2] * d[2] - q[3] * d[3], q[0] * d[1] + q[1] * d[0] + q[2] * d[3] - q[3] * d[2],
+				q[0] * d[2] - q[1] * d[3] + q[2] * d[0] + q[3] * d[1], q[0] * d[3] + q[1] * d[2] - q[2] * d[1] + q[3] * d[0] };
+			double l = sqrt(o[0] * o[0] + o[1] * o[1] + o[2] * o[2] + o[3] * o[3]);
+
+			for(int i = 0; i < 4; ++i) q[i] = o[i] / l;
+		}
+	}
+	/* imu.c hide_motion_if_mouse: while the gyro mouse is on, the pad report (and so the remapper
+	 * and Steam) get no motion; the 3D overlay's orientation above still has it */
+#ifdef WITH_GM
+	if(gyro_mouse_active())
+#else
+	if(gm_on)
+#endif
+	{
+		r.gyro_x = r.gyro_y = r.gyro_z = 0;
+		r.accel_x = r.accel_y = r.accel_z = 0;
+	}
 	remap_raw_capture(&r);
 	remap_process(&r, (float)dt_us * 1e-6f);
 #ifdef WITH_GM
@@ -339,7 +394,19 @@ void sim_step(const uint8_t *in, uint8_t *out, int dt_us)
 	gm_state = r; gm_state_valid = true;  /* hardware_store_state */
 #endif
 	memcpy(out, &r, sizeof(r));
+	sim_last_out = r;
 }
+/* the pad report 0x42 as the firmware sends it (body without the report id), from the last output */
+int sim_report42(uint8_t *out)
+{
+	static uint8_t seq;
+
+	triton_state_report_pack_body(out, 53, seq++, &sim_last_out, (uint32_t)(now_ms * 1000));
+	return 53;
+}
+/* how far the controller turned since the link reset, degrees about x / y / z (test oracle) */
+void sim_gyro_truth(double out[3]) { memcpy(out, sim_truth, sizeof(sim_truth)); }
+void sim_gyro_truth_q(double out[4]) { memcpy(out, sim_truth_q, sizeof(sim_truth_q)); }
 const char *sim_events(void) { return evlog; }
 void sim_clear_events(void) { evlen = 0; evlog[0] = 0; }
 int sim_gyro_mouse(void) { return gm_on; }
@@ -370,7 +437,7 @@ int sim_feature(const uint8_t *req, uint8_t *rsp)
 		size_t len = 0;
 		bool ok = false;
 		if(strcmp(path, "sc26re/awake") == 0) { cur[0] = 1; len = 1; ok = true; } /* meter keep-alive, as valve_settings.c */
-		else if(strcmp(path, "sc26re/raw") == 0) { remap_raw_read(cur); len = 40; ok = true; }
+		else if(strcmp(path, "sc26re/raw") == 0) { remap_raw_read(cur); len = REMAP_RAW_SIZE; ok = true; }
 		else if(strcmp(path, "sc26re/rmp_out") == 0) { remap_monitor(cur); len = 30; ok = true; }
 		else if(strcmp(path, "sc26re/rmp_diag") == 0) { remap_diag(cur); len = 14; ok = true; }
 		else if(remap_path(path)) ok = remap_read(path, cur, 60, &len);

@@ -270,7 +270,15 @@ void remap_monitor(uint8_t *out);
 void remap_diag(uint8_t *out);
 /* physical controller state before any remapping (3D overlay) */
 void remap_raw_capture(const struct controller_report *r);
-/* 40 bytes: buttons, triggers, sticks, pads + pressure, gyro turned (0.01 deg), accel */
+/*
+ * REMAP_RAW_SIZE bytes: buttons (le32 at 0), triggers, sticks, pads + pressure (12 x le16 at 4),
+ * 6 bytes 0 (v51 test builds up to 42: the gyro turned since the last read), accel (3 x le16 at
+ * 34), the gyro integrated since power-on as a quaternion (w x y z, le16 x 32767 at 40, imu_raw.h),
+ * 4 bytes 0, and the time of this reply (le32 at 52, us): a reply that is not newer than the last
+ * one a reader saw is a stale one (the Puck and Bluetooth hand out the previous reply when asked
+ * too early).
+ */
+#define REMAP_RAW_SIZE 56
 void remap_raw_read(uint8_t *out);
 /* the physical buttons (before the remapper hides mapped / unbound ones) */
 uint32_t remap_raw_buttons(void);

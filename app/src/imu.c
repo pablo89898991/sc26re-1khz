@@ -25,6 +25,7 @@
 #include <hal/nrf_twim.h>
 #include "ibex_settings_registry.h"
 #include "imu.h"
+#include "imu_raw.h"
 #include "sc26re_cfg.h"
 #include "calibration.h"
 #include "imu_bias.h"
@@ -354,9 +355,9 @@ static void copy_imu_report_fields(struct controller_report *dst,
 }
 
 #if IMU_HAS_DEVICE
-/* raw motion for the 3D overlay: gyro integrated between reads (0.01 deg) and the last accel,
- * taken before the gyro mouse hides the motion from the pad report */
-static float raw_angle[3];
+/* raw motion for the 3D overlay: the gyro integrated since power-on (imu_raw.h) and the last
+ * accel, taken before the gyro mouse hides the motion from the pad report */
+static struct imu_raw_orient raw_orient = { .q = { 1.0f, 0.0f, 0.0f, 0.0f } };
 static int16_t raw_accel[3];
 static uint32_t raw_last_ts;
 static bool raw_ts_valid;
@@ -372,9 +373,9 @@ static void store_cached_imu_report(const struct controller_report *report)
 
 		if(dt > 0.0f && dt < 0.05f)
 		{
-			raw_angle[0] += (float)report->gyro_x * 0.06103f * dt;
-			raw_angle[1] += (float)report->gyro_y * 0.06103f * dt;
-			raw_angle[2] += (float)report->gyro_z * 0.06103f * dt;
+			const int16_t g[3] = { report->gyro_x, report->gyro_y, report->gyro_z };
+
+			imu_raw_orient_add(&raw_orient, g, dt);
 		}
 	}
 	raw_last_ts = ts;
@@ -387,19 +388,26 @@ static void store_cached_imu_report(const struct controller_report *report)
 }
 #endif
 
-void imu_raw_take(int16_t angle[3], int16_t accel[3])
+void imu_raw_read(int16_t quat[4], int16_t accel[3])
 {
+#if IMU_HAS_DEVICE
 	k_spinlock_key_t key = k_spin_lock(&cached_imu_report_lock);
+	struct imu_raw_orient o = raw_orient;
 
 	for(int i = 0; i < 3; ++i)
 	{
-		float a = CLAMP(raw_angle[i] * 100.0f, -32767.0f, 32767.0f);
-
-		angle[i] = (int16_t)a;
-		raw_angle[i] -= (float)angle[i] * 0.01f;
 		accel[i] = raw_accel[i];
 	}
 	k_spin_unlock(&cached_imu_report_lock, key);
+	imu_raw_orient_get(&o, quat);
+#else
+	quat[0] = 32767;
+	quat[1] = quat[2] = quat[3] = 0;
+	for(int i = 0; i < 3; ++i)
+	{
+		accel[i] = 0;
+	}
+#endif
 }
 
 static void load_cached_imu_report(struct controller_report *report)

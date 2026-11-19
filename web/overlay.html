@@ -63,6 +63,8 @@ function qrot(q, v) { const p = qmul(qmul(q, [0, ...v]), [q[0], -q[1], -q[2], -q
 let q = [1, 0, 0, 0], qRef = [1, 0, 0, 0];
 function recenter() { qRef = [q[0], q[1], q[2], q[3]]; }
 $("#recenter").onclick = recenter;
+/* gyro switched off and on: carry on from where the model stands (native reads start over) */
+$("#useGyro").addEventListener("input", () => { rawAng = qNat = null; });
 /* gyro rates (deg/s) about the controller's own X (pitch), Y (roll) and Z (yaw) axes */
 function gyroStep(gx, gy, gz, dt) {
   if (!$("#useGyro").checked) return;
@@ -70,13 +72,16 @@ function gyroStep(gx, gy, gz, dt) {
   const a = Math.hypot(...w) * dt;
   if (a > 0) q = qnorm(qmul(q, qaxis(w.map(v => v * dt / a), a)));
 }
-/* nudge towards gravity: lying face up is level */
-function levelStep(acc) {
+/* nudge towards gravity: lying face up is level. The same pull per second whatever the sample
+ * rate (1 kHz pad reports, a few hundred native reads, fewer on a busy PC): half a second to
+ * close most of the gap, only while the controller feels about 1 g (not while it is swung). */
+const LEVEL_TAU = 0.5;
+function levelStep(acc, dt) {
   if (!$("#level").checked) return;
-  const al = Math.hypot(...acc); if (!(al > 8000 && al < 25000)) return;
-  const up = qrot(q, acc.map(v => v / al)), t = [0, 0, 1];
-  const c = [up[1]*t[2]-up[2]*t[1], up[2]*t[0]-up[0]*t[2], up[0]*t[1]-up[1]*t[0]], s = Math.hypot(...c);
-  if (s > 1e-4) q = qnorm(qmul(qaxis(c.map(v => v / s), Math.min(Math.asin(Math.min(s, 1)), 0.004)), q));
+  const al = Math.hypot(...acc); if (!(al > 12300 && al < 20500)) return;
+  const up = qrot(q, acc.map(v => v / al));
+  const c = [up[1], -up[0], 0], s = Math.hypot(...c); /* up x (0, 0, 1) */
+  if (s > 1e-6) q = qnorm(qmul(qaxis(c.map(v => v / s), Math.atan2(s, up[2]) * Math.min(1, Math.max(0, dt) / LEVEL_TAU)), q));
 }
 
 /* ---------- three.js scene (model space: cm, +x right, +y out of the face, +z towards the grips) ---------- */
@@ -214,19 +219,36 @@ $("#mdl").addEventListener("change", () => { if (!$("#loading")) { const d = doc
 /* ---------- input state ---------- */
 const st = { btn: 0, lt: 0, rt: 0, ls: [0, 0], rs: [0, 0], lp: [0, 0, 0], rp: [0, 0, 0] };
 let devs = [], ctlDev = null, lastTs = null;
-let rawOk = false, rawFresh = 0, rawN = 0;
-const rawLive = () => rawOk && $("#src").value === "raw" && performance.now() - rawFresh < 300;
+let rawOk = false, rawFresh = 0, rawN = 0, rawStale = 0;
+/*
+ * Native reads drive the picture. The controller's own orientation (v51 test 43+) makes every
+ * native read exact on its own: the model's orientation at the last read (qNat) turned by the
+ * controller's turn since then, however long ago that was. While a read is late the pad reports
+ * keep the model turning, a stand-in the next read replaces. The pad reports show everything
+ * only when native reads stop for 3 s (or never worked): their buttons and sticks are what the
+ * remapper left, which would flicker in during a short gap.
+ */
+const NAT_LATE = 60, NAT_GONE = 3000;
+let natT = 0, natCount = 0, qNat = null;
+let rawAng = null, rawTs = null; /* the controller's orientation and the reply time seen last (null: start over) */
+const nativeOn = () => rawOk && $("#src").value === "raw" && performance.now() - rawFresh < NAT_GONE;
 function onReport(e) {
   if (e.reportId !== 0x42) return; if (!ctlDev) ctlDev = e.device; if (e.device !== ctlDev) return;
-  if (rawLive()) return;
   const d = e.data; if (d.byteLength < 51) return;
   const g = o => d.getInt16(o, true);
-  st.btn = d.getUint32(1, true); st.lt = g(5) / 32767; st.rt = g(7) / 32767; st.ls = [g(9) / 32767, g(11) / 32767]; st.rs = [g(13) / 32767, g(15) / 32767];
-  st.lp = [g(17) / 32767, g(19) / 32767, d.getUint16(21, true) / 32767]; st.rp = [g(23) / 32767, g(25) / 32767, d.getUint16(27, true) / 32767];
   const ts = d.getUint32(29, true); let dt = lastTs === null ? 0.001 : ((ts - lastTs) >>> 0) / 1e6; lastTs = ts; if (!(dt > 0 && dt < 0.05)) dt = 0.001;
   /* report: accel x/y/z at 33/35/37, gyro x/y/z at 39/41/43 (0.06103 deg/s) */
+  if (nativeOn()) {
+    if (qNat && performance.now() - natT > NAT_LATE) gyroStep(g(39) * 0.06103, g(41) * 0.06103, g(43) * 0.06103, dt);
+    return;
+  }
+  /* the Steam view: coming back, native reads start over from wherever it is then. (Native reads
+   * that stopped and come back turn it exactly to where the controller is: qNat stays.) */
+  if ($("#src").value !== "raw") rawAng = qNat = null;
+  st.btn = d.getUint32(1, true); st.lt = g(5) / 32767; st.rt = g(7) / 32767; st.ls = [g(9) / 32767, g(11) / 32767]; st.rs = [g(13) / 32767, g(15) / 32767];
+  st.lp = [g(17) / 32767, g(19) / 32767, d.getUint16(21, true) / 32767]; st.rp = [g(23) / 32767, g(25) / 32767, d.getUint16(27, true) / 32767];
   gyroStep(g(39) * 0.06103, g(41) * 0.06103, g(43) * 0.06103, dt);
-  levelStep([g(33), g(35), g(37)]);
+  levelStep([g(33), g(35), g(37)], dt);
 }
 function addDev(d) { if (!devs.includes(d)) { devs.push(d); d.addEventListener("inputreport", onReport); } }
 $("#connect").onclick = async () => {
@@ -235,6 +257,9 @@ $("#connect").onclick = async () => {
     $("#status").innerHTML = devs.length ? '<span class="ok">connected</span>' : "no device selected"; setTimeout(recenter, 300);
   } catch (e) { $("#status").innerHTML = `<span class="err">${e.message}</span>`; } };
 navigator.hid && navigator.hid.getDevices().then(ds => ds.filter(d => d.vendorId === 0x28de).forEach(async d => { try { if (!d.opened) await d.open(); addDev(d); $("#status").innerHTML = '<span class="ok">connected</span>'; } catch (e) {} }));
+/* unplugged and plugged in again (the same device the page was allowed to use): carry on */
+navigator.hid && navigator.hid.addEventListener && navigator.hid.addEventListener("disconnect", e => { e.device.removeEventListener("inputreport", onReport); devs = devs.filter(d => d !== e.device); if (ctlDev === e.device) ctlDev = null; rawAng = rawTs = lastTs = null; if (!devs.length) $("#status").textContent = "disconnected"; });
+navigator.hid && navigator.hid.addEventListener && navigator.hid.addEventListener("connect", async e => { const d = e.device; if (d.vendorId !== 0x28de) return; try { if (!d.opened) await d.open(); rawAng = rawTs = null; addDev(d); } catch (err) {} });
 /* optional: gyro on without Steam (same as the report meter) */
 setInterval(async () => { if (!$("#imuOn").checked) return; for (const d of devs) { if (!d.collections.some(c => c.featureReports && c.featureReports.length)) continue;
   const b = new Uint8Array(63); b[0] = 0x87; b[1] = 3; b[2] = 48; b[3] = 0x1C; try { await d.sendFeatureReport(1, b); } catch (e) {} } }, 2000);
@@ -245,8 +270,8 @@ function pathCmd(op, path) { const p = new TextEncoder().encode(path), buf = new
 const hasFeat = d => d.collections.some(c => c.featureReports && c.featureReports.length);
 /* the interface that sends the pad reports, if it takes feature reports, else the first that does */
 const featDev = () => (ctlDev && hasFeat(ctlDev) ? ctlDev : devs.find(hasFeat));
-/* The settings channel is shared: with the remapper page open at the same time a reply can be
- * the other page's. Ask again instead of giving up. */
+/* The settings channel is shared: with the remapper page open at the same time (or Steam) a reply
+ * can be another program's. Then step aside for a moment, they need their reply too, and ask again. */
 async function readPath(path) {
   const d = featDev(); if (!d) throw new Error("no device"); const tag = pathTag(path);
   for (let tries = 0; tries < 4; tries++) {
@@ -258,7 +283,7 @@ async function readPath(path) {
       if (o >= 0) {
         const data = r.slice(o + 2, o + 2 + r[o + 1]);
         if (data.length && data[0] === tag) return data.slice(1);
-        break; /* another request's reply: ask again */
+        await new Promise(res => setTimeout(res, 30 + Math.random() * 20)); break;
       }
       await new Promise(res => setTimeout(res, 2 + k * 4));
     }
@@ -266,20 +291,49 @@ async function readPath(path) {
   throw new Error("no reply");
 }
 setInterval(() => { const n = rawN; rawN = 0; if (!devs.length) return;
-  $("#status").innerHTML = rawLive() ? `<span class="ok">connected · native ${n}/s</span>` : $("#src").value === "raw" && rawOk ? '<span class="warn">connected · native reads blocked, showing what Steam receives</span>' : '<span class="ok">connected</span>'; }, 1000);
+  $("#status").innerHTML = $("#src").value !== "raw" ? '<span class="ok">connected · showing what Steam receives</span>'
+    : nativeOn() ? `<span class="ok">connected · native ${n}/s</span>`
+    : rawOk ? '<span class="warn">connected · native reads paused, showing what Steam receives</span>'
+    : '<span class="warn">connected · no native reads (firmware before v51, or blocked): showing what Steam receives</span>'; }, 1000);
 (async function rawLoop() {
-  let fails = 0;
+  let fails = 0, levelT = 0, asked = 0;
   for (;;) {
-    if (!devs.length || $("#src").value !== "raw") { await new Promise(r => setTimeout(r, 200)); continue; }
-    let b; try { b = await readPath("sc26re/raw"); fails = 0; } catch (e) { if (++fails > 50) rawOk = false; await new Promise(r => setTimeout(r, 10)); continue; }
+    if (!devs.length || $("#src").value !== "raw") { rawAng = qNat = null; await new Promise(r => setTimeout(r, 200)); continue; }
+    /* at most 250 reads a second: the pad reports keep the model moving in between, and Steam and
+     * the remapper page share the channel */
+    const wait = asked + 4 - performance.now(); if (wait > 0) await new Promise(r => setTimeout(r, wait));
+    asked = performance.now();
+    let b; try { b = await readPath("sc26re/raw"); fails = 0; } catch (e) {
+      /* firmware without native reads answers nothing: ask once a second, not hundreds of times */
+      if (++fails > 50) rawOk = false; await new Promise(r => setTimeout(r, fails > 50 ? 1000 : 10)); continue; }
     if (!b || b.length < 40) { rawOk = false; await new Promise(r => setTimeout(r, 1000)); continue; }
-    rawOk = true; rawFresh = performance.now(); rawN++;
-    const dv = new DataView(b.buffer, b.byteOffset, 40), g = i => dv.getInt16(i, true);
+    const dv = new DataView(b.buffer, b.byteOffset, b.length), g = i => dv.getInt16(i, true);
+    const v2 = b.length >= 56; /* v51 test 43+: the controller's orientation and the reply time */
+    let dt;
+    if (v2) {
+      const ts = dv.getUint32(52, true), d = rawTs === null ? 1 : (ts - rawTs) | 0;
+      /* not newer than the last reply: the previous one again (asked too early over the Puck or
+       * Bluetooth). Much older: the controller started again. */
+      if (d <= 0 && d > -1000000) { rawStale++; rawOk = true; rawFresh = performance.now(); continue; }
+      if (d <= 0) rawAng = null;
+      dt = rawTs === null || d <= 0 ? 0 : d / 1e6; rawTs = ts;
+    } else { const t = performance.now(); dt = levelT ? (t - levelT) / 1000 : 0; levelT = t; rawAng = rawTs = null; }
+    rawOk = true; rawFresh = natT = performance.now(); rawN++; natCount++;
     st.btn = dv.getUint32(0, true); st.lt = g(4) / 32767; st.rt = g(6) / 32767; st.ls = [g(8) / 32767, g(10) / 32767]; st.rs = [g(12) / 32767, g(14) / 32767];
     st.lp = [g(16) / 32767, g(18) / 32767, dv.getUint16(20, true) / 32767]; st.rp = [g(22) / 32767, g(24) / 32767, dv.getUint16(26, true) / 32767];
-    /* gyro integrated since the last read, 0.01 deg about x / y / z; accel x / y / z */
-    gyroStep(g(28) * 0.01, g(30) * 0.01, g(32) * 0.01, 1);
-    levelStep([g(34), g(36), g(38)]);
+    if (v2) {
+      /* the gyro integrated since power-on (a quaternion w x y z): turn by the difference */
+      const a = qnorm([g(40), g(42), g(44), g(46)]);
+      if (rawAng) {
+        let d = qmul([rawAng[0], -rawAng[1], -rawAng[2], -rawAng[3]], a); if (d[0] < 0) d = d.map(v => -v);
+        const s = Math.hypot(d[1], d[2], d[3]), ang = 2 * Math.atan2(s, d[0]) * 180 / Math.PI, k = s > 1e-12 ? ang / s : 0;
+        /* faster than the gyro can measure (2000 deg/s): the controller started again (over the Puck the page does not see that) */
+        if (ang <= 2100 * dt + 1) { if (qNat) q = qNat; gyroStep(d[1] * k, d[2] * k, d[3] * k, 1); }
+      }
+      rawAng = a;
+    } else { if (qNat) q = qNat; gyroStep(g(28) * 0.01, g(30) * 0.01, g(32) * 0.01, 1); } /* older test builds: the turn since the last read */
+    levelStep([g(34), g(36), g(38)], Math.min(dt, 0.1));
+    qNat = q;
   }
 })();
 
@@ -342,7 +396,8 @@ function frame() {
 }
 requestAnimationFrame(frame);
 /* test hook (#debug): turn the controller from the console / a test */
-if (location.hash === "#debug") window.__ov = { st, setDrag(ax, ay, az, w) { drag.set(ax, ay, az, w); }, parts, gyroStep, recenter, fingers, get raw() { return [rawOk, rawFresh, performance.now(), rawN]; }, get q() { return q; }, set q(v) { q = v; } };
+if (location.hash === "#debug") window.__ov = { st, setDrag(ax, ay, az, w) { drag.set(ax, ay, az, w); }, parts, gyroStep, recenter, fingers, model, get ready() { return ready; },
+  get raw() { return [rawOk, rawFresh, performance.now(), rawN, rawStale]; }, get natCount() { return natCount; }, get lastTs() { return lastTs; }, get src() { return $("#src").value; }, get q() { return q; }, set q(v) { q = v; }, get qRef() { return qRef; } };
 </script>
 </body>
 </html>

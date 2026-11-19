@@ -633,10 +633,10 @@ bool valve_settings_read(const char *path, uint8_t *buf, size_t capacity, size_t
 		*len = 7;
 		return true;
 	}
-	if(strcmp(path, "sc26re/raw") == 0 && capacity >= 40)
+	if(strcmp(path, "sc26re/raw") == 0 && capacity >= REMAP_RAW_SIZE)
 	{
 		remap_raw_read(buf);
-		*len = 40;
+		*len = REMAP_RAW_SIZE;
 		return true;
 	}
 	if(strcmp(path, "sc26re/stest") == 0 && capacity >= 24)
