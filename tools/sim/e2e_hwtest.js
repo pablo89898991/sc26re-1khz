@@ -19,8 +19,8 @@ async function slot3() { let out = ''; for (let o = 0; o < 3232; ) { const r = a
   for (let o = 0; o < 3232; o += 40) await feature(0xEE, 'sc26re/rmp/3/' + o.toString(16), [...mine.slice(o, o + 40)]);
   await feature(0xEF, 'sc26re/rmp/3');
   await feature(0xEE, 'sc26re/remap_profile', [1, 0]); await feature(0xEF, 'sc26re/remap_profile');
-  /* the virtual controller always has its Xbox pad: say so, as the real one does with pad_out */
-  await feature(0xEE, 'sc26re/pad_out', [2, 0]); await feature(0xEF, 'sc26re/pad_out');
+  /* no Xbox pad at the PC (pad_out 0, as the cases were exported): Xbox outputs reach Steam */
+  await post('/xbox', { on: 0 });
   const before = await slot3();
   const br = await chromium.launch({ executablePath: '/usr/bin/google-chrome', args: ['--no-sandbox'] });
   const ctx = await br.newContext({ acceptDownloads: true });
@@ -33,6 +33,7 @@ async function slot3() { let out = ''; for (let o = 0; o < 3232; ) { const r = a
   await pg.click('#run');
   const done = await pg.waitForFunction(() => /are back|RESTORE FAILED/.test(document.querySelector('#log').textContent), null, { timeout: 600000 }).then(() => true, () => false);
   check('runs every case and restores', done && /are back/.test(await pg.textContent('#log')), (await pg.textContent('#log')).slice(-300));
+  check('the page itself finds no difference from the simulator', / (\d+) of \1 as in the simulator/.test(await pg.textContent('#log')), (await pg.textContent('#log')).match(/\d+ of \d+ as in the simulator/));
   const res = await pg.evaluate(() => window.hwtResults);
   check('results for every case, no errors', res && res.results.length > 20 && res.results.every(r => !r.error), res && JSON.stringify(res.results.filter(r => r.error)).slice(0, 300));
   fs.writeFileSync('/tmp/hwt_res.json', JSON.stringify(res));

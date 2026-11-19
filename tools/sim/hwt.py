@@ -101,7 +101,7 @@ def sim_run(case, cfg=None):
 DIG = lambda e: (e["mb"], e["sh"], tuple(e["keys"]), e["btn"], e["xb"], e["hap"], e["prof"])
 AN = ("dx", "dy", "wh", "xlt", "xrt", "lsx", "lsy", "rsx", "rsy", "tl", "tr", "absx", "absy")
 
-def same(a, b, tol_ms=6, snap=False):
+def same(a, b, tol_ms=6, snap=False, rel=0.06):
     """a: controller log, b: simulator log. Same digital outputs in the same order, close in time;
     analog outputs close (per snapshot, or the totals at the end)."""
     probs = []
@@ -110,14 +110,22 @@ def same(a, b, tol_ms=6, snap=False):
         for i, (x, y) in enumerate(zip(a, b)):
             if DIG(x) != DIG(y): probs.append("step %d: controller %s, simulator %s" % (i, fmtx(DIG(x)), fmtx(DIG(y))))
             for k in AN:
-                if abs(x[k] - y[k]) > max(3 if k in ("dx", "dy", "wh", "xlt", "xrt") else 400, 0.06 * abs(y[k])):
+                if abs(x[k] - y[k]) > max(3 if k in ("dx", "dy", "wh", "xlt", "xrt") else 400, rel * abs(y[k])):
                     probs.append("step %d %s: controller %d, simulator %d" % (i, k, x[k], y[k]))
             for j in range(4):
                 if abs(x["xs"][j] - y["xs"][j]) > max(400, 0.06 * abs(y["xs"][j])):
                     probs.append("step %d Xbox stick %d: controller %d, simulator %d" % (i, j, x["xs"][j], y["xs"][j]))
         return probs[:8]
     da, db = [DIG(e) for e in a], [DIG(e) for e in b]
-    ch = lambda l, d: [(e["t"], x) for e, x, prev in zip(l, d, [None] + d[:-1]) if x != prev]
+    def ch(l, d):
+        out = [(e["t"], x) for e, x, prev in zip(l, d, [None] + d[:-1]) if x != prev]
+        # a state lasting under 3 ms at a step boundary (an input let go in the same millisecond
+        # a turbo pulse starts) is not an output difference
+        keep = [c for i, c in enumerate(out) if i + 1 >= len(out) or out[i + 1][0] - c[0] >= 3]
+        merged = []
+        for c in keep:
+            if not merged or merged[-1][1] != c[1]: merged.append(c)
+        return merged
     ca, cb = ch(a, da), ch(b, db)
     if [x for _, x in ca] != [x for _, x in cb]:
         probs.append("outputs differ:\n      controller: %s\n      simulator:  %s" % (fmt(ca), fmt(cb)))
@@ -193,9 +201,11 @@ def need(cond, msg, probs):
 
 # ---------------- the cases
 CASES = []
-def case(name, what, tol_ms=6, snap=False):
+def case(name, what, tol_ms=6, snap=False, rel=0.06):
+    """rel: how far apart analog totals may be (a trackball's speed depends on when the loop
+    measures it against the 5 ms steps of the script)"""
     def deco(f):
-        CASES.append(dict(name=name, what=what, f=f, tol=tol_ms, snap=snap)); return f
+        CASES.append(dict(name=name, what=what, f=f, tol=tol_ms, snap=snap, rel=rel)); return f
     return deco
 
 def S(ms, **st): return (ms, st)
@@ -1182,7 +1192,7 @@ def _friction(v):
         roll = l[-1]["dx"] - l[20]["dx"]
         need(abs(roll - exp) <= 0.3 * exp + 20, "friction %s: rolls ~%.0f after lifting (got %d)" % (v, exp, roll), P)
     return p, st, o
-_sweep("set_pad_friction", "RP trackball friction %s", (0.5, 5, 20), _friction, snap=True)
+_sweep("set_pad_friction", "RP trackball friction %s", (0.5, 5, 20), _friction, snap=True, rel=0.25)
 
 def _edge(v):
     p = Profile(); p.analog(3, MOUSE, speed=100); p.anx(3, edge_spin=v)
@@ -1254,7 +1264,7 @@ def build():
         _extra.clear()
         p, steps, _ = c["f"]()
         out.append(dict(name=c["name"], what=c["what"], profile=bytes(p.b).hex(), script=script_bytes(steps).hex(),
-                        ms=sum(ms for ms, _ in steps), snap=c["snap"], extra={str(k): bytes(v.b).hex() for k, v in _extra.items()}))
+                        ms=sum(ms for ms, _ in steps), snap=c["snap"], tol=c["tol"], rel=c["rel"], extra={str(k): bytes(v.b).hex() for k, v in _extra.items()}))
     return out
 
 
@@ -1301,7 +1311,8 @@ def main():
             if r.get("error"): print("ERR %-30s %s" % (r["name"], r["error"])); nbad += 1; continue
             sim = sim_run(c, res.get("cfg"))["log"]
             hw = parse_log(bytes.fromhex(r["log"]))
-            probs = ["controller vs simulator: " + x for x in same(hw, sim, tols[r["name"]], snaps[r["name"]])]
+            rels = {c["name"]: c["rel"] for c in CASES}
+            probs = ["controller vs simulator: " + x for x in same(hw, sim, tols[r["name"]], snaps[r["name"]], rels[r["name"]])]
             probs += ["on the controller: " + x for x in oracle(r["name"], hw)]
             if r.get("flags", 0) & 16: probs.insert(0, "stopped early (Steam button or an upload)")
             if r.get("flags", 0) & 8: probs.insert(0, "log full")

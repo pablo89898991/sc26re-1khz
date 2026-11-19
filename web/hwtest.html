@@ -19,7 +19,7 @@
 </head>
 <body>
 <main>
-  <h1>SC2 remapper hardware test <span class="note" id="ver">p.2026-11-19b</span></h1>
+  <h1>SC2 remapper hardware test <span class="note" id="ver">p.2026-11-19c</span></h1>
   <p class="note">Needs a <b>test build (v51 test 55 or newer)</b>. The page saves a copy of Profile 4 (and any profile a test needs as a layer) and of the active profile setting, runs every test on the controller and puts everything back. During the run the controller ignores its own buttons, sticks and pads; <b>leave it lying still</b>. Pressing the <b>Steam button</b> stops the test at once. Close the remapper and report meter tabs first.</p>
   <div class="bar">
     <button id="connect">Connect controller…</button>
@@ -78,6 +78,22 @@ async function connect(list){
 $("#connect").onclick=async()=>{ try{ await connect(await navigator.hid.requestDevice({filters:[{vendorId:0x28de}]})); }catch(e){ $("#status").innerHTML=`<span class="err">${e.message}</span>`; } };
 navigator.hid&&navigator.hid.getDevices().then(l=>l.length&&connect(l));
 
+
+/* the controller's log against the simulator's (exported with the cases), as hwt.py check does */
+function parseLog(h){ const b=Uint8Array.from(h.match(/../g)||[],x=>parseInt(x,16)); const out=[]; for(let o=0;o+54<=b.length;o+=54){ const v=new DataView(b.buffer,o,54); const k=[]; for(let i=0;i<8;i++) if(b[o+4]>>i&1) k.push(0xE0+i); for(let i=6;i<12;i++) if(b[o+i]) k.push(b[o+i]); k.sort((x,y)=>x-y);
+  out.push({t:v.getUint16(0,true),mb:b[o+2],sh:b[o+3],keys:k,btn:v.getUint32(12,true),xb:v.getUint32(16,true),dx:v.getInt32(20,true),dy:v.getInt32(24,true),wh:v.getInt16(28,true),xlt:b[o+30],xrt:b[o+31],absx:v.getUint16(36,true),absy:v.getUint16(38,true),hap:b[o+40],prof:b[o+41],lsx:v.getInt16(42,true),lsy:v.getInt16(44,true),rsx:v.getInt16(46,true),rsy:v.getInt16(48,true),tl:v.getInt16(50,true),tr:v.getInt16(52,true)}); } return out; }
+function compare(c,hw){
+  const sim=c.sim, P=[], dig=e=>JSON.stringify([e.mb,e.sh,e.keys,e.btn,e.xb,e.hap,e.prof]);
+  const AN=["dx","dy","wh","xlt","xrt","lsx","lsy","rsx","rsy","tl","tr","absx","absy"], rel=c.rel??0.06;
+  if(c.snap){ if(hw.length!==sim.length) return [`${hw.length} snapshots, the simulator ${sim.length}`];
+    hw.forEach((e,i)=>{ const s=sim[i]; if(dig(e)!==dig(s)) P.push(`step ${i}: outputs differ`); for(const k of AN){ const tol=["dx","dy","wh","xlt","xrt"].includes(k)?3:400; if(Math.abs(e[k]-s[k])>Math.max(tol,rel*Math.abs(s[k]))) P.push(`step ${i} ${k}: ${e[k]}, the simulator ${s[k]}`);} }); return P; }
+  const ch=l=>{ const r=[]; let p=null; for(const e of l){ const d=dig(e); if(d!==p) r.push([e.t,d]); p=d; } const keep=r.filter((x,i)=>i+1>=r.length||r[i+1][0]-x[0]>=3); const m=[]; for(const x of keep) if(!m.length||m[m.length-1][1]!==x[1]) m.push(x); return m; };
+  const a=ch(hw), b=ch(sim);
+  if(JSON.stringify(a.map(x=>x[1]))!==JSON.stringify(b.map(x=>x[1]))) P.push("outputs differ from the simulator");
+  else a.forEach((x,i)=>{ const tb=b[i][0]; if(Math.abs(x[0]-tb)>Math.max(c.tol??6,0.05*tb)) P.push(`timing: at ${x[0]} ms, the simulator ${tb} ms`); });
+  const L=hw[hw.length-1], S=sim[sim.length-1];
+  if(L&&S) for(const k of ["dx","dy","wh","absx","absy"]) if(Math.abs(L[k]-S[k])>Math.max(3,0.12*Math.abs(S[k]))) P.push(`${k} total ${L[k]}, the simulator ${S[k]}`);
+  return P; }
 let stopReq=false; window.hwtResults=null;
 $("#stop").onclick=()=>{ stopReq=true; };
 async function runCase(c,slot){
@@ -122,8 +138,14 @@ $("#run").onclick=async()=>{
       catch(e){ results.push({name:c.name,error:e.message}); log(`   ${c.name}: ${e.message}`,"err"); }
     }
     window.hwtResults={version:doc.version, page:$("#ver").textContent, product:dev.productName, cfg, results};
-    download(JSON.stringify(window.hwtResults),`sc26re-hwtest-results-${new Date().toISOString().slice(0,19).replace(/[:T]/g,"-")}.json`);
-    log("results downloaded","ok");
+    /* the comparison with the simulator, here at once (hwt.py check also checks each case's oracle) */
+    let nd=0; const diffs=[];
+    for(const r of results){ const c=doc.cases.find(x=>x.name===r.name); if(!c) continue;
+      const P=r.error?[r.error]:compare(c,parseLog(r.log)); if(r.flags&8) P.unshift("log full"); if(r.flags&16) P.unshift("stopped early");
+      if(P.length){ nd++; diffs.push({name:r.name,P}); log(`DIFF ${r.name}: ${P.slice(0,3).join("; ")}`,"err"); } }
+    window.hwtResults.diffs=diffs;
+    log(`${results.length-nd} of ${results.length} as in the simulator`, nd?"warn":"ok");
+    const a=document.createElement("button"); a.textContent="Download results"; a.onclick=()=>download(JSON.stringify(window.hwtResults),`sc26re-hwtest-results-${new Date().toISOString().slice(0,19).replace(/[:T]/g,"-")}.json`); $(".bar").appendChild(a);
   }catch(e){ log("error: "+e.message,"err"); }
   if(backup){
     try{

@@ -1021,13 +1021,13 @@ static void pad_mouse(int side, const struct remap_analog *an, const struct rema
 		}
 		mouse_acc[0] += dx * k * sx;
 		mouse_acc[1] -= dy * k * sy;
-		/* the speed the trackball keeps: measured over at least 8 ms. Per pass it depended on
+		/* the speed the trackball keeps: measured over at least 20 ms. Per pass it depended on
 		 * how often the report loop ran between two trackpad scans (it also wakes on other
 		 * input changes): the controller rolled twice as far as the simulator (v51 test 56) */
 		tb_win[side][0] += dx * k * sx;
 		tb_win[side][1] += -dy * k * sy;
 		tb_win[side][2] += dt;
-		if(tb_win[side][2] >= 0.008f)
+		if(tb_win[side][2] >= 0.020f)
 		{
 			tb_vel[side][0] = 0.5f * tb_vel[side][0] + 0.5f * (tb_win[side][0] / tb_win[side][2]);
 			tb_vel[side][1] = 0.5f * tb_vel[side][1] + 0.5f * (tb_win[side][1] / tb_win[side][2]);
