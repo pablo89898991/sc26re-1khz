@@ -69,8 +69,9 @@ static bool release_ok_now(void)
 #define PATH_PREFIX "sc26re/rmp/"
 #define CHUNK 48
 
-BUILD_ASSERT(sizeof(struct remap_profile) == 3144, "remap profile layout (web/remap.html)");
+BUILD_ASSERT(sizeof(struct remap_profile) == 3232, "remap profile layout (web/remap.html)");
 BUILD_ASSERT(offsetof(struct remap_profile, ext) == REMAP_PROFILE_V6_SIZE, "v7 area after the v6 layout");
+BUILD_ASSERT(offsetof(struct remap_profile, v8) == REMAP_PROFILE_V7_SIZE, "v8 area after the v7 layout");
 
 static struct remap_profile profiles[REMAP_PROFILES];
 
@@ -86,6 +87,10 @@ const uint8_t remap_shift_src[REMAP_SHIFT_SRC_COUNT] = {
 	59, 23,                                       /* right trigger */
 };
 static const uint8_t shift_first[REMAP_SHIFT_GROUPS + 1] = { 0, 4, 8, 13, 18, 30, 42, 44, 46 };
+/* v8 shifted clicks (remap_profile.v8.sclick): source and its shift group */
+static const uint8_t sclick_src[REMAP_SCLICK_COUNT] = { 15, 5, 26, 22 };
+static const uint8_t sclick_group[REMAP_SCLICK_COUNT] = { REMAP_SHIFT_LS, REMAP_SHIFT_RS, REMAP_SHIFT_LPAD,
+                                                          REMAP_SHIFT_RPAD };
 static int8_t src_group[REMAP_SRC_COUNT]; /* -1: not in a shift group */
 static int8_t src_sidx[REMAP_SRC_COUNT];
 static bool shifted[REMAP_SHIFT_GROUPS];
@@ -658,6 +663,10 @@ static const struct remap_btime *btime_of(const struct remap_binding *b)
 		if(b >= q->ext.xbind && b < q->ext.xbind + REMAP_XBIND_COUNT)
 		{
 			return &q->ext.bt[REMAP_BIND_COUNT + REMAP_SHIFT_SRC_COUNT + (b - q->ext.xbind)];
+		}
+		if(b >= q->v8.sclick && b < q->v8.sclick + REMAP_SCLICK_COUNT)
+		{
+			return &q->v8.sclick_bt[b - q->v8.sclick];
 		}
 	}
 	return &zero_bt;
@@ -1719,7 +1728,9 @@ static const struct remap_binding *bind_at(const struct remap_profile *p, int s)
 static const struct remap_binding *binding(const struct remap_profile *p, int s)
 {
 	int g = src_group[s];
-	const struct remap_binding *b = (g >= 0 && shifted[g]) ? &p->sbind[src_sidx[s]] : bind_at(p, s);
+	const struct remap_binding *b = !(g >= 0 && shifted[g]) ? bind_at(p, s)
+	                                : src_sidx[s] >= REMAP_SHIFT_SRC_COUNT ? &p->v8.sclick[src_sidx[s] - REMAP_SHIFT_SRC_COUNT]
+	                                                                       : &p->sbind[src_sidx[s]];
 	const struct remap_profile *l = layer_profile();
 
 	/* action layer: its bound inputs win; the input holding the layer keeps its own.
@@ -2082,6 +2093,14 @@ void remap_process(struct controller_report *r, float dt)
 
 				memset(ss, 0, sizeof(*ss));
 				ss->held_group = -1;
+			}
+			for(int k = 0; k < REMAP_SCLICK_COUNT; ++k)
+			{
+				if(sclick_group[k] == g)
+				{
+					memset(&st[sclick_src[k]], 0, sizeof(st[0]));
+					st[sclick_src[k]].held_group = -1;
+				}
 			}
 			if(g >= REMAP_SHIFT_LPAD && g <= REMAP_SHIFT_RPAD)
 			{
@@ -3167,12 +3186,23 @@ bool remap_read(const char *path, uint8_t *buf, size_t capacity, size_t *len)
  * the upload (seconds over the Puck) and left that mix behind when an upload
  * was cut off.
  */
-/* a v6 profile (saved before v7, or written by an older page) becomes v7 with an empty v7 area */
+/* a v6 profile (saved before v7, or written by an older page) becomes v7 with an empty v7 area;
+ * a v7 one becomes v8 with its shifted clicks the same as the normal ones (as they acted) */
 static void upgrade(struct remap_profile *p)
 {
 	if(p->magic == REMAP_MAGIC && p->version == REMAP_VERSION_V6)
 	{
 		memset(&p->ext, 0, sizeof(p->ext));
+		p->version = REMAP_VERSION_V7;
+	}
+	if(p->magic == REMAP_MAGIC && p->version == REMAP_VERSION_V7)
+	{
+		memset(&p->v8, 0, sizeof(p->v8));
+		for(int k = 0; k < REMAP_SCLICK_COUNT; ++k)
+		{
+			p->v8.sclick[k] = p->bind[sclick_src[k]];
+			p->v8.sclick_bt[k] = p->ext.bt[sclick_src[k]];
+		}
 		p->version = REMAP_VERSION;
 	}
 }
@@ -3230,7 +3260,7 @@ static int load_cb(const char *key, size_t len, settings_read_cb read_cb, void *
 
 	ARG_UNUSED(param);
 	if(key == NULL || key[0] < '0' || key[0] >= '0' + REMAP_PROFILES || key[1] != '\0' ||
-	   (len != sizeof(struct remap_profile) && len != REMAP_PROFILE_V6_SIZE))
+	   (len != sizeof(struct remap_profile) && len != REMAP_PROFILE_V7_SIZE && len != REMAP_PROFILE_V6_SIZE))
 	{
 		return 0;
 	}
@@ -3267,6 +3297,11 @@ void remap_init(void)
 			src_group[remap_shift_src[k]] = (int8_t)g;
 			src_sidx[remap_shift_src[k]] = (int8_t)k;
 		}
+	}
+	for(int k = 0; k < REMAP_SCLICK_COUNT; ++k)
+	{
+		src_group[sclick_src[k]] = (int8_t)sclick_group[k];
+		src_sidx[sclick_src[k]] = (int8_t)(REMAP_SHIFT_SRC_COUNT + k);
 	}
 	(void)settings_load_subtree_direct("user/remap", load_cb, NULL);
 }

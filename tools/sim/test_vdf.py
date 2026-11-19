@@ -163,6 +163,24 @@ def mode_shift_on_back_button():
     s.run(30, A=1); assert key("j") in held(s); s.run(30, A=0)
 
 @test
+def mode_shift_on_a_trackpad_shifts_its_click():
+    """v8: the trackpad of a mode shift brings its own click (Steam replaces the whole pad); a shifted
+    pad without a click leaves the click quiet while shifted. Export writes it back"""
+    base = group(0, "scrollwheel", inp("click", act(binding="key_press Q, , ")))
+    shifted = group(1, "dpad", inp("dpad_north", act(binding="key_press 1, , ")) + inp("click", act(binding="key_press W, , ")),
+                    {"requires_click": "0"})   # on touch: a D-pad on click owns the click (test 51)
+    sw = group(2, "switches", inp("button_back_left", act(binding="mode_shift left_trackpad 1")))
+    r, p = one([base, shifted, sw], [(0, "left_trackpad active"), (1, "left_trackpad inactive modeshift"), (2, "switch active")])
+    assert not [n for n in r["notes"] if "not available" in n], r["notes"]
+    s = fresh(p)
+    s.run(30, LP_TOUCH=1); s.run(40, LP_CLICK=1); assert key("q") in held(s), held(s); s.run(40, LP_CLICK=0)
+    s.run(30, L5=1); s.run(40, LP_CLICK=1); assert key("w") in held(s) and key("q") not in held(s), held(s)
+    s.run(40, LP_CLICK=0); s.run(30, L5=0, LP_TOUCH=0)
+    t = vdf(export=[p.b, None, None, None])["text"]
+    p2 = prof_of(vdf(t)["profiles"][0])
+    assert p2.b[Profile.SCLICK + 28:Profile.SCLICK + 42] == p.b[Profile.SCLICK + 28:Profile.SCLICK + 42], "round trip of the shifted click"
+
+@test
 def stick_dpad_and_click():
     g = group(0, "dpad", inp("dpad_north", act(binding="key_press W, , ")) + inp("dpad_south", act(binding="key_press S, , ")) +
               inp("dpad_west", act(binding="key_press A, , ")) + inp("dpad_east", act(binding="key_press D, , ")) +

@@ -39,6 +39,19 @@ const check = (name, ok, info = '') => { results.push(ok); console.log((ok ? 'PA
   await pg.click('#v_map [data-s="26"]');
   check('the pad click (not part of the modes) opens as before', !/shifted/.test(await pg.textContent('#dlg h4')));
   await pg.click('#dlgDone');
+  // v8: the pad click has its own binding while the pad is shifted
+  await pg.click('#v_map [data-s="26"]');
+  await pg.click('#dlg .seg [data-l="1"]');
+  const t26 = await pg.textContent('#dlg h4');
+  await pg.selectOption('#dlg [data-gi="0:0"]', '5');
+  await pg.click('#dlgDone');
+  const [cn, cs, ct] = await pg.evaluate(() => [prof[cur][488 + 26 * 14 + 1], prof[cur][SCLICK + 2 * 14 + 1], document.querySelector('#v_map [data-s="26"] .b').textContent]);
+  check('the shifted pad click is its own binding (profile v8)', /shifted/.test(t26) && cn === 0 && cs === 5 && /⇧ L5: B/.test(ct), [t26, cn, cs, ct].join(' / '));
+  // turning a shift on: the click keeps what it did (its normal binding is copied)
+  await pg.evaluate(() => { prof[cur][488 + 15 * 14 + 1] = 6; render(); });
+  await pg.click('#v_map [data-s="ls"]'); await pg.selectOption('#shb', { label: 'L4' }); await pg.click('#dlgDone');
+  const c15 = await pg.evaluate(() => prof[cur][SCLICK + 1]);
+  check('a new stick shift starts with the click it had', c15 === 6, c15);
   // tester: cycle showed only the press row (its other sets hidden, also stale ones it still used)
   await pg.click('#v_map [data-s="0"]');
   await pg.check('#dlg [data-bit="64"]');

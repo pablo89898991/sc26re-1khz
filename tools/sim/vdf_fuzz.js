@@ -1,4 +1,4 @@
-/* random profiles -> export -> import; mutated .vdf text -> import: nothing may throw, profiles stay 3144 bytes v7 */
+/* random profiles -> export -> import; mutated .vdf text -> import: nothing may throw, profiles stay 3232 bytes v8 */
 const V = require("../../web/vdf.js"), fs = require("fs");
 let seed = +(process.argv[2] || 1); const rnd = () => (seed = (seed * 1103515245 + 12345) >>> 0) / 4294967296;
 const ri = n => Math.floor(rnd() * n);
@@ -38,10 +38,10 @@ function schema(tree) {
     }
   }
 }
-function chk(r) { for (const p of r.profiles) if (p && (p.length !== 3144 || p[0] !== 0xA7 || p[1] !== 7)) throw new Error("bad profile"); }
+function chk(r) { for (const p of r.profiles) if (p && (p.length !== 3232 || p[0] !== 0xA7 || p[1] !== 8)) throw new Error("bad profile"); }
 for (let k = 0; k < 300; k++) {
   const P = [0, 1, 2, 3].map(() => { if (rnd() < 0.15) return null; const b = V.emptyProfile("f" + k); const m = ri(4);
-    for (let j = 0; j < 400; j++) b[ri(3144)] = m === 0 ? ri(256) : [0, 1, 2, 3, 4, 10, 11, 12, 13, 0xC4, 0xC5, 0xDA, 0x70, 0x2C, 0xE1][ri(15)]; b[0] = 0xA7; b[1] = 7; return b; });
+    for (let j = 0; j < 400; j++) b[ri(3232)] = m === 0 ? ri(256) : [0, 1, 2, 3, 4, 10, 11, 12, 13, 0xC4, 0xC5, 0xDA, 0x70, 0x2C, 0xE1][ri(15)]; b[0] = 0xA7; b[1] = 8; return b; });
   try { const e = V.exportVDF(P, {}); schema(V.parse(e.text)); const im = new V.Importer(V.parse(e.text)); chk(im.run()); n++; }
   catch (err) { fails++; if (fails < 5) console.log("export/import", k, err.stack); }
 }

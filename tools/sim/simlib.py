@@ -17,6 +17,14 @@ SRC = dict(BTN, LS_UP=30, LS_DOWN=31, LS_LEFT=32, LS_RIGHT=33, RS_UP=34, RS_DOWN
            LS_RING=60, RS_RING=61, LP_RING=62, RP_RING=63, LP_CENTER=64, RP_CENTER=65,
            GYRO_UP=66, GYRO_DOWN=67, GYRO_LEFT=68, GYRO_RIGHT=69,
            LS_UR=70, LS_DR=71, LS_DL=72, LS_UL=73, RS_UR=74, RS_DR=75, RS_DL=76, RS_UL=77)
+def v8_of(d):
+    """a v6 (2056 bytes) or v7 (3144) profile as the firmware and the page upgrade it: v7 area empty for v6,
+    the v8 shifted clicks (L3, R3, LP_CLICK, RP_CLICK) copies of the normal ones with their timing"""
+    b = bytearray(3232); b[:len(d)] = d; b[1] = 8
+    for k, src in enumerate((15, 5, 26, 22)):
+        b[3144 + 14 * k:3158 + 14 * k] = b[488 + 14 * src:502 + 14 * src]
+        b[3200 + 6 * k:3206 + 6 * k] = b[2056 + 6 * src:2062 + 6 * src]
+    return bytes(b)
 # keyboard usages
 def key(c):
     if len(c) == 1 and c.isalpha(): return 0x04 + ord(c.lower()) - ord('a')
@@ -35,13 +43,14 @@ PF_BLOCK, PF_GYRO, PF_GYRO_ON = 1, 2, 4
 
 
 class Profile:
-    SIZE = 3144
+    SIZE = 3232
+    SCLICK, SCLICK_BT = 3144, 3200      # v8: shifted clicks of LS, RS, LP, RP (sources 15, 5, 26, 22) x14, timing x6
     EXT = 2056                      # v7 area: bt[124] x6, xbind[12] x14, anx[12] x12, gyx 16, trig_curve, screen
     BT, XBIND, ANX, GYX, TCURVE, SCREEN = 2056, 2800, 2968, 3112, 3128, 3132
 
     def __init__(self, name="test"):
         self.b = bytearray(self.SIZE)
-        self.b[0], self.b[1] = 0xA7, 7
+        self.b[0], self.b[1] = 0xA7, 8
         self.b[2:2 + len(name)] = name.encode()
 
     def u8(self, o, v): self.b[o] = v & 255
@@ -87,10 +96,12 @@ class Profile:
         self.b[o + 1] = dpad4
         if an: self.analog(0, base=o + 2, **an)
 
-    def bind(self, src, a0=(), a1=(), a2=(), mode=0, haptic=0, chord=None, shifted_index=None):
+    def bind(self, src, a0=(), a1=(), a2=(), mode=0, haptic=0, chord=None, shifted_index=None, shifted_click=False):
+        # shifted_click: the v8 binding of a stick / pad click (L3, R3, LP_CLICK, RP_CLICK) while its group is shifted
         if isinstance(src, str): src = SRC[src]
         o = (488 + 14 * src) if shifted_index is None else (1412 + 14 * shifted_index)
         if shifted_index is None and src >= 66: o = self.XBIND + 14 * (src - 66)
+        if shifted_click: o = self.SCLICK + 14 * [15, 5, 26, 22].index(src)
         self.b[o] = mode
         for g, acts in enumerate((a0, a1, a2)):
             if isinstance(acts, int): acts = (acts,)

@@ -99,7 +99,7 @@
 <body>
 <div class="top">
   <div class="topin">
-    <div class="brand">SC2 <span class="hz">Remapper</span> <span class="note" id="pagever" title="page version — if it is older than expected, press Ctrl+F5">p.2026-11-19i</span></div>
+    <div class="brand">SC2 <span class="hz">Remapper</span> <span class="note" id="pagever" title="page version — if it is older than expected, press Ctrl+F5">p.2026-11-19j</span></div>
     <button class="primary" id="connect">Connect controller</button>
     <span id="status" class="chip">not connected</span>
     <span class="grow"></span>
@@ -222,7 +222,7 @@
       <p><b>Pad output</b> at the top (applies after turning the controller off and on; USB cable only — the Puck cannot carry it):<br>
       <b>Steam Controller</b> — as always. <b>Xbox 360 only</b> — Windows also sees an Xbox 360 controller (its own XInput driver, nothing to install) and the game gets the final pad there: buttons, sticks (incl. trackpad / gyro joystick), analog triggers and the “Pad …” actions; the Steam Controller pad keeps only Steam and QAM so nothing arrives twice. <b>Steam + Xbox 360</b> — both pads work separately: the Steam Controller pad as usual, the Xbox pad gets only the “Xbox …” actions you bind (Xbox pad only). Keyboard / mouse outputs work in every case. Back buttons and trackpads have no Xbox equivalent: bind them to something.</p>
       <h3>Mode shifts</h3>
-      <p>Like Steam Input: every group (face buttons, D-pad, each stick, each trackpad, each trigger) can have a <b>mode shift button</b>. While you hold it, the group uses a second set of settings and bindings — e.g. hold LB and the right trackpad turns from mouse into a scroll wheel. Open the group (or one of its buttons), choose the button under “Mode shift”, then switch between <b>Normal</b> and <b>Shifted ⇧</b> to edit each. The shift button itself is not sent to the game.</p>
+      <p>Like Steam Input: every group (face buttons, D-pad, each stick, each trackpad, each trigger) can have a <b>mode shift button</b>. While you hold it, the group uses a second set of settings and bindings — e.g. hold LB and the right trackpad turns from mouse into a scroll wheel. Open the group (or one of its buttons), choose the button under “Mode shift”, then switch between <b>Normal</b> and <b>Shifted ⇧</b> to edit each. The shift button itself is not sent to the game. A stick’s or trackpad’s <b>click</b> shifts with it: it has its own binding while shifted (when you turn the shift on it starts as the normal one; firmware v51 test 52+).</p>
       <h3>More trackpad / stick modes</h3>
       <p><b>Joystick</b> (trackpads): the finger position works as a stick for Steam, on the same or the other side, with dead zones, anti dead zone and curve. <b>Flick stick</b> (sticks and trackpads): push past the threshold and the camera turns to face that direction, then rotating keeps turning 1:1 — it uses the gyro mouse “counts per 360°”, so do the 360° calibration first. <b>Directional swipe</b> (trackpads): each swipe fires up / down / left / right — once per touch, or repeatedly along a long swipe if you tick it.</p>
       <h3>9 zones (grid)</h3>
@@ -257,11 +257,19 @@
 <script>
 const $=s=>document.querySelector(s);
 /* ---- layout: matches struct remap_profile in app/src/remap.h ---- */
-const PROF_SIZE=3144, CH=40, PROF_VER=7, V6_SIZE=2056;
+const PROF_SIZE=3232, CH=40, PROF_VER=8, V6_SIZE=2056, V7_SIZE=3144;
 /* v7 area (struct remap_ext): per binding timing bt[124] x6, xbind[12] x14 (gyro tilt + stick diagonals), anx[12] x12, gyx 16, trig_curve, screen */
 const BT=2056, XBIND=2800, ANX=2968, GYX=3112, TCURVE=3128, SCREEN=3132;
-/* a v6 profile (older firmware / files) becomes v7 with an empty v7 area */
-function upgradeProfile(d){ const b=new Uint8Array(PROF_SIZE); b.set(d.slice(0,Math.min(d.length,PROF_SIZE))); if(b[0]===0xA7&&b[1]===6) b[1]=PROF_VER; return b; }
+/* v8 area (struct remap_v8): the shifted clicks of the left / right stick and the left / right trackpad
+ * (sources 15, 5, 26, 22) x14, their timing x6 */
+const SCLICK=3144, SCLICK_BT=3200, SCLICK_SRC=[15,5,26,22], SCLICK_GRP=[2,3,4,5];
+/* a v6 profile (older firmware / files) becomes v7 with an empty v7 area; a v7 one v8 with the shifted
+ * clicks the same as the normal ones (as they acted before) */
+function upgradeProfile(d){ const b=new Uint8Array(PROF_SIZE); b.set(d.slice(0,Math.min(d.length,PROF_SIZE)));
+  if(b[0]!==0xA7) return b;
+  if(b[1]===6){ b.fill(0,V6_SIZE); b[1]=7; }
+  if(b[1]===7){ b.fill(0,V7_SIZE); SCLICK_SRC.forEach((x,k)=>{ b.copyWithin(SCLICK+14*k,488+14*x,488+14*x+14); b.copyWithin(SCLICK_BT+6*k,BT+6*x,BT+6*x+6); }); b[1]=PROF_VER; }
+  return b; }
 const SRC=[
  ["Face buttons",[[0,"A"],[1,"B"],[2,"X"],[3,"Y"]]],
  ["Shoulders and triggers",[[19,"LB"],[9,"RB"],[27,"LT full pull"],[23,"RT full pull"],[58,"LT soft pull"],[59,"RT soft pull"]]],
@@ -303,6 +311,7 @@ const isPad=an=>an==="lp"||an==="rp";
 const SHIFT_SRC=[[0,1,2,3],[13,10,12,11],[30,31,32,33,60],[34,35,36,37,61],[38,39,40,41,46,47,48,49,54,55,62,64],[42,43,44,45,50,51,52,53,56,57,63,65],[58,27],[59,23]];
 const SHIFT_NAME=["Face buttons","D-pad","Left stick","Right stick","Left trackpad","Right trackpad","Left trigger","Right trigger"];
 const SIDX={}, SGRP={}; { let k=0; SHIFT_SRC.forEach((l,g)=>l.forEach(x=>{ SIDX[x]=k++; SGRP[x]=g; })); }
+const SCLK={}; SCLICK_SRC.forEach((x,k)=>{ SCLK[x]=k; SGRP[x]=SCLICK_GRP[k]; }); /* v8: clicks shift with their stick / pad */
 const GRP_OF_AN={ls:2,rs:3,lp:4,rp:5};
 /* layout v6 (struct remap_profile): header 256 (LED @40, gyro[30] @44, triggers @104, hold/double/turbo ms @118, macros @128), analog[4] x18 @256, shift[8] x20 @328, bind[66] x14 @488, sbind[46] x14 @1412 */
 const shOff=g=>328+g*20; /* button (bit+1, 0 none), dpad 4-way, analog (18) */
@@ -312,9 +321,9 @@ const useShift=g=>layer===1&&shBtn(g)>0;
 /* analog: +0 mode, +1 flags, +2 dz_in, +4 dz_out, +6 speed, +8 haptic, +10 curve, +12 ring, +14 anti, +16 press (u16, 0.01 %) */
 const aOffL=(an,L)=>L?shOff(GRP_OF_AN[an])+2:256+AIDX[an]*18;
 const aOff=an=>aOffL(an,useShift(GRP_OF_AN[an])?1:0);
-const bOffL=(s,L)=>L?1412+SIDX[s]*14:(s<66?488+s*14:XBIND+(s-66)*14);
+const bOffL=(s,L)=>L?(s in SCLK?SCLICK+14*SCLK[s]:1412+SIDX[s]*14):(s<66?488+s*14:XBIND+(s-66)*14);
 /* per binding timing: hold10, dbl10, turbo5, delay start10, delay end10, flags (1 = interruptible) */
-const btOffL=(s,L)=>BT+6*(L?66+SIDX[s]:(s<66?s:112+s-66));
+const btOffL=(s,L)=>L&&(s in SCLK)?SCLICK_BT+6*SCLK[s]:BT+6*(L?66+SIDX[s]:(s<66?s:112+s-66));
 const btOff=s=>btOffL(s,useShift(SGRP[s])?1:0);
 const anxOffL=(an,L)=>ANX+12*(L?4+GRP_OF_AN[an]:AIDX[an]);
 const anxOff=an=>anxOffL(an,useShift(GRP_OF_AN[an])?1:0);
@@ -517,7 +526,8 @@ function wireShift(g){
   if(!$("#shb")) return;
   $("#shb").value=String(shBtn(g));
   $("#shb").onchange=e=>{ const v=+e.target.value, b=prof[cur], o=shOff(g), was=b[o]; b[o]=v;
-    if(v&&!was){ b[o+1]=b[16]; if(g>=2&&g<=5){ const an=["ls","rs","lp","rp"][g-2]; b.copyWithin(o+2,aOffL(an,0),aOffL(an,0)+18); } layer=1; }
+    if(v&&!was){ b[o+1]=b[16]; if(g>=2&&g<=5){ const an=["ls","rs","lp","rp"][g-2], x=SCLICK_SRC[g-2]; b.copyWithin(o+2,aOffL(an,0),aOffL(an,0)+18);
+      b.copyWithin(bOffL(x,1),bOffL(x,0),bOffL(x,0)+14); b.copyWithin(btOffL(x,1),btOffL(x,0),btOffL(x,0)+6); } layer=1; }
     if(!v) layer=0; setDirty(); render(); };
 }
 function gridSvg(j){ const g=k=>S16(22+j*8+k*2)/10000, L=g(0),R=g(1),T=g(2),B=g(3), X=v=>50+v*50, Y=v=>50-v*50;
@@ -901,7 +911,7 @@ async function refreshState(){
 /* the profile sends to the Xbox pad, which needs Pad output Steam + Xbox / Xbox only and the cable */
 let padOutNow=null, padOutBoot=null, linkNow=null;
 function usesXbox(b){
-  for(let s=0;s<66+46;s++){ const o=(s<66?488+s*14:1412+(s-66)*14)+1; for(let k=0;k<12;k++){ const a=b[o+k]; if((a>=0xA0&&a<0xBE)||a===0xDA||a===0xDB) return true; } }
+  for(let s=0;s<66+46+4;s++){ const o=(s<66?488+s*14:s<112?1412+(s-66)*14:SCLICK+(s-112)*14)+1; for(let k=0;k<12;k++){ const a=b[o+k]; if((a>=0xA0&&a<0xBE)||a===0xDA||a===0xDB) return true; } }
   for(let i=0;i<4;i++) if(b[256+i*18]===12) return true;
   for(let g=0;g<8;g++) if(b[328+g*20+2]===12) return true;
   return false;
@@ -921,8 +931,9 @@ $("#activeProf").onchange=async e=>{ try{ await cfgSet("remap_profile",+e.target
 async function readProfile(p){ const b=new Uint8Array(PROF_SIZE);
   for(let o=0;o<PROF_SIZE;o+=CH){
     if(o>=V6_SIZE&&b[1]===6) break; /* older firmware: a v6 profile, nothing after it */
+    if(o>=V7_SIZE&&b[1]===7) break; /* firmware before v51 test 52: v7 */
     const d=await read(`sc26re/rmp/${p}/${o.toString(16)}`); b.set(d.slice(0,Math.min(CH,PROF_SIZE-o)),o); }
-  return b[1]===6?upgradeProfile(b.slice(0,V6_SIZE)):b; }
+  return b[1]===6?upgradeProfile(b.slice(0,V6_SIZE)):b[1]===7?upgradeProfile(b.slice(0,V7_SIZE)):b; }
 let bulk=0; /* reading / saving profiles: the live polls wait (they share the link with it) */
 async function readAll(){
   bulk++;
@@ -934,10 +945,10 @@ async function readAll(){
   finally{ bulk--; }
 }
 $("#read").onclick=readAll;
-let fwV7=null; /* the firmware takes v7 profiles (sc26re v51test37+) */
+let fwV7=null; /* the firmware takes this page's profiles (v8: sc26re v51test52+) */
 async function checkV7(){ if(fwV7!==null) return fwV7; try{ const d=await read(`sc26re/rmp/${cur}/${(PROF_SIZE-8).toString(16)}`); fwV7=!!d&&d.length>0; }catch(e){ fwV7=false; } return fwV7; }
 async function saveSlot(p){ const b=prof[p];
-  if(!await checkV7()) throw new Error("this firmware is older than the page (profile v6): update the controller firmware");
+  if(!await checkV7()) throw new Error("this firmware is older than the page (it takes profile v7 or older): update the controller firmware to v51 test 52 or newer");
   for(let o=0;o<PROF_SIZE;o+=CH) await send(`sc26re/rmp/${p}/${o.toString(16)}`,0xEE,Array.from(b.slice(o,Math.min(o+CH,PROF_SIZE))));
   await send(`sc26re/rmp/${p}`,0xEF);
   const back=await readProfile(p);
@@ -995,7 +1006,7 @@ $("#vexport").onclick=()=>{ collect(); saveName(); const r=SteamVDF.exportVDF(pr
   $("#pstatus").innerHTML=`<span class="ok">exported 4 profiles as a Steam Input configuration</span>`+(r.dropped.length?` <span class="warn">— no Steam equivalent, left out: ${esc(r.dropped.join(", "))}</span>`:""); };
 $("#clear").onclick=()=>{ if(confirm(`Clear profile ${cur+1}? (Save to controller afterwards.)`)){ prof[cur]=emptyProfile(); sel=null; setDirty(); render(); } };
 $("#export").onclick=()=>{ collect(); const j=JSON.stringify({sc2remap:1,name:nameOf(prof[cur]),data:Array.from(prof[cur])}); const a=document.createElement("a"); a.href=URL.createObjectURL(new Blob([j],{type:"application/json"})); a.download=`sc2-remap-${(nameOf(prof[cur])||"profile"+(cur+1)).replace(/\W+/g,"_")}.json`; a.click(); };
-$("#import").onchange=async e=>{ const f=e.target.files[0]; if(!f) return; try{ const j=JSON.parse(await f.text()); if(!j.data||(j.data.length!==PROF_SIZE&&j.data.length!==V6_SIZE)) throw new Error("not a profile file for this version"); prof[cur]=upgradeProfile(new Uint8Array(j.data)); setDirty(); render(); $("#pstatus").innerHTML='<span class="ok">imported — press Save to controller</span>'; }catch(err){ $("#pstatus").innerHTML=`<span class="err">${err.message}</span>`; } e.target.value=""; };
+$("#import").onchange=async e=>{ const f=e.target.files[0]; if(!f) return; try{ const j=JSON.parse(await f.text()); if(!j.data||(j.data.length!==PROF_SIZE&&j.data.length!==V7_SIZE&&j.data.length!==V6_SIZE)) throw new Error("not a profile file for this version"); prof[cur]=upgradeProfile(new Uint8Array(j.data)); setDirty(); render(); $("#pstatus").innerHTML='<span class="ok">imported — press Save to controller</span>'; }catch(err){ $("#pstatus").innerHTML=`<span class="err">${err.message}</span>`; } e.target.value=""; };
 
 /* ---- gyro + gyro as mouse settings (sc26re cfg values, same as the report meter) ---- */
 const BTNOPTS=[[-1,"— none —"],[0,"A"],[1,"B"],[2,"X"],[3,"Y"],[19,"LB"],[9,"RB"],[27,"LT click"],[23,"RT click"],[17,"L4"],[18,"L5"],[7,"R4"],[8,"R5"],[15,"L3"],[5,"R3"],[6,"Menu"],[14,"View"],[13,"D-pad up"],[10,"D-pad down"],[12,"D-pad left"],[11,"D-pad right"],[26,"Left pad click"],[22,"Right pad click"],[25,"Left pad touch"],[21,"Right pad touch"],[24,"Left stick touch"],[20,"Right stick touch"],[29,"Left grip touch"],[28,"Right grip touch"]];

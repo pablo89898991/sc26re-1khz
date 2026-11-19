@@ -9,7 +9,8 @@
 
 #define REMAP_PROFILES 4
 #define REMAP_MAGIC 0xA7
-#define REMAP_VERSION 7
+#define REMAP_VERSION 8
+#define REMAP_VERSION_V7 7 /* still loaded: its clicks are copied to the v8 shifted clicks */
 #define REMAP_VERSION_V6 6 /* still loaded: extended with an empty v7 area */
 
 /* sources: 0..29 controller button bits, then derived inputs */
@@ -212,6 +213,17 @@ struct remap_ext
 	uint8_t reserved[8];
 } __packed;
 
+/* v8: the stick and trackpad clicks have bindings of their own while their group is shifted
+ * (a trackpad mode shift used the normal Click binding). Order: left stick, right stick, left
+ * pad, right pad (sources 15, 5, 26, 22) */
+#define REMAP_SCLICK_COUNT 4
+struct remap_v8
+{
+	struct remap_binding sclick[REMAP_SCLICK_COUNT];
+	struct remap_btime sclick_bt[REMAP_SCLICK_COUNT];
+	uint8_t reserved[8];
+} __packed;
+
 struct remap_profile
 {
 	uint8_t magic;
@@ -239,8 +251,10 @@ struct remap_profile
 	struct remap_binding bind[REMAP_BIND_COUNT];
 	struct remap_binding sbind[REMAP_SHIFT_SRC_COUNT]; /* shifted bindings, see remap_shift_src */
 	struct remap_ext ext; /* v7 */
+	struct remap_v8 v8;
 } __packed;
 #define REMAP_PROFILE_V6_SIZE 2056
+#define REMAP_PROFILE_V7_SIZE 3144
 
 extern const uint8_t remap_shift_src[REMAP_SHIFT_SRC_COUNT];
 

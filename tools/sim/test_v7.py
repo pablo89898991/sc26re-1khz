@@ -297,7 +297,7 @@ def v6_profile_upgrades():
     assert s.feature(0xEF, "sc26re/rmp/0")[0] == 0
     s.cfg("remap_profile", 0); s.cfg("remap_on", 1); s.run(5)
     d = s.download(0)
-    assert d[1] == 7 and d[2056:] == bytes(1088), "v7 with an empty v7 area"
+    assert d == v8_of(bytes(b)), "v8 with an empty v7 area, the shifted clicks as the normal ones"
     s.run(20, A=1); assert held(s) == (key("a"),)
     s.run(20, A=0)
 

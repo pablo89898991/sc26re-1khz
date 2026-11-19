@@ -19,19 +19,19 @@ def firmware_upgrades_v6_uploads():
             assert s.feature(0xEE, "sc26re/rmp/2/%x" % o, d[o:o + 40])[0] == 0
         assert s.feature(0xEF, "sc26re/rmp/2")[0] == 0
         b = s.download(2)
-        assert b[0] == 0xA7 and b[1] == 7 and b[2:2056] == d[2:2056] and b[2056:] == bytes(3144 - 2056), f
+        assert b == v8_of(d), f
 
 @test
 def page_upgrade_matches_the_firmware():
     js = "const fs=require('fs');const src=fs.readFileSync('../../web/remap.html','utf8');" \
-         "const code=src.match(/const PROF_SIZE=3144[^\\n]*\\n/)[0]+src.match(/function upgradeProfile[^\\n]*\\n/)[0];" \
+         "const code=src.match(/const PROF_SIZE=[\\s\\S]*?\\n  return b; }\\n/)[0];" \
          "const d=JSON.parse(fs.readFileSync(process.argv[1])).data;" \
          "process.stdout.write(JSON.stringify(Array.from(eval(code+';upgradeProfile(new Uint8Array(d))'))))"
     for f in FILES:
         r = subprocess.run(["node", "-e", js, os.path.join(DIR, f)], capture_output=True, text=True)
         assert r.returncode == 0, r.stderr
         b = bytes(json.loads(r.stdout)); d = data(f)
-        assert len(b) == 3144 and b[1] == 7 and b[2:2056] == d[2:2056] and b[2056:] == bytes(1088), f
+        assert b == v8_of(d), f
 
 def expected(p, s):
     """what a plain binding (no press modes) of button s does: keys, mouse buttons, pad bits"""

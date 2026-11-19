@@ -28,8 +28,8 @@ def run(seed):
             p = r.randrange(4)
             s.feature(0xEF, "sc26re/rmp/%d" % p)
             if stage and stage[0] == p:
-                if stage[1][0] == 0xA7 and stage[1][1] == 6:   # a v6 profile: the firmware upgrades it (v7 area zeroed)
-                    stage[1][1] = 7; stage[1][Profile.EXT:] = bytes(Profile.SIZE - Profile.EXT)
+                if stage[1][0] == 0xA7 and stage[1][1] in (6, 7):   # older profiles: the firmware upgrades them
+                    stage = (p, bytearray(v8_of(bytes(stage[1][:Profile.EXT if stage[1][1] == 6 else 3144]))))
                 live[p] = bytes(stage[1]); stage = None
         elif op < .7:  # junk
             path = r.choice(PATHS)

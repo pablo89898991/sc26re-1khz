@@ -217,6 +217,46 @@ def pad_click_belongs_to_a_mode_that_works_on_click():
     p = Profile(); p.analog(2, 9); p.bind("LP_CLICK", key("q")); p.bind("LP_CENTER", key("5"))
     assert run(p) == {key("5"), key("q")}, ("zones on touch: the click is its own", run(p))
 
+@test
+def shifted_stick_and_pad_clicks_have_their_own_bindings():
+    """v51 test 52 (profile v8), the user: a mode shift of a stick / trackpad also shifts its click (Steam
+    replaces the whole pad, click included). Before, the click kept its normal binding in both modes"""
+    def clicks(p, btn, hold):
+        s = Sim(); s.use(p); s.run(5); s.log = []
+        s.run(30, **hold); s.run(50, **{btn: 1}); s.run(50, **{btn: 0}); s.run(30, **{k: 0 for k in hold})
+        return set(c for k in Events(s.log).kbd() for c in k)
+    p = Profile(); p.analog(2, SCROLL); p.bind("LP_CLICK", key("q"))
+    p.shift(4, BTN["L5"], mode=MOUSE); p.bind("LP_CLICK", key("w"), shifted_click=True)
+    assert clicks(p, "LP_CLICK", {"L5": 1, "LP_TOUCH": 1}) == {key("w")}, "shifted pad click"
+    assert clicks(p, "LP_CLICK", {"LP_TOUCH": 1}) == {key("q")}, "normal pad click"
+    p = Profile(); p.bind("L3", key("a")); p.shift(2, BTN["L4"], mode=MOUSE); p.bind("L3", key("b"), shifted_click=True)
+    assert clicks(p, "L3", {"L4": 1}) == {key("b")} and clicks(p, "L3", {}) == {key("a")}, "stick click"
+    p = Profile(); p.bind("RP_CLICK", key("c")); p.shift(5, BTN["R5"], mode=MOUSE)                  # shifted click empty
+    assert clicks(p, "RP_CLICK", {"R5": 1}) == set(), "an empty shifted click does nothing"
+    # its own timing (v8 area): long press 500 ms on the shifted click, 250 ms (profile) on the normal one
+    p = Profile(); p.bind("L3", key("a"), key("b"), mode=M_HOLD); p.shift(2, BTN["L4"], mode=MOUSE)
+    p.bind("L3", key("c"), key("d"), mode=M_HOLD, shifted_click=True); p.b[Profile.SCLICK_BT] = 50
+    def hold400(p, sh):
+        s = Sim(); s.use(p); s.run(5); s.log = []
+        s.run(20, **sh); s.run(400, L3=1); s.run(50, L3=0); s.run(20, **{k: 0 for k in sh})
+        return set(c for k in Events(s.log).kbd() for c in k)
+    assert hold400(p, {}) == {key("b")} and hold400(p, {"L4": 1}) == {key("c")}, (hold400(p, {}), hold400(p, {"L4": 1}))
+
+@test
+def v7_profile_keeps_its_click_in_a_mode_shift():
+    """a v7 profile (older page / firmware): its click acted in both modes; uploaded to v8 firmware the
+    shifted click is the normal one, so it still does"""
+    p = Profile(); p.analog(2, SCROLL); p.bind("LP_CLICK", key("q")); p.shift(4, BTN["L5"], mode=MOUSE)
+    b = bytearray(p.b[:3144]); b[1] = 7
+    s = Sim()
+    for o in range(0, len(b), 40):
+        assert s.feature(0xEE, "sc26re/rmp/0/%x" % o, bytes(b[o:o + 40]))[0] == 0
+    assert s.feature(0xEF, "sc26re/rmp/0")[0] == 0
+    s.cfg("remap_profile", 0); s.cfg("remap_on", 1); s.run(5)
+    assert s.download(0) == v8_of(bytes(b))
+    s.log = []; s.run(30, L5=1, LP_TOUCH=1); s.run(50, LP_CLICK=1); s.run(50, LP_CLICK=0)
+    assert key("q") in set(c for k in Events(s.log).kbd() for c in k)
+
 # ---------------- found by mutation testing (mutate2.py old) ----------------
 @test
 def mouse_backlog_capped_after_a_trackpad_jump():

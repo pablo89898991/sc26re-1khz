@@ -1,6 +1,6 @@
 /* Steam Input controller configurations (.vdf, "controller_mappings") <-> sc26re remapper profiles.
  * Used by remap.html; also loads in node (module.exports) for the tests in tools/sim/test_vdf.js.
- * Profile layout: struct remap_profile in app/src/remap.h (v7, 3144 bytes).
+ * Profile layout: struct remap_profile in app/src/remap.h (v8, 3232 bytes).
  *
  * What maps 1:1: keys, modifiers, mouse buttons / wheel, gamepad buttons, mode shifts, action
  * sets (profiles), hold layers, Full / Long / Double / Start / release / Soft press, toggle, turbo,
@@ -11,7 +11,9 @@
  * keys) and Steam's own commands (screenshots, overlay, on-screen keyboard) - they are listed. */
 (function (root) {
   "use strict";
-  const PROF_SIZE = 3144, BT = 2056, XBIND = 2800, ANX = 2968, GYX = 3112, TCURVE = 3128;
+  const PROF_SIZE = 3232, BT = 2056, XBIND = 2800, ANX = 2968, GYX = 3112, TCURVE = 3128;
+  /* v8: shifted clicks of the left / right stick and the left / right pad (sources 15, 5, 26, 22) and their timing */
+  const SCLICK = 3144, SCLICK_BT = 3200, SCLICK_SRC = [15, 5, 26, 22];
   const AN_OFF = i => 256 + 18 * i, SH_OFF = g => 328 + 20 * g;
   const B_OFF = s => s < 66 ? 488 + 14 * s : XBIND + 14 * (s - 66);
   const SB_OFF = k => 1412 + 14 * k;
@@ -120,7 +122,7 @@
   /* ---------------- helpers on profile bytes ---------------- */
   function emptyProfile(name) {
     const b = new Uint8Array(PROF_SIZE), dv = new DataView(b.buffer);
-    b[0] = 0xA7; b[1] = 7;
+    b[0] = 0xA7; b[1] = 8;
     const nm = new TextEncoder().encode(String(name || "").slice(0, 13)); b.set(nm.slice(0, 13), 2);
     dv.setUint16(18, 5000, true); dv.setUint16(20, 5000, true);
     for (let j = 0; j < 2; j++) { dv.setInt16(22 + j * 8, -3333, true); dv.setInt16(24 + j * 8, 3333, true); dv.setInt16(26 + j * 8, 3333, true); dv.setInt16(28 + j * 8, -3333, true); }
@@ -410,7 +412,12 @@
     bindInput(ctx, s, inp, shiftG, opts) {
       const b = ctx.b;
       let o, bt;
-      if (shiftG != null) { const k = shiftIndex(s); if (k < 0) { this.note("shifted input " + s + ": not available"); return 0; } o = SB_OFF(k); bt = BT + 6 * btIndex(s, k); }
+      if (shiftG != null) {
+        const k = shiftIndex(s), c = SCLICK_SRC.indexOf(s);
+        if (k >= 0) { o = SB_OFF(k); bt = BT + 6 * btIndex(s, k); }
+        else if (c >= 0) { o = SCLICK + 14 * c; bt = SCLICK_BT + 6 * c; } /* the stick / pad click of a mode shift (v8) */
+        else { this.note("shifted input " + s + ": not available"); return 0; }
+      }
       else { o = B_OFF(s); bt = BT + 6 * btIndex(s); }
       let bound = 0, regular = null;
       for (const [aname, act] of entries(get(inp, "activators"))) {
@@ -560,10 +567,13 @@
       if (!L.length) return null;
       return N(["activators", N(...L)], ["disabled_activators", N()]);
     };
-    const bindSrc = (b, s, shiftK, extra) => inputOf(b, shiftK != null ? SB_OFF(shiftK) : B_OFF(s), BT + 6 * btIndex(s, shiftK), extra);
+    const bindSrc = (b, s, shiftK, extra) => shiftK != null && shiftK < 0 ? null
+      : shiftK != null && shiftK >= 1000 ? inputOf(b, SCLICK + 14 * (shiftK - 1000), SCLICK_BT + 6 * (shiftK - 1000), extra)
+      : inputOf(b, shiftK != null ? SB_OFF(shiftK) : B_OFF(s), BT + 6 * btIndex(s, shiftK), extra);
     const analogGroup = (b, i, shiftG) => {
       const ao = shiftG != null ? SH_OFF(shiftG) + 2 : AN_OFF(i), xo = ANX + 12 * (shiftG != null ? 4 + shiftG : i), m = b[ao], pad = i >= 2, base = AN_BASE[i];
-      const SK = s => shiftG != null ? SHIFT_SRC.indexOf(s) : null;
+      /* shifted: index in SHIFT_SRC, or 1000 + index of a v8 shifted click */
+      const SK = s => shiftG == null ? null : SHIFT_SRC.indexOf(s) >= 0 ? SHIFT_SRC.indexOf(s) : SCLICK_SRC.indexOf(s) >= 0 ? 1000 + SCLICK_SRC.indexOf(s) : -1;
       const inp = [], set = [];
       const add = (name, s, extra) => { const k = SK(s); if (shiftG != null && k < 0) return; const n = bindSrc(b, s, k, extra); if (n) inp.push([name, n]); };
       let mode = "joystick_move";
