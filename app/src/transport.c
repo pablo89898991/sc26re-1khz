@@ -6,6 +6,9 @@
 #include <zephyr/toolchain.h>
 
 #include "controller.h"
+#ifdef CONFIG_IBEX_HWTEST
+#include "hwtest.h"
+#endif
 
 LOG_MODULE_REGISTER(transport);
 
@@ -542,6 +545,14 @@ int transport_send_input_report(uint8_t report_id, const uint8_t *data, size_t l
 	{
 		return -EINVAL;
 	}
+#ifdef CONFIG_IBEX_HWTEST
+	if(hwtest_running())
+	{
+		/* remapper hardware test: its keys, clicks and mouse moves never reach the PC (they
+		 * typed into whatever window had focus); the remapper takes them as sent */
+		return 0;
+	}
+#endif
 
 	if(IS_ENABLED(CONFIG_IBEX_USB_HID) && !transport_usb_reports_suppressed())
 	{

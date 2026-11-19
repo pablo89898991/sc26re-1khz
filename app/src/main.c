@@ -799,7 +799,26 @@ int main(void)
 			hwtest_log(&current, remap_now); /* remapper hardware test: what the remapper made */
 #endif
 			/* Xbox 360 output (USB, pad_out = 1): the game gets the pad there */
-			xinput_send(&current, remap_xbox_buttons());
+#ifdef CONFIG_IBEX_HWTEST
+			if(hwtest_running())
+			{
+				/* remapper hardware test: the game and Steam get a pad at rest */
+				struct controller_report rest = current;
+
+				rest.buttons = 0U;
+				rest.trigger_left = rest.trigger_right = 0;
+				rest.stick_left_x = rest.stick_left_y = rest.stick_right_x = rest.stick_right_y = 0;
+				rest.touchpad_left_x = rest.touchpad_left_y = rest.touchpad_right_x = rest.touchpad_right_y = 0;
+				rest.touchpad_left_pressure = rest.touchpad_right_pressure = 0;
+				current = rest;
+			}
+#endif
+#ifdef CONFIG_IBEX_HWTEST
+			if(!hwtest_running())
+#endif
+			{
+				xinput_send(&current, remap_xbox_buttons());
+			}
 			xinput_neutral_pad(&current);
 		}
 		bool changed = first || memcmp(&current, &previous, sizeof(current)) != 0;

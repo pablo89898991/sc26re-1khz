@@ -398,6 +398,20 @@ def switch_button_stays_off_the_pad():
         s.run(1); assert not s.out_btn("L5"), "L5 reached the pad while still held"
     s.run(5, L5=0); s.run(20, L5=1); assert s.out_btn("L5"), "pressed again: unbound, to the pad"
 
+@test
+def hardware_test_sends_nothing_to_the_pc():
+    """v51 test 58: the hardware test's keys, clicks and mouse moves went to the PC: they typed into
+    the window in focus (a macro's Enter even sent a chat message). While a script runs the input
+    reports are taken as sent but not sent, and the pad / Xbox reports show a pad at rest"""
+    import os
+    d = os.path.join(os.path.dirname(os.path.abspath(__file__)), "../../app/src/")
+    t = open(d + "transport.c").read()
+    f = t[t.index("int transport_send_input_report("):]; f = f[:f.index("\n}\n")]
+    assert "hwtest_running()" in f and f.index("hwtest_running()") < f.index("transport_usb_reports_suppressed()"), f[:400]
+    m = open(d + "main.c").read()
+    i = m.index("hwtest_log(&current"); j = m.index("rest.buttons = 0U;"); k = m.index("xinput_send(&current")
+    assert i < j < k and "if(!hwtest_running())" in m[j:k]
+
 if __name__ == "__main__":
     ok = bad = 0
     for t in TESTS:
