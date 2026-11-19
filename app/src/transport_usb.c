@@ -709,9 +709,13 @@ int transport_usb_init(void)
 
 static K_MUTEX_DEFINE(state_send_lock);
 
+/* reports whose IMU sample was older than the last one sent (diagnostics) */
+uint32_t usb_imu_reordered;
+
 int transport_usb_send(const struct controller_report *report)
 {
 	uint8_t body[VALVE_INPUT_42_SIZE];
+	struct controller_report fixed;
 	int err;
 
 	if(!usb_ready())
@@ -721,6 +725,42 @@ int transport_usb_send(const struct controller_report *report)
 
 	/* called from the report loop and the IMU thread: one at a time */
 	k_mutex_lock(&state_send_lock, K_FOREVER);
+	{
+		/*
+		 * The report loop takes its IMU sample when it reads the inputs; the IMU thread
+		 * meanwhile sends newer samples itself. Sent after those, the loop's report took
+		 * the IMU timestamp backwards (about 1 report in 9 with the gyro on): Steam then
+		 * saw a negative time step and an old gyro value, and the gyro sensitivity
+		 * jumped. A report with an older sample than the last one sent carries the last
+		 * one again (same timestamp: no new sample) - v51 test 57.
+		 */
+		static struct controller_report last_imu;
+		static bool last_imu_valid;
+
+		int32_t back = (int32_t)(report->imu_timestamp_us - last_imu.imu_timestamp_us);
+
+		/* only a reordering: no timestamp (IMU off) or a big step back (the IMU restarted)
+		 * is taken as it is */
+		if(last_imu_valid && report->imu_timestamp_us != 0U && back < 0 && back > -100000)
+		{
+			fixed = *report;
+			fixed.accel_x = last_imu.accel_x;
+			fixed.accel_y = last_imu.accel_y;
+			fixed.accel_z = last_imu.accel_z;
+			fixed.gyro_x = last_imu.gyro_x;
+			fixed.gyro_y = last_imu.gyro_y;
+			fixed.gyro_z = last_imu.gyro_z;
+			fixed.gyro_quat_w = last_imu.gyro_quat_w;
+			fixed.gyro_quat_x = last_imu.gyro_quat_x;
+			fixed.gyro_quat_y = last_imu.gyro_quat_y;
+			fixed.gyro_quat_z = last_imu.gyro_quat_z;
+			fixed.imu_timestamp_us = last_imu.imu_timestamp_us;
+			report = &fixed;
+			usb_imu_reordered++;
+		}
+		last_imu = *report;
+		last_imu_valid = report->imu_timestamp_us != 0U;
+	}
 	triton_state_report_pack_body(body, sizeof(body), input_sequence++, report,
 	                              triton_state_report_timestamp_us());
 	next_state_imu_ts = report->imu_timestamp_us;

@@ -149,6 +149,7 @@ struct src_state
 	int32_t t_pdown, t_pup; /* ms, low 32 bits of the uptime */
 };
 static bool block_pressed; /* this report: block every source that is down */
+static uint32_t switch_hide;  /* buttons held through a profile switch: hidden from the pad until let go */
 static struct src_state st[REMAP_SRC_COUNT];
 
 static uint8_t last_kbd[8];
@@ -2106,6 +2107,10 @@ void remap_process(struct controller_report *r, float dt)
 			{
 				release_all();
 				block_pressed = true;
+				/* the buttons held through the switch (the switch button itself) stay away
+				 * from the Steam pad until let go: unbound in the new profile they reached
+				 * the game (hardware test, v51 test 57) */
+				switch_hide = raw & (BIT(30) - 1U);
 			}
 			tilt_ref_ok = false; /* gyro tilt: centred where the controller is now */
 			gyro_reg[0] = gyro_reg[1] = 0.0f;
@@ -2113,6 +2118,8 @@ void remap_process(struct controller_report *r, float dt)
 		}
 	}
 	cur_profile = p;
+	switch_hide &= raw;
+	hide |= switch_hide;
 	prof_hold_ms = p->hold_ms ? p->hold_ms : 250U;
 	prof_double_ms = p->double_ms ? p->double_ms : 250U;
 	prof_turbo_ms = MAX(p->turbo_ms ? p->turbo_ms : 100U, 20U);

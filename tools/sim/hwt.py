@@ -284,6 +284,7 @@ def _():
     def o(l, P):
         need(taps(l, "b") == 2 and taps(l, "x") == 1, "b, then x in the other profile, then b again", P)
         need(any(e["prof"] == LSLOT for e in l) and l[-1]["prof"] == SLOT, "active profile went to 3 and back to 4", P)
+        need(not any(e["btn"] & 1 << BTN["L5"] for e in l), "the switch button never reaches the Steam pad", P)
     return p, [N(50)] + tapb("B") + tapb("L5") + tapb("B") + tapb("L5") + tapb("B") + [N(100)], o
 
 @case("act_layer", "L4 holds a layer (A = x, LS mouse there); release of the layer while A is held")
@@ -971,6 +972,280 @@ def _():
         need(l[1]["tl"] == 0 and l[3]["tl"] == 32767, "LT 10..50 %% (%d, %d)" % (l[1]["tl"], l[3]["tl"]), P)
         need(14500 < l[5]["tr"] < 18500, "RT quarter pull with curve 0.5 ~ half (got %d)" % l[5]["tr"], P)
     return p, [N(50), S(60, tl=2000), S(60, tl=9800), S(60, tl=20000), N(60), S(60, tr=8192), N(60)], o
+
+# ===== every setting of the page: sweeps over each slider's range =====
+def _sweep(name, what, vals, mk, **kw):
+    for v in vals:
+        def f(v=v): return mk(v)
+        tag = "_".join(str(x) for x in v) if isinstance(v, tuple) else str(v)
+        case("%s_%s" % (name, tag.replace(".", "p").replace("-", "m")), what % (v,), **kw)(f)
+
+def _stick_mouse_speed(v):
+    p = Profile(); p.analog(0, MOUSE, speed=v)
+    def o(l, P):
+        exp = v * 0.4; got = l[-1]["dx"]
+        need(abs(got - exp) <= max(3, 0.12 * exp), "0.4 s full right at %d/s: ~%d (got %d)" % (v, exp, got), P)
+    return p, [N(50), S(400, lsx=32767), N(100)], o
+_sweep("set_stick_mouse_speed", "LS mouse sensitivity %s counts/s", (50, 1000, 10000), _stick_mouse_speed)
+
+def _stick_mouse_curve(v):
+    p = Profile(); p.analog(0, MOUSE, speed=4000, curve=int(v * 100), dz_in=300)
+    def o(l, P):
+        m = (16384 / 32767 - 0.03) / 0.97
+        exp = 4000 * 0.5 * m ** v; got = l[-1]["dx"]
+        need(abs(got - exp) <= max(4, 0.15 * exp), "half deflection, curve %s: ~%d (got %d)" % (v, exp, got), P)
+    return p, [N(50), S(500, lsx=16384), N(100)], o
+_sweep("set_stick_mouse_curve", "LS mouse response curve %s", (0.5, 1, 2, 4), _stick_mouse_curve)
+
+def _dz_in(v):
+    p = Profile(); p.analog(0, PASS, dz_in=v * 100)
+    def o(l, P):
+        out = l[1]["lsx"]
+        if v >= 30: need(out == 0, "30 %% push inside a %d %% dead zone: 0 (got %d)" % (v, out), P)
+        else: need(out > 0, "30 %% push outside a %d %% dead zone: moves (got %d)" % (v, out), P)
+        need(l[2]["lsx"] >= 32000, "full push: full (got %d)" % l[2]["lsx"], P)
+    return p, [N(50), S(60, lsx=int(0.3 * 32767)), S(60, lsx=32767), N(60)], o
+_sweep("set_stick_dz_in", "LS inner dead zone %s %%", (0, 25, 50, 90), _dz_in, snap=True)
+
+def _dz_out(v):
+    p = Profile(); p.analog(0, PASS, dz_out=v * 100)
+    def o(l, P):
+        out = l[1]["lsx"]
+        if 60 >= 100 - v: need(out >= 32000, "60 %% push with a %d %% outer dead zone: full (got %d)" % (v, out), P)
+        else: need(out < 32000, "60 %% push with a %d %% outer dead zone: not full (got %d)" % (v, out), P)
+    return p, [N(50), S(60, lsx=int(0.6 * 32767)), N(60)], o
+_sweep("set_stick_dz_out", "LS outer dead zone %s %%", (0, 25, 50), _dz_out, snap=True)
+
+def _anti(v):
+    p = Profile(); p.analog(0, PASS, dz_in=1000, anti=v * 100)
+    def o(l, P):
+        out = l[1]["lsx"] / 32767
+        need(out >= v / 100 - 0.03, "just past the dead zone: at least the anti dead zone %d %% (got %.0f %%)" % (v, out * 100), P)
+        need(out <= v / 100 + 0.1, "not much more (got %.0f %%)" % (out * 100), P)
+    return p, [N(50), S(60, lsx=int(0.11 * 32767)), N(60)], o
+_sweep("set_stick_anti", "LS anti dead zone %s %%", (0, 45, 90), _anti, snap=True)
+
+def _rot(v):
+    p = Profile(); p.analog(0, PASS, rotate=v)
+    def o(l, P):
+        a = math.atan2(l[1]["lsy"], l[1]["lsx"]) * 180 / math.pi
+        exp = 90 + v  # positive = counter-clockwise
+        d = (a - exp + 540) % 360 - 180
+        need(abs(d) < 6, "up rotated by %d: at %.0f deg (want %d)" % (v, a, exp), P)
+    return p, [N(50), S(60, lsy=25000), N(60)], o
+_sweep("set_stick_rotate", "LS rotation %s degrees", (-90, -45, 45, 90), _rot, snap=True)
+
+def _scale(v):
+    p = Profile(); p.analog(1, MOUSE, speed=1000); p.anx(1, scale_x=v, scale_y=100)
+    def o(l, P):
+        exp = 1000 * 0.4 * v / 100; got = l[-1]["dx"]
+        need(abs(got - exp) <= max(3, 0.12 * exp), "horizontal %d %%: ~%d (got %d)" % (v, exp, got), P)
+    return p, [N(50), S(400, rsx=32767), N(100)], o
+_sweep("set_stick_scale_x", "RS mouse horizontal scale %s %%", (10, 100, 400), _scale)
+
+def _ring(v):
+    p = Profile(); p.analog(0, PASS, ring=v * 100); p.bind("LS_RING", key("r"))
+    pts = (0.3, 0.6, 0.95)
+    def o(l, P):
+        for i, r in enumerate(pts):
+            on = key("r") in l[1 + i]["keys"]; want = r * 100 >= v
+            need(on == want, "push %d %% with the ring at %d %%: %s (got %s)" % (r * 100, v, want, on), P)
+    return p, [N(50)] + [S(80, lsx=int(r * 32767)) for r in pts] + [N(60)], o
+_sweep("set_stick_ring", "LS outer ring at %s %%", (20, 50, 90), _ring, snap=True)
+
+def _single(v):
+    p = Profile(); p.analog(0, SINGLE, dz_in=v * 100); p.bind("LS_RING", key("x"))
+    pts = (0.2, 0.5, 0.97)
+    def o(l, P):
+        for i, r in enumerate(pts):
+            on = key("x") in l[1 + i]["keys"]; want = r * 100 >= max(v, 5)
+            need(on == want, "whole stick pushed %d %%, threshold %d %%: %s (got %s)" % (r * 100, v, want, on), P)
+    return p, [N(50)] + [S(80, lsx=int(r * 32767)) for r in pts] + [N(60)], o
+_sweep("set_stick_single", "LS as one button, pushed past %s %%", (10, 40, 95), _single, snap=True)
+
+def _soft(v):
+    p = Profile(); p.trig_soft(0, v); p.bind("LT_SOFT", key("s"))
+    pts = (0.02, 0.4, 0.75, 1.0)
+    def o(l, P):
+        for i, r in enumerate(pts):
+            on = key("s") in l[1 + i]["keys"]; want = r * 100 >= v
+            need(on == want, "pull %d %%, soft point %d %%: %s (got %s)" % (r * 100, v, want, on), P)
+    return p, [N(50)] + [S(80, tl=int(r * 32767)) for r in pts] + [N(60)], o
+_sweep("set_trig_soft", "LT soft pull point %s %%", (1, 50, 100), _soft, snap=True)
+
+def _trange(v):
+    a, e = v
+    p = Profile(); struct.pack_into("<HH", p.b, 110, a * 100, e * 100)
+    pts = (a / 100 * 0.5, (a + e) / 200, min(1.0, e / 100 + 0.02))
+    def o(l, P):
+        need(l[1]["tl"] == 0, "below the start: 0 (got %d)" % l[1]["tl"], P)
+        need(12000 < l[2]["tl"] < 21000, "half way: about half (got %d)" % l[2]["tl"], P)
+        need(l[3]["tl"] >= 32000, "past the end: full (got %d)" % l[3]["tl"], P)
+    return p, [N(50)] + [S(80, tl=int(r * 32767)) for r in pts] + [N(60)], o
+_sweep("set_trig_range", "LT analog range %s", ((10, 60), (40, 100), (0, 30)), _trange, snap=True)
+
+def _hipwin(v):
+    p = Profile(); p.trig_soft(1, 30); p.trig_mode(1, 2, hip_ms=v); p.bind("RT_SOFT", key("s")); p.bind("RT_CLICK", key("f"))
+    pull = 60  # ms from the soft point to the click
+    def o(l, P):
+        if pull < v: need(taps(l, "s") == 0 and taps(l, "f") == 1, "full within the %d ms window: only f (s %d f %d)" % (v, taps(l, "s"), taps(l, "f")), P)
+        else: need(taps(l, "s") == 1 and taps(l, "f") == 1, "slower than the %d ms window: s then f (s %d f %d)" % (v, taps(l, "s"), taps(l, "f")), P)
+    return p, [N(50), S(pull, tr=14000), S(250, tr=32767, RT_CLICK=1), N(200)], o
+_sweep("set_trig_hip_window", "RT hip fire window %s ms", (20, 75, 400), _hipwin)
+
+def _pturbo(v):
+    p = Profile(); p.bind("A", key("a"), mode=M_TURBO); p.times(turbo=v)
+    hold = min(1000, 15 * v)
+    def o(l, P):
+        exp = hold / v; n = taps(l, "a")
+        need(abs(n - exp) <= max(1, 0.15 * exp), "%d ms turbo held %d ms: ~%.0f pulses (got %d)" % (v, hold, exp, n), P)
+    return p, [N(50), S(hold, A=1), N(300)], o
+_sweep("set_profile_turbo", "profile turbo period %s ms", (40, 100, 500), _pturbo, tol_ms=15)
+
+def _phold(v):
+    p = Profile(); p.bind("A", key("a"), key("b"), mode=M_HOLD); p.times(hold=v)
+    def o(l, P):
+        need(taps(l, "a") == 1 and taps(l, "b") == 1, "short press a, press longer than %d ms b (a %d b %d)" % (v, taps(l, "a"), taps(l, "b")), P)
+    return p, [N(50), S(v - 60, A=1), N(300), S(v + 80, A=1), N(300)], o
+_sweep("set_profile_hold", "profile long press time %s ms", (100, 250, 1000), _phold)
+
+def _pdbl(v):
+    p = Profile(); p.bind("A", key("a"), (), key("c"), mode=M_DOUBLE); p.times(dbl=v)
+    def o(l, P):
+        need(taps(l, "c") == 1, "second press inside %d ms: c once (got %d)" % (v, taps(l, "c")), P)
+        need(taps(l, "a") == 2, "two presses further apart than %d ms: a twice (got %d)" % (v, taps(l, "a")), P)
+    return p, [N(50), S(40, A=1), S(v - 80), S(40, A=1), N(v + 300), S(40, A=1), S(v + 60), S(40, A=1), N(v + 300)], o
+_sweep("set_profile_double", "profile double press window %s ms", (100, 250, 600), _pdbl)
+
+def _bt(v):
+    hold, turbo, ds, de = v
+    p = Profile(); p.bind("A", key("a"), key("b"), mode=M_HOLD | M_TURBO); p.btime("A", hold=hold, turbo=turbo)
+    p.bind("B", key("x")); p.btime("B", dstart=ds, dend=de)
+    def o(l, P):
+        need(taps(l, "a") >= 1, "a short press: a", P)
+        nb = taps(l, "b"); exp = 600 / turbo
+        need(abs(nb - exp) <= max(1, 0.2 * exp), "held %d ms past the %d ms long press: ~%.0f b pulses every %d ms (got %d)" % (600, hold, exp, turbo, nb), P)
+        tx = first(l, "x"); t0 = 50 + 60 + 300 + hold + 600 + 300
+        need(tx is not None and abs(tx - (t0 + ds)) <= 15, "x %d ms after B (at %s, B at %d)" % (ds, tx, t0), P)
+        off = next((e["t"] for e in l if tx and e["t"] > tx and key("x") not in e["keys"]), None)
+        need(off is not None and abs(off - (t0 + 150 + ds + de)) <= 15, "x off %d ms after B is let go, delayed by %d (off at %s, let go at %d)" % (de, ds, off, t0 + 150), P)
+    return p, [N(50), S(60, A=1), N(300), S(hold + 600, A=1), N(300), S(150, B=1), N(ds + de + 300)], o
+_sweep("set_binding_times", "binding times hold/turbo/delay start/end %s", ((100, 50, 0, 200), (500, 100, 300, 0), (1000, 200, 1000, 1000)), _bt, tol_ms=15)
+
+def _mvspeed(v):
+    p = Profile(); p.bind("DRIGHT", MOVE_RIGHT); p.move_speed(v)
+    def o(l, P):
+        exp = v * 0.5; got = l[-1]["dx"]
+        need(abs(got - exp) <= max(3, 0.1 * exp), "move right 0.5 s at %d/s: ~%d (got %d)" % (v, exp, got), P)
+    return p, [N(50), S(500, DRIGHT=1), N(100)], o
+_sweep("set_move_speed", "mouse move action speed %s/s", (50, 1000, 10000), _mvspeed)
+
+def _scroll_speed(v):
+    p = Profile(); p.analog(1, SCROLL, speed=int(v * 100))
+    def o(l, P):
+        exp = v * 1.0; got = l[-1]["wh"]
+        need(abs(got - exp) <= max(1.5, 0.15 * exp), "1 s full up at %s notches/s: ~%.0f (got %d)" % (v, exp, got), P)
+    return p, [N(50), S(1000, rsy=32767), N(100)], o
+_sweep("set_stick_scroll_speed", "RS scroll speed %s notches/s", (1, 10, 50), _scroll_speed)
+
+def _wheel_step(v):
+    p = Profile(); p.analog(2, SCROLL, speed=v); p.bind("LP_CW", key("q"))
+    turn = min(330, 10 * v)
+    def o(l, P):
+        exp = turn / v; n = taps(l, "q")
+        need(abs(n - exp) <= max(2, 0.25 * exp), "%d degrees with a %d degree step: ~%.0f (got %d)" % (turn, v, exp, n), P)
+    return p, [N(50)] + ring_points(0, 25000, 90, 90 - turn, 22, 20) + [N(1500)], o
+_sweep("set_pad_wheel_step", "LP scroll wheel step %s degrees", (15, 45, 90), _wheel_step, tol_ms=60)
+
+def _pad_sens(v):
+    p = Profile(); p.analog(3, MOUSE, speed=v)
+    def o(l, P):
+        exp = v * 24000 / 65535; got = l[-1]["dx"]
+        need(abs(got - exp) <= max(3, 0.12 * exp), "a slide over 24000 pad units at %d per pad: ~%.0f (got %d)" % (v, exp, got), P)
+    return p, [N(50)] + [pad(1, -12000 + i * 1000, 0, 8) for i in range(25)] + [N(150)], o
+_sweep("set_pad_mouse_sens", "RP mouse sensitivity %s", (50, 2000, 20000), _pad_sens)
+
+def _pad_accel(v):
+    p = Profile(); p.analog(3, MOUSE, speed=2000, curve=v)
+    def o(l, P):
+        base = 2000 * 24000 / 65535; got = l[-1]["dx"]
+        need(got >= base * 0.88 and (v == 0 or got > base * 1.05) and got <= base * (1 + v / 100) * 1.12, "acceleration %d %%: %.0f..%.0f (got %d)" % (v, base, base * (1 + v / 100), got), P)
+    return p, [N(50)] + [pad(1, -12000 + i * 2000, 0, 4) for i in range(13)] + [N(150)], o
+_sweep("set_pad_mouse_accel", "RP mouse acceleration %s %%", (0, 100, 300), _pad_accel)
+
+def _friction(v):
+    p = Profile(); p.analog(3, MOUSE, flags=AF_TRACKBALL, speed=2000, dz_out=int(v * 100))
+    st = [N(50)] + [pad(1, -15000 + i * 1500, 0, 5) for i in range(20)] + [N(500) for _ in range(6)]
+    def o(l, P):
+        v0 = 1500 / 0.005 * 2000 / 65535  # counts per second at the lift
+        exp = v0 / v * (1 - math.exp(-v * 3.0))
+        roll = l[-1]["dx"] - l[20]["dx"]
+        need(abs(roll - exp) <= 0.3 * exp + 20, "friction %s: rolls ~%.0f after lifting (got %d)" % (v, exp, roll), P)
+    return p, st, o
+_sweep("set_pad_friction", "RP trackball friction %s", (0.5, 5, 20), _friction, snap=True)
+
+def _edge(v):
+    p = Profile(); p.analog(3, MOUSE, speed=100); p.anx(3, edge_spin=v)
+    def o(l, P):
+        got = l[-1]["dx"]
+        if v == 0: need(got < 60, "no edge spin: stops (dx %d)" % got, P)
+        else: need(got > v * 0.3, "edge spin %d/s for 0.6 s: keeps going (dx %d)" % (v, got), P)
+    return p, [N(50)] + [pad(1, 20000 + i * 2000, 0, 10) for i in range(6)] + [pad(1, 32000, 0, 600), N(150)], o
+_sweep("set_pad_edge_spin", "RP mouse edge spin %s", (0, 1000, 5000), _edge)
+
+def _swipe_len(v):
+    p = Profile(); p.analog(3, SWIPE, dz_in=v * 100); p.bind("RP_RIGHT", key("d"))
+    def o(l, P):
+        # a slide over 60 % of the pad's width (30 % of the full -1..1 range)
+        fired = taps(l, "d") > 0
+        need(fired == (v <= 55), "a 60 %% swipe with the length at %d %%: %s (got %s)" % (v, v <= 55, fired), P)
+    return p, [N(50)] + [pad(1, -9800 + i * 1500, 0, 8) for i in range(14)] + [N(200)], o
+_sweep("set_pad_swipe_length", "RP swipe length %s %%", (10, 40, 90), _swipe_len)
+
+def _slices(v):
+    p = Profile(); p.analog(0, RADIAL, dz_in=3000); p.anx(0, slices=v)
+    srcs = (30, 70, 33, 71, 31, 72, 32, 73)
+    for i in range(v): p.bind(srcs[i], key(str(i + 1)))
+    def o(l, P):
+        fired = [k for k in range(1, v + 1) if taps(l, str(k))]
+        need(fired == [1], "%d slices, pointed up: slice 1 (got %s)" % (v, fired), P)
+    return p, [N(50), S(150, lsy=28000), N(200)], o
+_sweep("set_stick_radial_slices", "LS radial with %s slices", (2, 3, 5, 8), _slices)
+
+def _flick(v):
+    p = Profile(); p.analog(1, FLICK, speed=v, dz_in=8000)
+    def o(l, P):
+        r = at(l, 50 + min(v, 300) // 2)
+        need(abs(l[-1]["dx"] - 4091) < 300, "quarter turn in the end (dx %d)" % l[-1]["dx"], P)
+        if v >= 300: need(r is not None and r["dx"] < 3500, "the %d ms flick is not done half way (dx %s)" % (v, r and r["dx"]), P)
+    return p, [N(50), S(600, rsx=32767), N(300)], o
+_sweep("set_flick_time", "RS flick time %s ms", (0, 100, 500), _flick)
+
+def _press(v):
+    p = Profile(); p.analog(2, DPAD4, flags=AF_PRESS, dz_in=3000, press=v * 100); p.bind("LP_UP", key("w"))
+    pts = (0.05, 0.5, 1.0)
+    def o(l, P):
+        for i, r in enumerate(pts):
+            on = key("w") in l[1 + i]["keys"]; want = r * 100 >= v
+            need(on == want, "pressure %d %%, needed %d %%: %s (got %s)" % (r * 100, v, want, on), P)
+    return p, [N(50)] + [pad(0, 0, 25000, 80, p=int(r * 32767)) for r in pts] + [N(60)], o
+_sweep("set_pad_pressure", "LP pressure needed %s %%", (1, 30, 100), _press, snap=True)
+
+def _tilt_dz(v):
+    q = Profile("tiltdz"); q.gyx(mode=1, tilt_dz=v); q.bind("GYRO_UP", key("w"))
+    st = _gyro_case(q, [(v - 3 if v > 5 else 1, 0, 300), (0, 0, 200), (v + 5, 0, 300), (0, 0, 200)])
+    def o(l, P): need(taps(l, "w") == 1 and first(l, "w") >= 330 + 500, "tilted less than %d deg: nothing; more: w (w at %s)" % (v, first(l, "w")), P)
+    return _gp(st, o)
+_sweep("set_gyro_tilt_needed", "gyro tilt needed %s degrees", (5, 15, 45), _tilt_dz)
+
+def _region_deg(v):
+    q = Profile("regdeg"); q.gyx(mode=2, region_deg=v)
+    st = _gyro_case(q, []) + [S(500, az=14000, gz=-int(v / 2 / 0.5 / 0.06103)), S(200, az=14000)]
+    def o(l, P):
+        xs = [e["absx"] for e in l if e["absx"] != 0xFFFF]
+        need(xs and max(xs) > 31000, "turning half the area width (%d deg) reaches the right edge (max %s)" % (v // 2, max(xs, default=None)), P)
+    return _gp(st, o)
+_sweep("set_gyro_region_deg", "gyro region %s degrees across", (20, 60, 180), _region_deg)
 
 
 def build():

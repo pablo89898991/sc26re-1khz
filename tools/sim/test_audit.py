@@ -371,6 +371,33 @@ def trackball_speed_does_not_depend_on_the_loop_rate():
     a, b = run(1), run(4)
     assert a > 0 and abs(a - b) <= max(4, 0.15 * a), (a, b)
 
+@test
+def usb_report_never_takes_the_imu_time_back():
+    """v51 test 57: the report loop and the IMU thread both send the pad report; the loop's sample,
+    taken earlier, went out after newer ones: about 1 report in 9 took the IMU timestamp back
+    (measured on the tester's controller) and Steam's gyro sensitivity jumped. transport_usb.c is
+    not in the simulator: the source is checked"""
+    import os, re
+    src = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "../../app/src/transport_usb.c")).read()
+    f = src[src.index("int transport_usb_send(const struct controller_report *report)"):]
+    f = f[:f.index("\n}\n")]
+    lock = f.index("k_mutex_lock(&state_send_lock"); pack = f.index("triton_state_report_pack_body(")
+    chk = f.index("report->imu_timestamp_us - last_imu.imu_timestamp_us")
+    assert lock < chk < pack, "checked under the send lock, before packing"
+    assert "back < 0" in f and "report = &fixed" in f and "last_imu = *report" in f
+
+@test
+def switch_button_stays_off_the_pad():
+    """v51 test 57 (hardware test): the button held through a profile switch reached the Steam pad
+    in the new profile when it was unbound there"""
+    p = Profile(); p.bind("L5", PROFILE + 1)
+    q = Profile()
+    s = Sim(); s.upload(1, q); s.use(p); s.run(5)
+    s.run(1, L5=1)
+    for _ in range(60):
+        s.run(1); assert not s.out_btn("L5"), "L5 reached the pad while still held"
+    s.run(5, L5=0); s.run(20, L5=1); assert s.out_btn("L5"), "pressed again: unbound, to the pad"
+
 if __name__ == "__main__":
     ok = bad = 0
     for t in TESTS:
