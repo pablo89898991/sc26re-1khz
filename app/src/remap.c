@@ -135,6 +135,8 @@ struct src_state
 	bool interrupted;      /* long press cancelled by another input (per binding option) */
 	bool phys;             /* physically pressed (before delay start / end) */
 	bool phys_seen;        /* pressed at least once (delays have a reference) */
+	bool turbo_on;         /* turbo: its press is out in this report */
+	bool turbo_again;      /* turbo: a press went out in this hold already (the next ones are repeats) */
 	int32_t t_pdown, t_pup; /* ms, low 32 bits of the uptime */
 };
 static bool block_pressed; /* this report: block every source that is down */
@@ -2711,15 +2713,24 @@ void remap_process(struct controller_report *r, float dt)
 				out_action(b->act[0][i], keys, &nk, &mods, &pad);
 			}
 		}
-		if(ss->held_group >= 0 &&
-		   !((b->mode & REMAP_MODE_TURBO) && ss->held_group == 0 &&
-		     (((now - ss->t_down) / (turbo_ms / 2)) % 2 == 1 || turbo_waits(b))))
+		bool turbo = (b->mode & REMAP_MODE_TURBO) && ss->held_group == 0;
+		bool turbo_gap = turbo && (((now - ss->t_down) / (turbo_ms / 2)) % 2 == 1 || turbo_waits(b));
+
+		if(ss->held_group >= 0 && !turbo_gap)
 		{
 			for(size_t i = 0; i < 4; ++i)
 			{
 				out_action(b->act[ss->held_group][i], keys, &nk, &mods, &pad);
 			}
 		}
+		/* turbo: every repeat is the binding firing again, with its haptic (the first press
+		 * of a hold has it from fire()); before v51 test 46 only the first one ticked */
+		if(turbo && !turbo_gap && !ss->turbo_on && ss->turbo_again)
+		{
+			feedback(REMAP_HAPTIC_LEVEL(b->haptic), src_side(s));
+		}
+		ss->turbo_again = turbo && (ss->turbo_again || !turbo_gap);
+		ss->turbo_on = turbo && !turbo_gap;
 		if(ss->pulse_more && now >= ss->pulse_until + REPEAT_GAP_MS)
 		{
 			ss->pulse_more--;

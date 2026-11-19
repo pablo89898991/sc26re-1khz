@@ -99,7 +99,7 @@
 <body>
 <div class="top">
   <div class="topin">
-    <div class="brand">SC2 <span class="hz">Remapper</span> <span class="note" id="pagever" title="page version — if it is older than expected, press Ctrl+F5">p.2026-11-19b</span></div>
+    <div class="brand">SC2 <span class="hz">Remapper</span> <span class="note" id="pagever" title="page version — if it is older than expected, press Ctrl+F5">p.2026-11-19c</span></div>
     <button class="primary" id="connect">Connect controller</button>
     <span id="status" class="chip">not connected</span>
     <span class="grow"></span>
@@ -238,7 +238,7 @@
       <h3>Triggers</h3>
       <p><b>Soft pull</b> fires when the trigger passes the point you choose (1–100 %), <b>full pull</b> is the click at the end. Binding the soft pull takes the analog trigger away from Steam. <b>Xbox LT / RT (whole trigger, analog)</b> on the soft pull sends the whole trigger to the Xbox pad (every bit of travel, analog start / end applied, not only past the soft point); on any other input it is a full pull while held. Needs Pad output “Steam + Xbox” or “Xbox only” (cable).</p>
       <h3>Haptics</h3>
-      <p>Every binding has its own haptics (off / tick / click / strong) played on that side’s trackpad actuator when it fires; mouse and scroll modes can tick while moving. Gyro mouse haptics are on the gyro page.</p>
+      <p>Every binding has its own haptics (off / tick / click / strong) played on that side’s trackpad actuator when it fires — with turbo on every repeat (firmware v51 test 46+); mouse and scroll modes can tick while moving. Gyro mouse haptics are on the gyro page.</p>
       <h3>Touch sensors</h3>
       <p>Stick touch (capsense), grip touch (gripsense), trackpad touch and trackpad clicks are bindable like buttons.</p>
       <h3>Profiles</h3>
@@ -746,7 +746,7 @@ function editor(){
     </details>
     ${s===16?`<p class="note wrap">While the remapper is on, Steam does not see this button. Bind it to <b>Pad Steam</b> to give it back to Steam. Steam + D-pad (profiles) and holding it to power off work as always.</p>`:""}
     <div class="row2"><label>Chord</label><select id="bchord">${SHBTN.map(([v,n])=>`<option value="${v}">${v?"only while "+n+" is held":"— none (always) —"}</option>`).join("")}</select><small>chorded press: fires only together with that button</small></div>
-    <div class="row2"><label>Haptics</label><select id="bhap">${HAPT.map(([v,n])=>`<option value="${v}">${n}</option>`).join("")}</select><small>when it fires</small></div>
+    <div class="row2"><label>Haptics</label><select id="bhap">${HAPT.map(([v,n])=>`<option value="${v}">${n}</option>`).join("")}</select><small>when it fires (turbo: every repeat)</small></div>
     <div class="tools" style="margin-top:4px"><button class="ghost" id="bcopy">Copy binding</button><button class="ghost" id="bpaste"${bindClip?"":" disabled"}>Paste</button></div>
     ${trigLink}`;
   ed.querySelectorAll("[data-bit]").forEach(e=>e.onchange=()=>{ const bit=+e.dataset.bit; let v=(b[bo]&~bit)|(e.checked?bit:0);

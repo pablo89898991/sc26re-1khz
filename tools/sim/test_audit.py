@@ -114,6 +114,36 @@ def settings_survive_restart_and_bad_store():
     assert cfg_raw(s, "gyro_fsr")[0] == 2000 and cfg_raw(s, "remap_profile")[0] == 3
     assert cfg_raw(s, "trig_click")[0] == AUTO, "this one may follow Steam"
 
+# ---------------- tester reports ----------------
+def turbo_run(p, tr, steps):
+    s = Sim()
+    if tr: s.transport(*tr)
+    s.use(p); s.run(5); s.log = []
+    for ms, a in steps: s.run(ms, A=a)
+    hap = [e for e in s.log if e.split()[1] == "H"]
+    kb = Events(s.log).kbd()
+    return sum(1 for x, y in zip([()] + kb, kb) if key("a") in y and key("a") not in x), hap
+
+@test
+def turbo_repeats_play_the_binding_haptic():
+    """v51 test 45, tester: turbo on a button with haptics ticked only on the first press. Every
+    repeat is the binding firing again: one haptic per press, on USB, the Puck and Bluetooth"""
+    for tr in (None, (1, 1, 0, 15), (2, 0, 0, 15)):
+        p = Profile(); p.bind("A", key("a"), mode=M_TURBO, haptic=2); p.times(turbo=100)
+        n, hap = turbo_run(p, tr, ((1000, 1), (300, 0), (1000, 1), (300, 0)))     # two holds
+        assert n == 20 and len(hap) == n and all(h.split()[2] == "2" for h in hap), (tr, n, hap[:4])
+    # the binding's own turbo period (50 ms), and turbo with toggle: a tick per press and one when switched off
+    p = Profile(); p.bind("A", key("a"), mode=M_TURBO, haptic=1); p.btime("A", turbo=50)
+    n, hap = turbo_run(p, None, ((1000, 1), (300, 0)))
+    assert n == 20 and len(hap) == 20, (n, len(hap))
+    p = Profile(); p.bind("A", key("a"), mode=M_TURBO | M_TOGGLE, haptic=3); p.times(turbo=100)
+    n, hap = turbo_run(p, None, ((30, 1), (970, 0), (30, 1), (300, 0)))
+    assert n == 10 and len(hap) == n + 1, (n, len(hap))
+    # without haptics nothing ticks
+    p = Profile(); p.bind("A", key("a"), mode=M_TURBO); p.times(turbo=100)
+    n, hap = turbo_run(p, None, ((1000, 1), (300, 0)))
+    assert n == 10 and not hap, (n, hap[:3])
+
 # ---------------- found by mutation testing (mutate2.py old) ----------------
 @test
 def mouse_backlog_capped_after_a_trackpad_jump():
