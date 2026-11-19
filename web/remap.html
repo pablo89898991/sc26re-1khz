@@ -99,7 +99,7 @@
 <body>
 <div class="top">
   <div class="topin">
-    <div class="brand">SC2 <span class="hz">Remapper</span> <span class="note" id="pagever" title="page version — if it is older than expected, press Ctrl+F5">p.2026-11-19d</span></div>
+    <div class="brand">SC2 <span class="hz">Remapper</span> <span class="note" id="pagever" title="page version — if it is older than expected, press Ctrl+F5">p.2026-11-19e</span></div>
     <button class="primary" id="connect">Connect controller</button>
     <span id="status" class="chip">not connected</span>
     <span class="grow"></span>
@@ -399,9 +399,14 @@ function bindTextO(o){
   return t;
 }
 const bindText=s=>bindTextO(bOff(s));
-function itemText(s){ const g=SGRP[s]; let t=bindTextO(bOffL(s,0));
-  if(g!=null&&shBtn(g)&&grpTextO(prof[cur],bOffL(s,1),0)) t+=` <em>⇧ ${shName(g)}:</em> ${bindTextO(bOffL(s,1))}`; return t; }
-function item(s,label){ const has=grpTextO(prof[cur],bOffL(s,0),0)||(SGRP[s]!=null&&shBtn(SGRP[s])&&grpTextO(prof[cur],bOffL(s,1),0));
+/* is input s one of the stick / pad mode's inputs in the normal (L 0) or shifted (L 1) settings?
+ * (a radial slice that exists only in the shifted mode: its normal binding does nothing) */
+function inMode(s,L){ const an=parentOf(s); if(!an||an==="gyp"||!GRP_OF_AN[an]) return true;
+  if(L===1&&!shBtn(GRP_OF_AN[an])) return false; return subSources(an,L).some(([x])=>x===s); }
+function itemText(s){ const g=SGRP[s], n=inMode(s,0), sh=g!=null&&shBtn(g)&&inMode(s,1);
+  let t=n?bindTextO(bOffL(s,0)):"";
+  if(sh&&(grpTextO(prof[cur],bOffL(s,1),0)||!n)) t+=`${t?" ":""}<em>⇧ ${shName(g)}:</em> ${bindTextO(bOffL(s,1))}`; return t; }
+function item(s,label){ const g=SGRP[s], has=(inMode(s,0)&&grpTextO(prof[cur],bOffL(s,0),0))||(g!=null&&shBtn(g)&&inMode(s,1)&&grpTextO(prof[cur],bOffL(s,1),0));
   return `<div class="item${sel===s?" sel":""}" data-s="${s}"><span class="k">${label}</span><span class="b${has?"":" none"}">${itemText(s)}</span></div>`; }
 function anItem(an){ return `<div class="item${sel===an?" sel":""}" data-s="${an}"><span class="k">mode</span><span class="b">${modeName(an)}</span></div>`; }
 function dirItems(an){ const seen=new Set(), l=[...subSources(an,0)]; if(shBtn(GRP_OF_AN[an])) l.push(...subSources(an,1)); return l.filter(([x])=>!seen.has(x)&&seen.add(x)).map(([x,n])=>item(x,n)).join(""); }
@@ -486,7 +491,10 @@ function render(){
   document.querySelectorAll("#v_map [data-s]").forEach(e=>e.onclick=()=>openSel(e.dataset.s));
   editor();
 }
-function openSel(v){ if(v==="gyro"){ showView("gyro"); return; } sel=isNaN(+v)?v:+v; render(); const d=$("#dlg"); if(d.showModal&&!d.open) d.showModal(); }
+function openSel(v){ if(v==="gyro"){ showView("gyro"); return; } sel=isNaN(+v)?v:+v;
+  /* an input of a stick / pad mode: edit the binding of the mode (normal / shifted) that has it */
+  if(typeof sel==="number"){ const n=inMode(sel,0), sh=inMode(sel,1); if(sh&&!n) layer=1; else if(n&&!sh) layer=0; }
+  render(); const d=$("#dlg"); if(d.showModal&&!d.open) d.showModal(); }
 const parentOf=s=>{ if(s>=70) return s<74?"ls":"rs"; if(s>=66) return "gyp"; if(s>=64) return s===64?"lp":"rp"; if(s>=60) return ["ls","rs","lp","rp"][s-60]; if(s>=30&&s<38) return s<34?"ls":"rs";
   if(s>=38&&s<58) return ((s>=38&&s<42)||(s>=46&&s<50)||s===54||s===55)?"lp":"rp"; return null; };
 /* slider + exact number box; values in display units */
@@ -503,12 +511,12 @@ function shiftBar(g){
     ${on?`<span class="seg"><button data-l="0" class="${layer?"":"on"}">Normal</button><button data-l="1" class="${layer?"on":""}">Shifted ⇧</button></span>`:`<span class="note">the ${SHIFT_NAME[g].toLowerCase()} use${g===1||g>=6?"s":""} other settings</span>`}</div>`;
 }
 function wireShift(g){
+  document.querySelectorAll(".seg [data-l]").forEach(x=>x.onclick=()=>{ layer=+x.dataset.l; render(); });
   if(!$("#shb")) return;
   $("#shb").value=String(shBtn(g));
   $("#shb").onchange=e=>{ const v=+e.target.value, b=prof[cur], o=shOff(g), was=b[o]; b[o]=v;
     if(v&&!was){ b[o+1]=b[16]; if(g>=2&&g<=5){ const an=["ls","rs","lp","rp"][g-2]; b.copyWithin(o+2,aOffL(an,0),aOffL(an,0)+18); } layer=1; }
     if(!v) layer=0; setDirty(); render(); };
-  document.querySelectorAll(".seg [data-l]").forEach(x=>x.onclick=()=>{ layer=+x.dataset.l; render(); });
 }
 function gridSvg(j){ const g=k=>S16(22+j*8+k*2)/10000, L=g(0),R=g(1),T=g(2),B=g(3), X=v=>50+v*50, Y=v=>50-v*50;
   const cx=[(X(-1)+X(L))/2,(X(L)+X(R))/2,(X(R)+X(1))/2], cy=[(Y(1)+Y(T))/2,(Y(T)+Y(B))/2,(Y(B)+Y(-1))/2];
@@ -730,7 +738,8 @@ function editor(){
   const trigLink = s===27||s===23 ? `<p class="note">Full pull = the click at the end of the trigger. <a href="#" id="tlink">Soft pull →</a></p>` : s===58||s===59 ? `<p class="note"><a href="#" id="tlink">Full pull →</a></p>` : "";
   const back = par||(s>=10&&s<=13?"dp":null);
   ed.innerHTML=`${back?`<a href="#" id="back" class="note">← ${back==="dp"?"D-pad":back==="gyp"?"Gyro (this profile)":ANAME[back]}</a>`:""}<h4>${SRCNAME[s]||"input "+s}${useShift(g)?" <em>⇧ shifted</em>":""}<span class="live" id="lvsel"></span></h4>
-    ${par||back==="dp"?"":shiftBar(g)}
+    ${par||back==="dp"?"":shiftBar(g)}${par&&par!=="gyp"&&g!=null&&shBtn(g)?(()=>{ const n=inMode(s,0), sh=inMode(s,1);
+      return `<div class="shiftbar"><span class="note">Binding of the</span><span class="seg"><button data-l="0" class="${layer?"":"on"}"${n?"":" disabled"}>Normal</button><button data-l="1" class="${layer?"on":""}"${sh?"":" disabled"}>Shifted ⇧ ${shName(g)}</button></span>${n&&sh?"":`<span class="note">(only the ${n?"normal":"shifted"} mode has this input)</span>`}</div>`; })():""}
     ${trig}
     <div class="modes" style="margin:6px 0">${[[1,"long press (hold)",`second set after ${((U16(118)||250)/1000).toFixed(2)} s held`],[2,"double press",`second set on a second press within ${U16(120)||250} ms`],[8,"start press","the first set is tapped the moment you press, not held"],[16,"release press",(par?"tapped when the finger leaves / the click ends (not when sliding to another zone)":"tapped when you let go")],[4,"toggle","each press switches the first set on / off"],[32,"turbo","the first set repeats while held (profile turbo rate)"],[64,"cycle","each press taps the next set in turn: press → hold → double/release"]].map(([bit,n,t])=>`<label title="${t}"><input type="checkbox" data-bit="${bit}"${m&bit?" checked":""}> ${n}</label>`).join("")}</div>
     ${[0,1,2].filter(x=>x===0||(x===1&&(m&1))||(x===2&&(m&18))).map(x=>`<div class="grp"><span>${[m&8?"start":"press","hold",m&16?"release":"double"][x]}</span>${[0,1,2,3].map(i=>`<select data-gi="${x}:${i}">${OPTS}</select>`).join("")}</div>`).join("")}
