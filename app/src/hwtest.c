@@ -9,13 +9,17 @@
 #include "hwtest.h"
 #include "remap.h"
 
+#ifndef CONFIG_IBEX_BUILD_TIMESTAMP
+#define CONFIG_IBEX_BUILD_TIMESTAMP 0 /* the simulator */
+#endif
+
 #define HWT_LOG_OFF (HWT_STEP_SIZE * HWT_MAX_STEPS)
 
 static uint8_t *hb;       /* script, then the log (NULL: no test loaded) */
 static size_t hb_size;
 static uint8_t n_steps;
 static uint8_t step;
-static bool armed, running, overflow, aborted, final_pending, snapshot;
+static bool armed, running, overflow, aborted, final_pending, snapshot, live_pad;
 static int64_t t0, step_end, last_move;
 static uint16_t log_n, read_off, end_ms;
 static uint8_t last_entry[HWT_ENTRY_SIZE];
@@ -61,6 +65,11 @@ static void stop(void)
 bool hwtest_running(void)
 {
 	return running;
+}
+
+bool hwtest_pad_quiet(void)
+{
+	return running && !live_pad;
 }
 
 static void load_step(struct controller_report *r, const uint8_t *s)
@@ -253,6 +262,7 @@ int hwtest_set(const uint8_t *v, size_t len)
 		}
 		n_steps = v[1];
 		snapshot = len >= 3U && (v[2] & 1U); /* 1: one entry at the end of each step */
+		live_pad = len >= 3U && (v[2] & 2U); /* 2: the pad report carries the script (firmware test) */
 		snap_have = false;
 		log_n = 0;
 		read_off = 0;
@@ -288,8 +298,16 @@ bool hwtest_read(const char *path, uint8_t *buf, size_t capacity, size_t *len)
 		sys_put_le16(end_ms, &buf[4]);
 		sys_put_le16((uint16_t)log_cap(), &buf[6]);
 		buf[8] = HWT_MAX_STEPS;
-		buf[9] = 3; /* version: 2 = gyro / accel in the steps; Steam pad, Xbox analog, haptics, profile in the log; snapshots; 3 = a snapshot at the end of every step */
+		buf[9] = 4; /* version: 2 = gyro / accel in the steps; Steam pad, Xbox analog, haptics, profile in the log; snapshots; 3 = a snapshot at the end of every step */
 		*len = 10;
+		return true;
+	}
+	if(strcmp(path, "sc26re/fwid") == 0 && capacity >= 5)
+	{
+		/* which build this is (the page cannot tell test builds apart otherwise) */
+		sys_put_le32((uint32_t)CONFIG_IBEX_BUILD_TIMESTAMP, &buf[0]);
+		buf[4] = 4; /* hardware test version */
+		*len = 5;
 		return true;
 	}
 	if(strcmp(path, "sc26re/hwt_log") == 0 && capacity >= 2U + HWT_ENTRY_SIZE)

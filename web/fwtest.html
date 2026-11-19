@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>SC2 firmware test</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  body { font: 15px/1.45 system-ui, sans-serif; background: #0f1520; color: #dfe6f0; margin: 0; padding: 24px; }
+  main { max-width: 900px; margin: 0 auto; }
+  h1 { font-size: 22px; margin: 0 0 6px; }
+  button { font: inherit; padding: 8px 14px; border-radius: 8px; border: 1px solid #3a4a66; background: #1b2638; color: #dfe6f0; cursor: pointer; }
+  button.primary { background: #2f6fed; border-color: #2f6fed; color: #fff; }
+  button:disabled { opacity: .5; cursor: default; }
+  .note { color: #93a3ba; font-size: 13px; }
+  .bar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin: 14px 0; }
+  #log { background: #0a0f17; border: 1px solid #263248; border-radius: 8px; padding: 10px; font: 12px/1.5 ui-monospace, monospace; white-space: pre-wrap; max-height: 60vh; overflow: auto; }
+  .ok { color: #6fdc8c; } .err { color: #ff7b7b; } .warn { color: #f2c94c; }
+</style>
+</head>
+<body>
+<main>
+  <h1>SC2 firmware test <span class="note" id="ver">p.2026-11-19a</span></h1>
+  <p class="note">Needs a <b>test build (v51 test 59 or newer)</b>. Checks the firmware itself, not only the remapper: every setting (range, clamping, “auto”), report rates, the gyro / accelerometer at every range and rate (timestamps, sample rate, noise at rest), the settings channel under load, the pad report the firmware builds from known inputs, and the diagnostics it reports. Settings are changed <b>live only</b> (never saved) and put back. <b>Leave the controller lying still</b>; Steam can stay open (the pad report part sends sticks and triggers to it for a few seconds).</p>
+  <div class="bar">
+    <button id="connect">Connect controller…</button>
+    <button class="primary" id="run" disabled>Run firmware tests</button>
+    <span id="status" class="note"></span>
+  </div>
+  <div id="log"></div>
+</main>
+<script>
+const $=s=>document.querySelector(s);
+const log=(t,c)=>{ const d=document.createElement("div"); if(c) d.className=c; d.textContent=t; $("#log").appendChild(d); $("#log").scrollTop=1e9; };
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+let dev=null;
+const pathTag=p=>{ let t=0xA5; for(const c of p) t=((t<<1)^(t>>7)^c.charCodeAt(0))&255; return t; };
+function pathCmd(op,path,data=[]){ const p=new TextEncoder().encode(path), buf=new Uint8Array(63); buf[0]=op; buf[1]=p.length+1+data.length; buf.set(p,2); buf.set(data,2+p.length+1); return buf; }
+let chain=Promise.resolve();
+function serial(fn){ const run=()=>Promise.race([Promise.resolve().then(fn),new Promise((_,r)=>setTimeout(()=>r(new Error("no reply from the controller")),8000))]); const p=chain.then(run,run); chain=p.catch(()=>{}); return p; }
+async function send(path,op,data){ return serial(async()=>{ for(let a=0;;a++){ try{ return await dev.sendFeatureReport(1,pathCmd(op,path,data)); }catch(e){ if(a>=5) throw e; await sleep(40+a*30); } } }); }
+let retries=0;
+async function read(path){ const tag=pathTag(path);
+  return serial(async()=>{ let last=null, empty=0;
+    for(let a=0;a<8;a++){ try{
+      await dev.sendFeatureReport(1,pathCmd(0xED,path));
+      let r=null,o=-1; for(let k=0;k<6;k++){ try{ r=new Uint8Array((await dev.receiveFeatureReport(1)).buffer); o=r[0]===0xED?0:(r[1]===0xED?1:-1); if(o>=0) break; }catch(e){} await sleep(10+k*10); }
+      if(o<0) throw new Error("no reply");
+      const data=r.slice(o+2,o+2+r[o+1]);
+      if(!data.length){ if(++empty>=3) return data; throw new Error("empty"); }
+      if(!path.startsWith("sc26re/")) return data;
+      empty=0; if(data[0]!==tag) throw new Error("reply for another request (Steam?)");
+      return data.slice(1);
+    }catch(e){ last=e; retries++; await sleep(40+a*30); } }
+    throw last; }); }
+const s16=(b,i)=>{ const v=b[i]|(b[i+1]<<8); return v>32767?v-65536:v; };
+const u16=(b,i)=>b[i]|(b[i+1]<<8);
+const u32=(b,i)=>(b[i]|(b[i+1]<<8)|(b[i+2]<<16)|(b[i+3]<<24))>>>0;
+async function cfgRead(n){ const b=await read("sc26re/"+n); return b.length>=7?{v:s16(b,0),min:s16(b,2),max:s16(b,4),auto:b[6]}:null; }
+async function stage(n,v){ await send("sc26re/"+n,0xEE,[v&255,(v>>8)&255]); }
+async function imuMode(v){ const b=new Uint8Array(63); b[0]=0x87; b[1]=3; b[2]=48; b[3]=v&255; b[4]=(v>>8)&255; await serial(()=>dev.sendFeatureReport(1,b)); }
+const AUTO=-32768;
+
+async function pick(list){
+  for(const d of list){ if(d.vendorId!==0x28de||!d.collections.some(c=>c.featureReports&&c.featureReports.length)) continue;
+    try{ if(!d.opened) await d.open(); dev=d; const f=await read("sc26re/fwid"); if(f.length>=5) return f; }catch(e){} }
+  return null; }
+async function connect(list){
+  const f=await pick(list);
+  if(!f){ $("#status").innerHTML=`<span class="err">${dev?"this firmware has no firmware test: flash v51 test 59 or newer":"no controller"}</span>`; return; }
+  $("#status").innerHTML=`<span class="ok">connected · build ${u32(f,0).toString(16)} · test v${f[4]}</span>`; $("#run").disabled=false; }
+$("#connect").onclick=async()=>{ try{ await connect(await navigator.hid.requestDevice({filters:[{vendorId:0x28de}]})); }catch(e){ $("#status").innerHTML=`<span class="err">${e.message}</span>`; } };
+navigator.hid&&navigator.hid.getDevices().then(l=>l.length&&connect(l));
+
+/* the pad report 0x42 (body without the id): seq @0, buttons @1, triggers @5, sticks @9, pads @17, IMU ts @29, accel @33, gyro @39, quat @45 */
+async function capture(ms){ const rec=[]; const h=e=>{ if(e.reportId!==0x42) return; const v=e.data; rec.push({t:e.timeStamp, seq:v.getUint8(0), btn:v.getUint32(1,true), lt:v.getInt16(5,true), rt:v.getInt16(7,true), lx:v.getInt16(9,true), ly:v.getInt16(11,true), rx:v.getInt16(13,true), ry:v.getInt16(15,true), ts:v.getUint32(29,true), ax:v.getInt16(33,true), ay:v.getInt16(35,true), az:v.getInt16(37,true), gx:v.getInt16(39,true), gy:v.getInt16(41,true), gz:v.getInt16(43,true)}); };
+  dev.addEventListener("inputreport",h); await sleep(ms); dev.removeEventListener("inputreport",h); return rec; }
+function stats(rec){
+  if(rec.length<2) return {n:rec.length};
+  const span=(rec[rec.length-1].t-rec[0].t)/1000; let back=0,same=0,seqgap=0,fresh=0; const dts=[];
+  for(let i=1;i<rec.length;i++){ const d=(rec[i].ts-rec[i-1].ts)|0; if(d<0) back++; else if(d===0) same++; else { fresh++; dts.push(d); } if(((rec[i].seq-rec[i-1].seq+256)&255)!==1) seqgap++; }
+  const sd=k=>{ const a=rec.map(r=>r[k]); const m=a.reduce((x,y)=>x+y,0)/a.length; return Math.sqrt(a.reduce((x,y)=>x+(y-m)**2,0)/a.length); };
+  dts.sort((a,b)=>a-b);
+  return {n:rec.length, rate:rec.length/span, imu_rate:fresh/span, back, same, seqgap, dt_med:dts[dts.length>>1]||0, dt_max:dts[dts.length-1]||0, gsd:[sd("gx"),sd("gy"),sd("gz")], amean:[0,1,2].map(i=>{ const k=["ax","ay","az"][i]; return rec.reduce((x,r)=>x+r[k],0)/rec.length; })};
+}
+
+const R={checks:[]}; let nbad=0;
+function check(name,ok,info){ R.checks.push({name,ok:!!ok,info:String(info??"")}); if(!ok) nbad++; log(`${ok?"ok ":"BAD"} ${name}${info!==undefined?" — "+info:""}`, ok?"":"err"); }
+
+async function testSettings(names){
+  log("— settings: range, clamping, auto (live only, put back)");
+  for(const n of names){
+    let o; try{ o=await cfgRead(n); }catch(e){ check(`setting ${n} readable`,false,e.message); continue; }
+    if(!o){ check(`setting ${n} readable`,false,"no reply"); continue; }
+    if(["remap_on","remap_profile","pad_out","report_rate","led_brightness","auto_off","link_lost_off","imu_i2c_khz","gm_enabled"].includes(n)){ R.checks.push({name:`setting ${n} (not changed: affects the link or the device)`,ok:true,info:JSON.stringify(o)}); continue; }
+    const probs=[];
+    try{
+      await stage(n,o.min); let b=await cfgRead(n); if(b.v!==o.min) probs.push(`min ${o.min} read back ${b.v}`);
+      await stage(n,o.max); b=await cfgRead(n); if(b.v!==o.max) probs.push(`max ${o.max} read back ${b.v}`);
+      if(o.max<32767){ await stage(n,o.max+1); b=await cfgRead(n); if(b.v!==o.max) probs.push(`max+1 clamped to ${b.v}`); }
+      if(o.min>-32767){ await stage(n,o.min-1); b=await cfgRead(n); if(b.v!==o.min && !(o.auto&&o.min-1===AUTO)) probs.push(`min-1 clamped to ${b.v}`); }
+      if(o.auto){ await stage(n,AUTO); b=await cfgRead(n); if(b.v!==AUTO) probs.push(`auto read back ${b.v}`); }
+    }catch(e){ probs.push(e.message); }
+    try{ await stage(n,o.v); const b=await cfgRead(n); if(b.v!==o.v) probs.push(`put back ${o.v}, reads ${b.v}`); }catch(e){ probs.push("put back: "+e.message); }
+    check(`setting ${n} (${o.min}..${o.max}${o.auto?", auto":""})`, !probs.length, probs.join("; ")||`value ${o.v}`);
+  }
+}
+
+async function testRates(){
+  log("— report rates");
+  const o=await cfgRead("report_rate");
+  for(const r of [250,500,1000]){
+    await stage("report_rate",r); await sleep(400);
+    const s=stats(await capture(2000));
+    check(`report rate ${r}/s`, Math.abs(s.rate-r)<r*0.06 && s.seqgap===0, `${s.rate.toFixed(0)}/s, sequence gaps ${s.seqgap}`);
+  }
+  await stage("report_rate",o.v);
+}
+
+async function testImu(){
+  log("— gyro / accelerometer: every range and rate (controller at rest)");
+  const fsr=await cfgRead("gyro_fsr"), odr=await cfgRead("gyro_odr");
+  await imuMode(0x1C); await sleep(500);
+  let base=null;
+  for(const o of [2000,4000,8000]) for(const f of [250,500,1000,2000]){
+    await stage("gyro_odr",o); await stage("gyro_fsr",f); await imuMode(0x1C); await sleep(600);
+    const s=stats(await capture(1500));
+    const g=Math.hypot(...s.amean);
+    check(`IMU odr ${o} fsr ${f}: reports`, s.rate>900 && s.seqgap===0, `${s.rate.toFixed(0)}/s, gaps ${s.seqgap}`);
+    check(`IMU odr ${o} fsr ${f}: timestamps never go back`, s.back===0, `back ${s.back}, same ${s.same}`);
+    check(`IMU odr ${o} fsr ${f}: a new sample in most reports`, s.imu_rate>850, `${s.imu_rate.toFixed(0)} new samples/s, median step ${s.dt_med} us, max ${s.dt_max} us`);
+    check(`IMU odr ${o} fsr ${f}: gravity ~1 g`, g>12000&&g<20500, `|a| ${g.toFixed(0)}`);
+    check(`IMU odr ${o} fsr ${f}: gyro quiet at rest`, Math.max(...s.gsd)<25, `sd ${s.gsd.map(x=>x.toFixed(1)).join(", ")} counts`);
+    R["imu_"+o+"_"+f]=s;
+    await imuMode(0x1C);
+  }
+  await stage("gyro_odr",odr.v); await stage("gyro_fsr",fsr.v);
+}
+
+async function testLoad(){
+  log("— settings channel under load, report stream meanwhile");
+  const before=retries; let errs=0; const t0=performance.now();
+  const capP=capture(4000);
+  for(let i=0;i<300;i++){ try{ const b=await read("sc26re/rmp_diag"); if(b.length<6) errs++; }catch(e){ errs++; } }
+  const s=stats(await capP);
+  check("300 settings reads in a row", errs===0, `${errs} failed, ${retries-before} retried, ${((performance.now()-t0)/300).toFixed(1)} ms each`);
+  check("the pad report keeps its rate while the page talks to the controller", s.rate>900 && s.seqgap===0, `${s.rate.toFixed(0)}/s, gaps ${s.seqgap}`);
+}
+
+async function testPadReport(){
+  log("— the pad report built from known inputs (remapper off, a few seconds)");
+  const on=await cfgRead("remap_on"); if(on.v) { await stage("remap_on",0); }
+  const frames=[[300,{}],[300,{lx:12000,ly:-8000,rx:-30000,ry:32767,lt:16000,rt:32767}],[300,{lx:-32767,ly:32767}],[300,{}]];
+  const buf=new Uint8Array(42*frames.length);
+  frames.forEach(([ms,f],i)=>{ const v=new DataView(buf.buffer,i*42,42); v.setUint16(0,ms,true); v.setUint32(2,0,true); v.setInt16(6,f.lt||0,true); v.setInt16(8,f.rt||0,true); v.setInt16(10,f.lx||0,true); v.setInt16(12,f.ly||0,true); v.setInt16(14,f.rx||0,true); v.setInt16(16,f.ry||0,true); v.setInt16(40,16384,true); });
+  for(let o=0;o<buf.length;o+=40) await send("sc26re/hwt",0xEE,[1,o&255,o>>8,...buf.slice(o,o+40)]);
+  const capP=capture(1500);
+  await send("sc26re/hwt",0xEE,[2,frames.length,2]);
+  const rec=await capP; await sleep(200); await send("sc26re/hwt",0xEE,[3]);
+  if(on.v) await stage("remap_on",on.v);
+  const has=f=>rec.some(r=>["lx","ly","rx","ry","lt","rt"].every(k=>Math.abs(r[k]-(f[k]||0))<=2));
+  check("pad report: sticks and triggers exactly as given", has(frames[1][1]) && has(frames[2][1]), `${rec.length} reports`);
+  check("pad report: no buttons appear from nowhere", rec.every(r=>(r.btn&0x3FFFFFFF)===0 || false), rec.find(r=>r.btn)?.btn?.toString(16)||"none");
+}
+
+async function testDiag(){
+  log("— diagnostics the firmware reports");
+  const b=await read("sc26re/boot"); check("boot info", b.length>=8, `reset reason ${u32(b,0).toString(16)}, up ${(u32(b,4)/1000).toFixed(0)} s${b[8]?" (a crash was recorded)":""}`);
+  if(b.length>=9) check("no crash recorded since power-on", !b[8], b[8]?`reason ${b[9]} pc ${u32(b,10).toString(16)} lr ${u32(b,14).toString(16)} thread ${new TextDecoder().decode(b.slice(18,28)).replace(/\0.*$/,"")}`:"none");
+  const d=await read("sc26re/rmp_diag"); check("remapper diagnostics", d.length>=16, `keyboard reports sent ${u16(d,0)}, refused ${u16(d,2)}, link ${d[5]}`);
+  check("keyboard reports never refused", u16(d,2)===0, `refused ${u16(d,2)}`);
+  const i=await read("sc26re/imu_stats"); check("IMU statistics", i.length>=20, Array.from(i).join(","));
+  const h=await read("sc26re/host"); check("host info", h.length>=4, u32(h,0));
+  const raw=await read("sc26re/raw"); check("raw input (3D overlay)", raw.length>=28, raw.length+" bytes");
+  for(const p of ["cal/trg_l","cal/trg_r"]){ try{ const c=await read(p); check(`${p} readable`, c.length>0, Array.from(c).slice(0,8).join(",")); }catch(e){ check(`${p} readable`,false,e.message); } }
+}
+
+$("#run").onclick=async()=>{
+  $("#run").disabled=true; $("#log").textContent=""; nbad=0; R.checks=[];
+  try{
+    const f=await read("sc26re/fwid"); R.build=u32(f,0).toString(16);
+    const doc=await (await fetch("hwtests.json?"+Date.now())).json();
+    await testDiag();
+    await testSettings(doc.cfg);
+    await testRates();
+    await testImu();
+    await testLoad();
+    await testPadReport();
+    await imuMode(0);
+  }catch(e){ log("error: "+e.message,"err"); R.error=e.message; }
+  R.bad=nbad; window.fwtResults=R;
+  log(`${R.checks.length} checks, ${nbad} bad`, nbad?"err":"ok");
+  $("#run").disabled=false;
+};
+</script>
+</body>
+</html>

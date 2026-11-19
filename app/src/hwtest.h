@@ -38,6 +38,8 @@
 void hwtest_apply(struct controller_report *r, int64_t now_ms);
 void hwtest_log(const struct controller_report *r, int64_t now_ms);
 bool hwtest_running(void);
+/* the pad report shows a pad at rest (not with the firmware test's live flag) */
+bool hwtest_pad_quiet(void);
 
 /* feature settings: SET sc26re/hwt, GET sc26re/hwt_st and sc26re/hwt_log */
 int hwtest_set(const uint8_t *v, size_t len);

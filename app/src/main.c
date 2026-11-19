@@ -800,7 +800,7 @@ int main(void)
 #endif
 			/* Xbox 360 output (USB, pad_out = 1): the game gets the pad there */
 #ifdef CONFIG_IBEX_HWTEST
-			if(hwtest_running())
+			if(hwtest_pad_quiet())
 			{
 				/* remapper hardware test: the game and Steam get a pad at rest */
 				struct controller_report rest = current;
