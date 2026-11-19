@@ -172,8 +172,8 @@ def stick_region_puck_relative():
     s.run(300, rsx=32767, rsy=0)
     h = s.host()
     dx, dy = h["dx"] - h0["dx"], h["dy"] - h0["dy"]
-    # pushed into the corner (-2000, -1000) then to (1000, 250)
-    assert abs(dx - (-2000 + 1000)) <= 3 and abs(dy - (-1000 + 250)) <= 3, (dx, dy)
+    # pushed into the corner (1.25 screens: -1250, -625) then to (1000, 250)
+    assert abs(dx - (-1250 + 1000)) <= 3 and abs(dy - (-625 + 250)) <= 3, (dx, dy)
     s.run(300, rsx=0)
     h2 = s.host()
     assert abs((h2["dx"] - h["dx"]) - (-500)) <= 3, ("back to the centre", h2["dx"] - h["dx"])
@@ -244,6 +244,15 @@ def gyro_tilt_directions():
     s.run(30, **tilt(0, -25)); l = held(s)
     assert {r, l} == {(key("d"),), (key("a"),)}, ("left / right", r, l)
     s.run(30, **tilt(10, 0)); assert held(s) == (), "inside the dead zone"
+    # 4-way: a diagonal tilt gives the bigger direction only; 8-way: both
+    s.run(30, **tilt(30, 20)); assert held(s) == (key("w"),), ("4-way diagonal", held(s))
+    s.run(30, **tilt(0, 0))
+    s.run(30, **tilt(20, 30)); assert len(held(s)) == 1 and held(s) != (key("w"),), ("4-way diagonal, side bigger", held(s))
+    s.run(30, **tilt(0, 0))
+    p8 = gyro_prof(mode=1, tilt_dz=15, tilt_8way=1)
+    p8.bind("GYRO_UP", key("w")); p8.bind("GYRO_RIGHT", key("d")); p8.bind("GYRO_LEFT", key("a"))
+    s = fresh(p8, ax=0, ay=-8000, az=14000); s.run(30)
+    s.run(30, **tilt(30, 25)); assert len(held(s)) == 2 and key("w") in held(s), ("8-way diagonal", held(s))
 
 @test
 def gyro_tilt_recentres_on_profile_change():
@@ -302,6 +311,25 @@ def xbind_layer_and_shift_safe():
     assert held(s) == (key("q"),), held(s)
     s.run(30, L4=0); s.run(30, ay=0, az=16000)
     assert held(s) == ()
+
+@test
+def stick_region_over_the_radio_ends_where_asked():
+    """relative mouse region over the Puck / Bluetooth: corner first, then out - a stick flicked
+    and let go must leave the cursor at the region centre, a held stick at its point"""
+    W, H = 1920, 1080
+    def run(link, loss, ci, script):
+        p = Profile(); p.analog(0, REGION); p.anx(0, region=(50, 50, 50, 50))
+        s = Sim(); s.transport(link, 1 if link == 1 else 0, loss=loss, ci=ci); s.use(p, 0); s.run(20); s.log.clear()
+        x, y = 300.0, 800.0
+        for kw, ms in script: s.run(ms, **kw)
+        for e in s.log:
+            f = e.split()
+            if f[1] == "HM": x = min(max(x + int(f[3]), 0), W - 1); y = min(max(y + int(f[4]), 0), H - 1)
+        return round(x), round(y)
+    for link, loss, ci in [(1, 0, 15), (2, 0, 15), (1, 150, 15), (2, 100, 45)]:
+        assert run(link, loss, ci, [({"lsx": 32767}, 30), ({"lsx": 0}, 5000)]) == (960, 540), link
+        assert run(link, loss, ci, [({"lsx": 32767}, 5000)]) == (1440, 540), link
+        assert run(link, loss, ci, [({"lsx": 32767}, 30), ({"lsx": 0}, 20), ({"lsy": 32767}, 40), ({"lsy": 0}, 5000)]) == (960, 540), link
 
 if __name__ == "__main__":
     ok = fail = 0

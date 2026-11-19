@@ -131,6 +131,34 @@ def puzzle_mouse_region(link, xbox):
     if link == 0: assert absr, "absolute pointer reports over USB"
     else: assert s.host()["dx"] != h0, "relative fallback over the radio"
 
+@test
+def puzzle_mouse_region_lands_where_usb_points():
+    """over the radio the region moves the cursor relatively (corner first, then out): the PC's
+    cursor - stopped at the screen edges - must end where the USB absolute pointer would be"""
+    if skip("puzzle"): return
+    import random
+    r = load("puzzle"); W, H = 1920, 1080
+    for seed in range(4):
+        rnd = random.Random(seed)
+        segs = [[(rnd.randint(-32000, 32000), rnd.randint(-32000, 32000)) for _ in range(rnd.randint(1, 20))] for _ in range(3)]
+        s = sim(r, 0, slot=1); want = []
+        for pts in segs:
+            for (x, y) in pts: touch(s, 0, x, y, 5)
+            touch(s, 0, *pts[-1], 300)
+            a = [e.split() for e in s.log if e.split()[1] == "A"][-1]
+            want.append((int(a[2]) / 32767 * W, int(a[3]) / 32767 * H)); lift(s, 0, 50)
+        for link, nm, loss, ci, hold in [(1, "Puck", 0, 15, 600), (2, "BT", 0, 15, 600), (1, "Puck lossy", 150, 15, 3000), (2, "BT lossy", 100, 45, 4000)]:
+            s = sim(r, link, slot=1, loss=loss, ci=ci); s.log.clear(); x, y, n = 700.0, 300.0, 0
+            for k, pts in enumerate(segs):
+                for (px, py) in pts: touch(s, 0, px, py, 5)
+                touch(s, 0, *pts[-1], hold)
+                for e in s.log[n:]:
+                    f = e.split()
+                    if f[1] == "HM": x = min(max(x + int(f[3]), 0), W - 1); y = min(max(y + int(f[4]), 0), H - 1)
+                n = len(s.log)
+                assert abs(x - want[k][0]) <= 3 and abs(y - want[k][1]) <= 3, (seed, nm, k, (round(x), round(y)), want[k])
+                lift(s, 0, rnd.choice([5, 50, 300]))
+
 # ---------------- Steam Deck gamepad template ----------------
 @test
 @each_link

@@ -137,6 +137,10 @@ int transport_send_input_report(uint8_t report_id, const uint8_t *data, size_t l
 int32_t transport_input_idle_ms(void);
 uint8_t transport_link_kind(void);
 int32_t transport_esb_input_idle_ms(void);
+/* mouse / keyboard reports still waiting in the radio queue, where a new mouse report
+ * may merge into one of them (ESB); 0 where nothing merges (USB, Bluetooth) */
+int transport_input_queued(void);
+int transport_esb_input_queued(void);
 int32_t transport_ble_input_idle_ms(void);
 void transport_radio_deactivate(void);
 

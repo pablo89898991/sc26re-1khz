@@ -1547,6 +1547,15 @@ int32_t transport_esb_input_idle_ms(void)
 	return (int32_t)MIN(idle, (int64_t)INT32_MAX);
 }
 
+int transport_esb_input_queued(void)
+{
+	k_spinlock_key_t key = k_spin_lock(&latest_input_lock);
+	int n = input_report_queue_count;
+
+	k_spin_unlock(&latest_input_lock, key);
+	return n;
+}
+
 int transport_esb_send_input_report(uint8_t report_id, const uint8_t *data, size_t len)
 {
 	uint8_t expected_len;

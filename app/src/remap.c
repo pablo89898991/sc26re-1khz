@@ -181,7 +181,9 @@ static bool tilt_ref_ok;
 static bool region_on[5], region_was[5];
 static float region_pos[5][2];
 static float gyro_reg[2];
-static bool rel_homed;      /* relative mouse region: the cursor was sent to the corner */
+static uint8_t rel_phase;   /* relative mouse region: 0 not homed, 1 on the way to the corner, 2 there */
+static int64_t rel_home_ms;
+static float rel_tgt[2];    /* the last position asked for, 0..1 of the screen */
 static float rel_cur[2];    /* ... and is now here (pixels) */
 static uint16_t abs_last[2] = { 0xFFFF, 0xFFFF };
 static int8_t layer_now = -1, layer_next = -1; /* action layer: profile laid over the current one */
@@ -1745,18 +1747,33 @@ static void region_output(const struct remap_profile *p)
 			k = order[c];
 		}
 	}
+	float tx, ty;
+
 	if(k < 0)
 	{
-		rel_homed = false; /* the real mouse may move the cursor meanwhile */
 		abs_last[0] = abs_last[1] = 0xFFFFU;
-		return;
+		/* over the radio a region let go while the cursor is still on its way to the
+		 * corner still gets its last position (a stick flicked and let go: the centre) */
+		if(rel_phase != 1U || transport_link_kind() == 0U)
+		{
+			rel_phase = 0; /* the real mouse may move the cursor meanwhile */
+			return;
+		}
+		tx = rel_tgt[0];
+		ty = rel_tgt[1];
 	}
-	const uint8_t *rg = k == 4 ? p->ext.gyx.region : analog_x(p, k)->region;
-	float cx = rg[0] || rg[1] || rg[2] || rg[3] ? (float)rg[0] * 0.01f : 0.5f;
-	float cy = rg[0] || rg[1] || rg[2] || rg[3] ? (float)rg[1] * 0.01f : 0.5f;
-	float w = rg[2] ? (float)rg[2] * 0.01f : 1.0f, h = rg[3] ? (float)rg[3] * 0.01f : 1.0f;
-	float tx = CLAMP(cx + region_pos[k][0] * w * 0.5f, 0.0f, 1.0f);
-	float ty = CLAMP(cy - region_pos[k][1] * h * 0.5f, 0.0f, 1.0f);
+	else
+	{
+		const uint8_t *rg = k == 4 ? p->ext.gyx.region : analog_x(p, k)->region;
+		float cx = rg[0] || rg[1] || rg[2] || rg[3] ? (float)rg[0] * 0.01f : 0.5f;
+		float cy = rg[0] || rg[1] || rg[2] || rg[3] ? (float)rg[1] * 0.01f : 0.5f;
+		float w = rg[2] ? (float)rg[2] * 0.01f : 1.0f, h = rg[3] ? (float)rg[3] * 0.01f : 1.0f;
+
+		tx = CLAMP(cx + region_pos[k][0] * w * 0.5f, 0.0f, 1.0f);
+		ty = CLAMP(cy - region_pos[k][1] * h * 0.5f, 0.0f, 1.0f);
+		rel_tgt[0] = tx;
+		rel_tgt[1] = ty;
+	}
 
 	if(transport_link_kind() == 0U)
 	{
@@ -1778,17 +1795,41 @@ static void region_output(const struct remap_profile *p)
 		float sw = (float)(p->ext.screen[0] ? p->ext.screen[0] : 1920U);
 		float sh = (float)(p->ext.screen[1] ? p->ext.screen[1] : 1080U);
 
-		if(!rel_homed)
+		int64_t now = k_uptime_get();
+
+		if(rel_phase == 0U)
 		{
-			mouse_acc[0] -= sw * 2.0f; /* into the corner, whatever the start */
-			mouse_acc[1] -= sh * 2.0f;
+			mouse_acc[0] -= sw * 1.25f; /* into the corner, wherever the cursor is */
+			mouse_acc[1] -= sh * 1.25f;
 			rel_cur[0] = rel_cur[1] = 0.0f;
-			rel_homed = true;
+			rel_phase = 1U;
+			rel_home_ms = now;
+		}
+		if(rel_phase == 1U)
+		{
+			/* the way out of the corner starts only when the way in has left the
+			 * radio queue: the PC stops the cursor at the screen edge, so a move
+			 * out merged into a move in (the Puck merges queued mouse reports)
+			 * would be lost against that edge */
+			if(fabsf(mouse_acc[0]) >= 1.0f || fabsf(mouse_acc[1]) >= 1.0f)
+			{
+				rel_home_ms = now; /* still on the way */
+				return;
+			}
+			if(transport_input_queued() != 0 && now - rel_home_ms < 500)
+			{
+				return;
+			}
+			rel_phase = 2U;
 		}
 		mouse_acc[0] += tx * sw - rel_cur[0];
 		mouse_acc[1] += ty * sh - rel_cur[1];
 		rel_cur[0] = tx * sw;
 		rel_cur[1] = ty * sh;
+		if(k < 0)
+		{
+			rel_phase = 0; /* the last position is out: done */
+		}
 	}
 }
 

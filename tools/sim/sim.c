@@ -151,6 +151,8 @@ bool sim_xbox_live(void) { return tmode == 0 && xbox_pad; }
 void sim_xbox(int on) { xbox_pad = on; }
 uint8_t transport_link_kind(void) { return tmode == 0 ? 0 : (tmode == 1 ? 2 : 1); }
 /* as transport.c: ms since the mouse / keyboard queue emptied, USB: always */
+/* as transport.c: reports a new mouse report may merge into (the Puck's queue) */
+int transport_input_queued(void) { return tmode == 1 ? qn : 0; }
 int32_t transport_input_idle_ms(void)
 {
 	if(tmode == 0) return INT32_MAX;
