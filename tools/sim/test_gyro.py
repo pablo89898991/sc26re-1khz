@@ -37,6 +37,24 @@ for space, want in ((0, False), (1, True), (2, True)):
     s.lib.sim_gyro(0, 0, -100)                # about the controller's Y = the world vertical
     e = s.run(300); dx = sum(m[1] for m in e.mouse()); dy = sum(m[2] for m in e.mouse())
     check("space %d: turn about gravity moves x=%s" % (space, want), (abs(dx) > 300) == want and abs(dy) < 50, (dx, dy))
+# held flat (gravity along the yaw axis): every space turns the same way as local space
+dxs = {}
+for space in (0, 1, 2):
+    p = Profile(); p.bind("A", key("a"))
+    s = gsim(p, gm_enabled=1, gm_act_button=-1, gm_act_mode=0, gm_space=space)
+    s.set(ax=0, ay=0, az=16000); s.run(50)
+    s.lib.sim_gyro(0, 100, 0)
+    e = s.run(300); dxs[space] = sum(m[1] for m in e.mouse())
+check("flat: player / world space turn like local space", dxs[0] != 0 and all((dxs[k] > 0) == (dxs[0] > 0) and abs(dxs[k] - dxs[0]) < abs(dxs[0]) * 0.1 for k in (1, 2)), dxs)
+# tilted 45 degrees forward: world space keeps the full yaw, local space loses part of it
+dxs = {}
+for space in (0, 2):
+    p = Profile(); p.bind("A", key("a"))
+    s = gsim(p, gm_enabled=1, gm_act_button=-1, gm_act_mode=0, gm_space=space, gm_axis_roll=0)
+    s.set(ax=0, ay=-11314, az=11314); s.run(50)            # gravity between yaw and roll
+    s.lib.sim_gyro(0, 70.7, 70.7)                           # a turn about the world vertical
+    e = s.run(300); dxs[space] = sum(m[1] for m in e.mouse())
+check("tilted: a turn about the vertical, world space = full turn", abs(dxs[2]) > abs(dxs[0]) * 1.3, dxs)
 # profile override of the space (ext.gyx.space = 3 = world)
 p = Profile(); p.flags(PF_GYRO); p.gyx(space=3)
 g = [0, -1, 0, 2, 1, 0, 100, 100, 100, 100, 10, 0, 0, 0, 0, 0, 0, 100, 30, 0, -1, 0, -1, 0, -1, 0, -1, 0, 60, -1]

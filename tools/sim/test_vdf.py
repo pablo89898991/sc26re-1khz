@@ -120,6 +120,15 @@ def regular_press_with_double_press_acts_at_once():
     roundtrip(config([g], [(0, "Default", [(0, "button_diamond active")])]))
 
 @test
+def double_and_release_on_one_input_keep_the_double():
+    for order in (0, 1):
+        a1 = act("Double_Press", "key_press D, , "); a2 = act("release", "key_press R, , ")
+        g = group(0, "four_buttons", inp("button_a", *((a1, a2) if order == 0 else (a2, a1))))
+        r, p = one([g], [(0, "button_diamond active")])
+        assert p.b[488] & 2 and not p.b[488] & 16 and list(p.b[488 + 9:488 + 13]) == [key("d"), 0, 0, 0], (order, list(p.b[488:502]))
+        assert any("double press and release" in n for n in r["notes"])
+
+@test
 def interruptible_regular_press_waits_for_the_long_press():
     g = group(0, "four_buttons", inp("button_b", act(binding="key_press H, , ", settings={"interruptable": "1"}), act("Long_Press", "key_press I, , ", {"long_press_time": "300"})))
     r, p = one([g], [(0, "button_diamond active")])

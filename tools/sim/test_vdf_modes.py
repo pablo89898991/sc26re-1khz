@@ -203,6 +203,14 @@ def action_sets_switch_on_every_link():
         s.run(60, Y=1); s.run(60, Y=0); s.run(60)
         s.run(60, A=1); assert key("a") in hk(); s.run(60, A=0); s.run(100); assert not hk()
 
+@test
+def playstation_touchpad_goes_to_the_right_trackpad():
+    g = group(0, "absolute_mouse", binds([("click", "m")]))
+    txt = config([g], [(0, "Default", [(0, "center_trackpad active")])]).replace('"controller_triton"', '"controller_ps5"')
+    r = vdf(txt); p = prof_of(r["profiles"][0])
+    assert p.b[256 + 18 * 3] == 3 and any("right trackpad" in n for n in r["notes"]), (p.b[256 + 18 * 3], r["notes"])
+    s = fresh(p); touch(s, 1, 0, 0, 40, click=True); assert K("m") in held(s); lift(s, 1, 40)
+
 if __name__ == "__main__":
     ok = 0
     for t in TESTS:

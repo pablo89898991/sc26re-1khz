@@ -236,6 +236,12 @@
         if (w.includes("active") && !w.includes("modeshift")) active.push([src, gid]);
         else if (w.includes("modeshift")) shifts.push([src, gid, w.includes("active")]);
       }
+      /* a PlayStation layout's touchpad: our right trackpad, when the layout leaves that free */
+      const hasRP = active.some(([src]) => src === "right_trackpad");
+      for (const x of [...active, ...shifts]) if (x[0] === "center_trackpad") {
+        if (hasRP) this.note("touchpad of the other controller: the right trackpad is already used, left out");
+        else { x[0] = "right_trackpad"; this.note("touchpad of the other controller: on the right trackpad"); }
+      }
       for (const [src, gid] of active) this.applyGroup(ctx, src, this.group(gid), null);
       /* mode shifts: the buttons that shift come from mode_shift bindings found above */
       for (const [src, gid] of shifts) {
@@ -442,11 +448,12 @@
         if (!acts.length) continue;
         bound += acts.length;
         if (an === "long_press") { b[o] |= 1; const t = S("long_press_time") || STEAM_LONG_MS; b[bt] = Math.max(1, Math.min(255, Math.round(t / 10))); }
-        else if (an === "double_press") { b[o] = (b[o] | 2) & ~16; const t = S("double_tap_time"); if (t) b[bt + 1] = Math.min(255, Math.round(t / 10)); }
-        else if (an === "release") b[o] = (b[o] | 16) & ~2;
+        else if (an === "double_press") { if (b[o] & 16) { this.note("double press and release press on one input: one slot here, the double press kept"); b.fill(0, o + 9, o + 13); } b[o] = (b[o] | 2) & ~16; const t = S("double_tap_time"); if (t) b[bt + 1] = Math.min(255, Math.round(t / 10)); }
+        else if (an === "release") { if (b[o] & 2) { this.note("double press and release press on one input: one slot here, the double press kept"); continue; } b[o] |= 16; }
         else if (an === "start_press") b[o] = (b[o] | 8) & ~4;
         else if (an === "chorded_press" || an === "chord") { const cb = get(set, "chord_button"); const bit = cb != null ? (SWITCH[cb] ?? DIAMOND[cb] ?? null) : null; if (bit != null) b[o + 13] = (b[o + 13] & 3) | ((bit + 1) << 2); else ctx.unsupported["chorded press without a known chord button"] = 1; }
         else if (an === "soft_press" && opts.soft) opts.soft();
+        if (g !== 0 && (S("toggle") === 1 || S("hold_repeats") === 1 || S("repeat") === 1 || S("turbo") === 1)) this.note("toggle / turbo on a long, double or release press: here only on the regular press (left out)");
         if (g === 0 && S("toggle") === 1) b[o] = (b[o] | 4) & ~8;
         if (g === 0 && (S("hold_repeats") === 1 || S("repeat") === 1 || S("turbo") === 1)) { b[o] |= 32; const r = S("repeat_rate"); if (r) b[bt + 2] = Math.min(255, Math.max(4, Math.round(r / 5))); }
         if (S("cycle") === 1) b[o] |= 64;
