@@ -19,6 +19,8 @@ async function slot3() { let out = ''; for (let o = 0; o < 3232; ) { const r = a
   for (let o = 0; o < 3232; o += 40) await feature(0xEE, 'sc26re/rmp/3/' + o.toString(16), [...mine.slice(o, o + 40)]);
   await feature(0xEF, 'sc26re/rmp/3');
   await feature(0xEE, 'sc26re/remap_profile', [1, 0]); await feature(0xEF, 'sc26re/remap_profile');
+  /* the virtual controller always has its Xbox pad: say so, as the real one does with pad_out */
+  await feature(0xEE, 'sc26re/pad_out', [2, 0]); await feature(0xEF, 'sc26re/pad_out');
   const before = await slot3();
   const br = await chromium.launch({ executablePath: '/usr/bin/google-chrome', args: ['--no-sandbox'] });
   const ctx = await br.newContext({ acceptDownloads: true });

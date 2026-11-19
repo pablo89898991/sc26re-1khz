@@ -23,15 +23,20 @@
 
 #include "controller.h"
 
-#define HWT_STEP_SIZE 30U /* u16 ms, u32 buttons, i16 trig[2], i16 sticks[4], pads lx ly lp rx ry rp */
-#define HWT_MAX_STEPS 40U
-#define HWT_ENTRY_SIZE 30U /* u16 ms, mouse buttons, shift groups, kbd[8], pad u32, xbox u32, dx i32, dy i32, wheel i16 */
+/* step: u16 ms, u32 buttons, i16 trig[2], i16 sticks[4], pads lx ly lp rx ry rp, gyro[3], accel[3] */
+#define HWT_STEP_SIZE 42U
+#define HWT_MAX_STEPS 32U
+/* entry: u16 ms, mouse buttons, shift groups, kbd[8], Steam pad buttons u32, xbox u32, dx i32, dy i32,
+ * wheel i16, Xbox LT RT u8, Xbox sticks i8[4] (/256), absolute cursor x y u16, haptic count, active profile,
+ * Steam pad lsx lsy rsx rsy
+ * lt rt i16 */
+#define HWT_ENTRY_SIZE 54U
 #define HWT_MAX_MS 10000U
 #define HWT_MOVE_MS 50     /* mouse / wheel movement alone: logged at most this often */
 
 /* report loop: before anything reads the inputs / after the remapper and the Xbox output */
 void hwtest_apply(struct controller_report *r, int64_t now_ms);
-void hwtest_log(int64_t now_ms);
+void hwtest_log(const struct controller_report *r, int64_t now_ms);
 bool hwtest_running(void);
 
 /* feature settings: SET sc26re/hwt, GET sc26re/hwt_st and sc26re/hwt_log */

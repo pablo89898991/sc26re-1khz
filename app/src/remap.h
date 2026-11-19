@@ -279,6 +279,10 @@ void remap_xbox_stick(int i, int16_t *x, int16_t *y);
 bool remap_gyro_value(int id, int16_t *value);
 /* output monitor for the editor page (30 bytes) */
 void remap_monitor(uint8_t *out);
+/* haptic feedbacks the remapper played (wraps; hardware test) */
+uint8_t remap_haptic_count(void);
+/* the last absolute cursor position (mouse region over USB), 0xFFFF = none */
+void remap_abs_pos(uint16_t *x, uint16_t *y);
 /* 8 bytes: keyboard reports sent (le16), refused (le16), last error, link (0 USB, 1 Bluetooth, 2 Puck, 3 none), kbd state valid */
 /* 14 bytes: keyboard diagnostics (8) + Xbox pad diagnostics (6, see xinput_diag) */
 void remap_diag(uint8_t *out);

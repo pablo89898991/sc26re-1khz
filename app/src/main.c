@@ -791,12 +791,12 @@ int main(void)
 			current.buttons = gyro_mouse_filter_buttons(current.buttons, remap_raw_buttons());
 			/* in-game stick measurement (gyro as joystick calibration) */
 			stick_test_apply(&current, raw_buttons);
+#ifdef CONFIG_IBEX_HWTEST
+			hwtest_log(&current, remap_now); /* remapper hardware test: what the remapper made */
+#endif
 			/* Xbox 360 output (USB, pad_out = 1): the game gets the pad there */
 			xinput_send(&current, remap_xbox_buttons());
 			xinput_neutral_pad(&current);
-#ifdef CONFIG_IBEX_HWTEST
-			hwtest_log(remap_now);
-#endif
 		}
 		bool changed = first || memcmp(&current, &previous, sizeof(current)) != 0;
 		bool refresh_due = k_uptime_get() - last_input_sent >= INPUT_REFRESH_MS;

@@ -19,8 +19,8 @@
 </head>
 <body>
 <main>
-  <h1>SC2 remapper hardware test <span class="note" id="ver">p.2026-11-19a</span></h1>
-  <p class="note">Needs a <b>test build (v51 test 54 or newer)</b>. The page saves a copy of Profile 4 (and any profile a test needs as a layer) and of the active profile setting, runs every test on the controller and puts everything back. During the run the controller ignores its own buttons, sticks and pads; <b>leave it lying still</b>. Pressing the <b>Steam button</b> stops the test at once. Close the remapper and report meter tabs first.</p>
+  <h1>SC2 remapper hardware test <span class="note" id="ver">p.2026-11-19b</span></h1>
+  <p class="note">Needs a <b>test build (v51 test 55 or newer)</b>. The page saves a copy of Profile 4 (and any profile a test needs as a layer) and of the active profile setting, runs every test on the controller and puts everything back. During the run the controller ignores its own buttons, sticks and pads; <b>leave it lying still</b>. Pressing the <b>Steam button</b> stops the test at once. Close the remapper and report meter tabs first.</p>
   <div class="bar">
     <button id="connect">Connect controller…</button>
     <button class="primary" id="run" disabled>Run all tests</button>
@@ -72,7 +72,7 @@ async function pick(list){
   return null; }
 async function connect(list){
   const st=await pick(list);
-  if(!st){ $("#status").innerHTML=dev?`<span class="err">this firmware has no hardware test: flash v51 test 54 or newer</span>`:`<span class="err">no controller</span>`; return false; }
+  if(!st||st[9]<2){ $("#status").innerHTML=dev?`<span class="err">this firmware has no hardware test (or an older one): flash v51 test 55 or newer</span>`:`<span class="err">no controller</span>`; return false; }
   $("#status").innerHTML=`<span class="ok">connected · ${dev.productName} · hardware test v${st[9]}</span>`;
   $("#run").disabled=false; return true; }
 $("#connect").onclick=async()=>{ try{ await connect(await navigator.hid.requestDevice({filters:[{vendorId:0x28de}]})); }catch(e){ $("#status").innerHTML=`<span class="err">${e.message}</span>`; } };
@@ -83,19 +83,20 @@ $("#stop").onclick=()=>{ stopReq=true; };
 async function runCase(c,slot){
   for(const [s,h] of Object.entries(c.extra||{})) await profWrite(+s,hex(h));
   await profWrite(slot,hex(c.profile));
+  if(await cfgGet("remap_profile")!==slot) await cfgSet("remap_profile",slot); /* a case before may have switched */
   await read("sc26re/awake");
   await sleep(150);
   const sb=hex(c.script);
   for(let o=0;o<sb.length;o+=40) await send("sc26re/hwt",0xEE,[1,o&255,o>>8,...sb.slice(o,o+40)]);
-  await send("sc26re/hwt",0xEE,[2,sb.length/30]);
+  await send("sc26re/hwt",0xEE,[2,sb.length/42,c.snap?1:0]);
   await sleep(c.ms+150);
   let st; for(let k=0;k<50;k++){ st=await read("sc26re/hwt_st"); if(!(st[0]&6)) break; await sleep(100); }
   if(st[0]&6) throw new Error("the test did not finish");
-  const n=u16(st,2), raw=new Uint8Array(n*30);
+  const n=u16(st,2), raw=new Uint8Array(n*54);
   await send("sc26re/hwt",0xEE,[4,0,0]);
   for(let i=0;i<n;){ const d=await read("sc26re/hwt_log"); const idx=u16(d,0);
     if(idx!==i){ await send("sc26re/hwt",0xEE,[4,i&255,i>>8]); continue; }
-    raw.set(d.slice(2,32),i*30); i++; }
+    raw.set(d.slice(2,56),i*54); i++; }
   await send("sc26re/hwt",0xEE,[3]);
   return {name:c.name, flags:st[0], end_ms:u16(st,4), log:tohex(raw)};
 }
@@ -104,7 +105,7 @@ $("#run").onclick=async()=>{
   let doc, backup=null;
   try{
     doc=await (await fetch("hwtests.json?"+Date.now())).json();
-    const slot=doc.slot, used=new Set([slot]); for(const c of doc.cases) for(const s of Object.keys(c.extra||{})) used.add(+s);
+    if(doc.version<2) throw new Error("old test list"); const slot=doc.slot, used=new Set([slot]); for(const c of doc.cases) for(const s of Object.keys(c.extra||{})) used.add(+s);
     log(`${doc.cases.length} tests. Saving a copy of profile slot(s) ${[...used].map(s=>s+1).join(", ")} and the active profile…`);
     backup={slots:{}, remap_profile:await cfgGet("remap_profile"), remap_on:await cfgGet("remap_on"), gm_enabled:await cfgGet("gm_enabled")};
     for(const s of used) backup.slots[s]=tohex(await profRead(s));
@@ -117,7 +118,7 @@ $("#run").onclick=async()=>{
     for(const c of doc.cases){
       if(stopReq){ log("stopped","warn"); break; }
       try{ const r=await runCase(c,slot); results.push(r);
-        log(`${r.flags&16?"!! ":"   "}${c.name}: ${r.log.length/60} entries${r.flags&8?" (log full)":""}${r.flags&16?" — stopped by the Steam button or an upload":""}`, r.flags&16?"warn":""); }
+        log(`${r.flags&16?"!! ":"   "}${c.name}: ${r.log.length/108} entries${r.flags&8?" (log full)":""}${r.flags&16?" — stopped by the Steam button or an upload":""}`, r.flags&16?"warn":""); }
       catch(e){ results.push({name:c.name,error:e.message}); log(`   ${c.name}: ${e.message}`,"err"); }
     }
     window.hwtResults={version:doc.version, page:$("#ver").textContent, product:dev.productName, cfg, results};

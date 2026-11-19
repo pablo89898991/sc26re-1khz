@@ -15,10 +15,12 @@ static uint8_t *hb;       /* script, then the log (NULL: no test loaded) */
 static size_t hb_size;
 static uint8_t n_steps;
 static uint8_t step;
-static bool armed, running, overflow, aborted, final_pending;
+static bool armed, running, overflow, aborted, final_pending, snapshot;
+static uint8_t snap_step;
 static int64_t t0, step_end, last_move;
 static uint16_t log_n, read_off, end_ms;
 static uint8_t last_entry[HWT_ENTRY_SIZE];
+static uint8_t base_fb;
 static int32_t base_mv[3]; /* the monitor's mouse / wheel totals when the script started */
 
 static size_t log_cap(void)
@@ -52,8 +54,12 @@ static void load_step(struct controller_report *r, const uint8_t *s)
 	r->touchpad_right_x = (int16_t)sys_get_le16(&s[24]);
 	r->touchpad_right_y = (int16_t)sys_get_le16(&s[26]);
 	r->touchpad_right_pressure = sys_get_le16(&s[28]);
-	r->accel_x = r->accel_y = r->accel_z = 0;
-	r->gyro_x = r->gyro_y = r->gyro_z = 0;
+	r->gyro_x = (int16_t)sys_get_le16(&s[30]);
+	r->gyro_y = (int16_t)sys_get_le16(&s[32]);
+	r->gyro_z = (int16_t)sys_get_le16(&s[34]);
+	r->accel_x = (int16_t)sys_get_le16(&s[36]);
+	r->accel_y = (int16_t)sys_get_le16(&s[38]);
+	r->accel_z = (int16_t)sys_get_le16(&s[40]);
 }
 
 void hwtest_apply(struct controller_report *r, int64_t now_ms)
@@ -84,6 +90,7 @@ void hwtest_apply(struct controller_report *r, int64_t now_ms)
 			base_mv[0] = (int32_t)sys_get_le32(&mon[20]);
 			base_mv[1] = (int32_t)sys_get_le32(&mon[24]);
 			base_mv[2] = (int16_t)sys_get_le16(&mon[28]);
+			base_fb = remap_haptic_count();
 		}
 	}
 	while(running && now_ms >= step_end)
@@ -100,10 +107,10 @@ void hwtest_apply(struct controller_report *r, int64_t now_ms)
 	load_step(r, &hb[step * HWT_STEP_SIZE]);
 }
 
-void hwtest_log(int64_t now_ms)
+void hwtest_log(const struct controller_report *r, int64_t now_ms)
 {
 	uint8_t mon[30], e[HWT_ENTRY_SIZE];
-	bool moved, final = final_pending;
+	bool moved, final = final_pending, snap_now = false;
 
 	final_pending = false;
 	if((!running && !final) || hb == NULL)
@@ -115,25 +122,66 @@ void hwtest_log(int64_t now_ms)
 	e[2] = mon[3];               /* mouse buttons */
 	e[3] = mon[2];               /* shifted groups */
 	memcpy(&e[4], &mon[4], 8);   /* keyboard report */
-	memcpy(&e[12], &mon[12], 4); /* pad buttons left to the game */
+	sys_put_le32(r->buttons, &e[12]); /* the Steam pad's buttons after the remapper */
 	memcpy(&e[16], &mon[16], 4); /* Xbox buttons */
 	/* mouse dx, dy, wheel: totals since the script started */
 	sys_put_le32((uint32_t)((int32_t)sys_get_le32(&mon[20]) - base_mv[0]), &e[20]);
 	sys_put_le32((uint32_t)((int32_t)sys_get_le32(&mon[24]) - base_mv[1]), &e[24]);
 	sys_put_le16((uint16_t)((int16_t)sys_get_le16(&mon[28]) - base_mv[2]), &e[28]);
-	moved = log_n > 0 && memcmp(&e[20], &last_entry[20], 10) != 0;
-	if(log_n > 0 && memcmp(&e[2], &last_entry[2], 18) == 0 && !(moved && (final || now_ms - last_move >= HWT_MOVE_MS)))
+	e[30] = remap_xbox_trigger(0);
+	e[31] = remap_xbox_trigger(1);
+	for(int i = 0; i < 2; ++i)
 	{
-		return;
+		int16_t x, y;
+
+		remap_xbox_stick(i, &x, &y);
+		e[32 + 2 * i] = (uint8_t)(int8_t)(x / 256);
+		e[33 + 2 * i] = (uint8_t)(int8_t)(y / 256);
+	}
+	{
+		uint16_t ax, ay;
+
+		remap_abs_pos(&ax, &ay); /* mouse region: the absolute cursor */
+		sys_put_le16(ax, &e[36]);
+		sys_put_le16(ay, &e[38]);
+	}
+	e[40] = (uint8_t)(remap_haptic_count() - base_fb);
+	e[41] = mon[0]; /* active profile */
+	/* the Steam pad's sticks and triggers after the remapper */
+	sys_put_le16((uint16_t)r->stick_left_x, &e[42]);
+	sys_put_le16((uint16_t)r->stick_left_y, &e[44]);
+	sys_put_le16((uint16_t)r->stick_right_x, &e[46]);
+	sys_put_le16((uint16_t)r->stick_right_y, &e[48]);
+	sys_put_le16((uint16_t)r->trigger_left, &e[50]);
+	sys_put_le16((uint16_t)r->trigger_right, &e[52]);
+	if(snapshot)
+	{
+		/* one entry at the end of each step (and the last state) */
+		snap_now = final || (running && step != snap_step && now_ms >= step_end - 2);
+		if(!snap_now)
+		{
+			return;
+		}
+		snap_step = step;
+	}
+	else
+	{
+		/* analog outputs alone (mouse, wheel, Xbox and Steam sticks / triggers): at most every HWT_MOVE_MS */
+		moved = log_n > 0 && (memcmp(&e[20], &last_entry[20], 20) != 0 || memcmp(&e[42], &last_entry[42], 12) != 0);
+		if(log_n > 0 && memcmp(&e[2], &last_entry[2], 18) == 0 && memcmp(&e[40], &last_entry[40], 2) == 0 &&
+		   !(moved && (final || now_ms - last_move >= HWT_MOVE_MS)))
+		{
+			return;
+		}
+		if(moved)
+		{
+			last_move = now_ms;
+		}
 	}
 	if(log_n >= log_cap())
 	{
 		overflow = true;
 		return;
-	}
-	if(moved)
-	{
-		last_move = now_ms;
 	}
 	memcpy(&hb[HWT_LOG_OFF + log_n * HWT_ENTRY_SIZE], e, sizeof(e));
 	memcpy(last_entry, e, sizeof(e));
@@ -189,6 +237,8 @@ int hwtest_set(const uint8_t *v, size_t len)
 			return -EINVAL;
 		}
 		n_steps = v[1];
+		snapshot = len >= 3U && (v[2] & 1U); /* 1: one entry at the end of each step */
+		snap_step = 0xFF;
 		log_n = 0;
 		read_off = 0;
 		end_ms = 0;
@@ -223,7 +273,7 @@ bool hwtest_read(const char *path, uint8_t *buf, size_t capacity, size_t *len)
 		sys_put_le16(end_ms, &buf[4]);
 		sys_put_le16((uint16_t)log_cap(), &buf[6]);
 		buf[8] = HWT_MAX_STEPS;
-		buf[9] = 1; /* version */
+		buf[9] = 2; /* version: 2 = gyro / accel in the steps; Steam pad, Xbox analog, haptics, profile in the log; snapshots */
 		*len = 10;
 		return true;
 	}

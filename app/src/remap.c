@@ -289,6 +289,7 @@ static int64_t hip_t0[2];
 static float wheel_prev[2], wheel_acc[2];
 static bool wheel_valid[2];
 static float pad_hap_dist[2];
+static float stick_hap_dist[2]; /* stick mouse: counts moved since the last tick */
 static float scroll_notch[2];
 static uint32_t dp4_keep;
 static bool ring_on[4];
@@ -347,6 +348,13 @@ static int src_side(int s)
 	return (s - REMAP_SRC_LS_DIAG) / 4;
 }
 
+static uint8_t fb_count; /* haptic feedbacks played (hardware test) */
+
+uint8_t remap_haptic_count(void)
+{
+	return fb_count;
+}
+
 static void feedback(uint8_t level, int side)
 {
 	static int64_t last[3];
@@ -358,6 +366,7 @@ static void feedback(uint8_t level, int side)
 		return;
 	}
 	last[side] = now;
+	fb_count++;
 	(void)haptics_play_feedback(level, ch[side]);
 }
 
@@ -872,6 +881,7 @@ static void stick_analog(int i, const struct remap_analog *an, const struct rema
 
 	if(m < dz || m <= 0.0f)
 	{
+		stick_hap_dist[i] = 0.0f; /* the movement ticks count from each new push */
 		return;
 	}
 	mm = MIN((m - dz) / (1.0f - dz), 1.0f);
@@ -884,6 +894,14 @@ static void stick_analog(int i, const struct remap_analog *an, const struct rema
 
 		mouse_acc[0] += fx * k * sx;
 		mouse_acc[1] -= fy * k * sy;
+		/* "ticks while moving" (the page offers it for sticks too): one per 100 counts.
+		 * Before v51 test 55 only the trackpad mouse ticked */
+		stick_hap_dist[i] += k * sqrtf(fx * fx * sx * sx + fy * fy * sy * sy);
+		if(stick_hap_dist[i] >= 100.0f)
+		{
+			stick_hap_dist[i] = 0.0f;
+			feedback(an->haptic, i);
+		}
 	}
 	else if(an->mode == REMAP_ANALOG_SCROLL)
 	{
@@ -1814,6 +1832,13 @@ static bool ring_test(const struct remap_analog *an, float fx, float fy)
  * relative counts, which needs the screen size in pixels and no pointer
  * acceleration ("Enhance pointer precision" off).
  */
+/* the last absolute cursor position sent over USB, 0..32767 (0xFFFF: none; hardware test) */
+void remap_abs_pos(uint16_t *x, uint16_t *y)
+{
+	*x = abs_last[0];
+	*y = abs_last[1];
+}
+
 static void region_output(const struct remap_profile *p)
 {
 	int k = -1;
@@ -2785,7 +2810,10 @@ void remap_process(struct controller_report *r, float dt)
 				out_action(b->act[0][i], keys, &nk, &mods, &pad);
 			}
 		}
-		bool turbo = (b->mode & REMAP_MODE_TURBO) && ss->held_group == 0;
+		/* turbo: the set being held repeats - the press set, or with a long press the long
+		 * press set (as Steam's turbo on a long press activator); before v51 test 55 only the
+		 * press set, and turbo + long press held the long press set without repeating */
+		bool turbo = (b->mode & REMAP_MODE_TURBO) && (ss->held_group == 0 || ss->held_group == 1);
 		bool turbo_gap = turbo && (((now - ss->t_down) / (turbo_ms / 2)) % 2 == 1 || turbo_waits(b));
 
 		if(ss->held_group >= 0 && !turbo_gap)

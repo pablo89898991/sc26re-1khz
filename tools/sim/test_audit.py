@@ -326,6 +326,27 @@ def xbox_class_descriptor_names_the_real_endpoints():
     assert "xi_desc.xusb[13] = xi_desc.out_ep.bEndpointAddress" in g, g
     assert g.index("xusb[6]") < g.index("return xi_fs_desc"), g
 
+@test
+def turbo_repeats_the_long_press_set_too():
+    """v51 test 55 (hardware test): turbo + long press held the long press set without repeating
+    (turbo was only on the press set); Steam's turbo on a long press repeats it"""
+    p = Profile(); p.bind("A", key("a"), key("b"), mode=M_HOLD | M_TURBO); p.times(hold=250, turbo=60)
+    s = Sim(); s.use(p); s.run(5)
+    e = Events(s.run(700, A=1) + s.run(200, A=0))
+    assert e.taps(key("b")) >= 4 and e.taps(key("a")) == 0, (e.taps(key("a")), e.taps(key("b")))
+    e = Events(s.run(80, A=1) + s.run(300, A=0))
+    assert e.taps(key("a")) == 1 and e.taps(key("b")) == 0
+
+@test
+def stick_mouse_ticks_while_moving():
+    """v51 test 55 (hardware test): the page offers "ticks while moving" for a stick in mouse mode,
+    but only the trackpad mouse ticked"""
+    p = Profile(); p.analog(0, MOUSE, speed=1000, haptic=1)
+    s = Sim(); s.use(p); s.run(5)
+    e = s.run(1000, lsx=32767)
+    assert 5 <= len(e.haptics()) <= 12, len(e.haptics())
+    e = s.run(500, lsx=0); assert not e.haptics()
+
 if __name__ == "__main__":
     ok = bad = 0
     for t in TESTS:

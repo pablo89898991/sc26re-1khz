@@ -393,9 +393,11 @@ void sim_step(const uint8_t *in, uint8_t *out, int dt_us)
 #ifdef WITH_GM
 	gyro_mouse_joystick(&r);              /* main.c order */
 	r.buttons = gyro_mouse_filter_buttons(r.buttons, remap_raw_buttons()); /* as main.c */
+#endif
+	hwtest_log(&r, now_ms); /* main.c: before the Xbox output */
+#ifdef WITH_GM
 	gm_state = r; gm_state_valid = true;  /* hardware_store_state */
 #endif
-	hwtest_log(now_ms); /* main.c: after the remapper and the Xbox output */
 	memcpy(out, &r, sizeof(r));
 	sim_last_out = r;
 }
