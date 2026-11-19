@@ -167,7 +167,7 @@ def stick_region_usb():
 @test
 def stick_region_puck_relative():
     p = Profile(); p.analog(1, REGION, dz_in=1000); p.screen(1000, 500)
-    s = Sim(); s.transport(1); s.link(1); s.use(p); s.run(50)
+    s = Sim(); s.transport(1, 1); s.link(1); s.use(p); s.run(50)
     h0 = s.host()
     s.run(300, rsx=32767, rsy=0)
     h = s.host()

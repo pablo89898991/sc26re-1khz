@@ -145,6 +145,10 @@ static int tsend(uint8_t id, const uint8_t *d, size_t len)
 
 static struct qrep stk[8];
 static int stk_n;
+/* the Xbox 360 pad exists only over USB (and with pad_out = 1): sim_xbox(0) = USB with the Steam pad only */
+static int xbox_pad = 1;
+bool sim_xbox_live(void) { return tmode == 0 && xbox_pad; }
+void sim_xbox(int on) { xbox_pad = on; }
 uint8_t transport_link_kind(void) { return tmode == 0 ? 0 : (tmode == 1 ? 2 : 1); }
 /* as transport.c: ms since the mouse / keyboard queue emptied, USB: always */
 int32_t transport_input_idle_ms(void)
@@ -203,6 +207,13 @@ void sim_link(int up)
 		state_pending = 0; state_left_ms = now_ms;
 		if(tmode == 2) { stk_n = 0; state_pending = 0; memset(host_kbd, 0, 8); host_mb = 0; ev("HK 00 00 00 00 00 00 00"); } /* BT host releases */
 	}
+}
+/* a new simulated controller and PC: nothing left in the radio queue or on the PC from the last one */
+void sim_reset_link(void)
+{
+	qn = 0; stk_n = 0; state_pending = 0; burst_left = 0; last_mb_queued = 0; link_up = 1;
+	memset(host_kbd, 0, sizeof(host_kbd)); host_mb = 0; host_dx = host_dy = host_wh = host_pan = 0; host_lost = 0;
+	tmode = 0; esb_one = 0; lossy_pct = 0; ble_ci = 15; xbox_pad = 1;
 }
 void sim_host(int32_t *out)
 {

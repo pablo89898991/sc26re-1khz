@@ -131,6 +131,7 @@ class Sim:
         self.lib.sim_xbox_buttons.restype = ctypes.c_uint32
         assert self.lib.sim_report_size() == RSIZE, (self.lib.sim_report_size(), RSIZE)
         if fresh: self.lib.sim_reset_store()
+        if hasattr(self.lib, "sim_reset_link"): self.lib.sim_reset_link()
         self.lib.sim_boot()
         self.state = {k: 0 for k in RFIELDS}
         self.out = dict(self.state)
@@ -204,6 +205,8 @@ class Sim:
     def run(self, ms=1, **kw):
         """advance ms milliseconds at 1 kHz; returns events in that span"""
         if kw: self.set(**kw)
+        # what happened between runs (settings commands, profile saves) stays in the log
+        self.log += [e for e in self.lib.sim_events().decode().splitlines() if e]
         self.lib.sim_clear_events()
         inb = struct.pack(RFMT, *[self.state[k] for k in RFIELDS])
         outb = ctypes.create_string_buffer(RSIZE)
@@ -216,6 +219,7 @@ class Sim:
             left -= d
         self.out = dict(zip(RFIELDS, struct.unpack(RFMT, outb.raw)))
         ev = [e for e in self.lib.sim_events().decode().splitlines() if e]
+        self.lib.sim_clear_events()
         self.log += ev
         return Events(ev)
 

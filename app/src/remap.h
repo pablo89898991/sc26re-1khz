@@ -58,7 +58,7 @@ enum
 #define REMAP_ACT_MOVE_DOWN 0x77
 #define REMAP_ACT_MOVE_LEFT 0x78
 #define REMAP_ACT_MOVE_RIGHT 0x79
-#define REMAP_ACT_MOUSE_M 0x7A    /* middle, back (4), forward (5): USB cable only */
+#define REMAP_ACT_MOUSE_M 0x7A    /* middle, back (4), forward (5): Puck needs its patched firmware (5 buttons) */
 #define REMAP_ACT_MOUSE_4 0x7B
 #define REMAP_ACT_MOUSE_5 0x7C
 #define REMAP_ACT_PAD 0x80     /* + Steam pad button bit 0..29 */

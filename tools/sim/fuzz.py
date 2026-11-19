@@ -170,6 +170,8 @@ def round_(seed, profiles=40, seqs=6, steps=150):
     hidden_checks(random.Random(seed * 7919), seed, found)
     for pi in range(profiles):
         s = Sim()
+        lr = random.Random(seed * 131 + pi)   # the link: USB (with or without the Xbox pad), Puck, Bluetooth
+        lk = lr.choice([0, 0, 1, 2]); s.transport(lk, one=1 if lk == 1 else 0); s.lib.sim_xbox(lr.randint(0, 1))
         profs = [rnd_profile(r, "f%d" % k) for k in range(3)]
         for k in range(1, 3): s.upload(k, profs[k])
         s.use(profs[0], 0); s.run(5)

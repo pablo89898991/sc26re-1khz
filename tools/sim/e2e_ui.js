@@ -24,7 +24,12 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
       await pg.click(`#v_map [data-s="${it}"] >> nth=0`).catch(() => {});
       await sleep(40);
     }
-    if (!(await dlgOpen())) { fails.push('no dialog for ' + it); continue; }
+    if (!(await dlgOpen())) {
+      /* sub-inputs (directions, slices, zones) are drawn only for the mode the profile on the controller has */
+      const shown = await pg.$$eval(`#v_map [data-s="${it}"]`, x => x.some(e => { const r = e.getBoundingClientRect(); return r.width > 0 && getComputedStyle(e).display !== 'none' && getComputedStyle(e).visibility !== 'hidden'; }));
+      if (shown) fails.push('no dialog for ' + it);
+      continue;
+    }
     if (await pg.$('#amode')) {
       const modes = await pg.$$eval('#amode option', o => o.map(x => x.value));
       for (const m of modes) {

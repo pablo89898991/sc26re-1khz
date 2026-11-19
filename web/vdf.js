@@ -98,7 +98,8 @@
   const PADNAME = { 0: "A", 1: "B", 2: "X", 3: "Y", 19: "SHOULDER_LEFT", 9: "SHOULDER_RIGHT", 27: "TRIGGER_LEFT", 23: "TRIGGER_RIGHT",
     13: "DPAD_UP", 10: "DPAD_DOWN", 12: "DPAD_LEFT", 11: "DPAD_RIGHT", 15: "JOYSTICK_LEFT", 5: "JOYSTICK_RIGHT", 6: "START", 14: "SELECT", 16: "HOME" };
   /* switches inputs -> button bits (the Steam Deck / Steam Controller 2026 names) */
-  const SWITCH = { button_escape: 14, button_menu: 6, left_bumper: 19, right_bumper: 9, button_back_left_upper: 17, button_back_left: 18,
+  /* button_escape is the ☰ (Start) button of Steam's controllers, button_menu the ⧉ (View / Select) one */
+  const SWITCH = { button_escape: 6, button_menu: 14, left_bumper: 19, right_bumper: 9, button_back_left_upper: 17, button_back_left: 18,
     button_back_right_upper: 7, button_back_right: 8, button_capture: 4 };
   const SWITCHNAME = Object.fromEntries(Object.entries(SWITCH).map(([k, v]) => [v, k]));
   const DIAMOND = { button_a: 0, button_b: 1, button_x: 2, button_y: 3 };
@@ -107,6 +108,10 @@
     joystick: { kind: "an", i: 0, g: 2 }, left_joystick: { kind: "an", i: 0, g: 2 }, right_joystick: { kind: "an", i: 1, g: 3 },
     left_trackpad: { kind: "an", i: 2, g: 4 }, right_trackpad: { kind: "an", i: 3, g: 5 },
     left_trigger: { kind: "trig", t: 0, g: 6 }, right_trigger: { kind: "trig", t: 1, g: 7 }, gyro: { kind: "gyro" } };
+  /* Steam's response curves (curve_exponent is a choice, not an exponent) -> our exponent x100 */
+  const CURVE = [100, 60, 150, 200, 300];
+  const curveIn = (c, custom) => c == null ? 0 : c === 5 ? Math.round((custom || 1) * 100) : (CURVE[c] || 0);
+  const curveOut = e => { let k = 0; for (let j = 0; j < CURVE.length; j++) if (Math.abs(CURVE[j] - e) < Math.abs(CURVE[k] - e)) k = j; return k; };
   const AN_SRC = ["joystick", "right_joystick", "left_trackpad", "right_trackpad"];
   const AN_BASE = [30, 34, 38, 42];
 
@@ -242,7 +247,7 @@
       for (const [src] of shifts) if (src === "gyro") this.note("mode shift of the gyro: not available (the gyro keeps its normal mode)");
       if (ctx.game) this.note(`${ctx.game} game action binding(s) skipped: they belong to the Steam Input API of that game (Steam alone knows the key behind them)`);
       for (const u of Object.keys(ctx.unsupported)) this.note("skipped: " + u);
-      if (ctx.usesPad && this.opts.padXbox) this.note("gamepad outputs went to the Xbox pad: set Pad output to “Steam + Xbox 360” or “Xbox 360 only” (USB cable)");
+      if (ctx.usesPad && this.opts.padXbox) this.note("gamepad outputs go to the Xbox 360 pad over USB with Pad output “Steam + Xbox 360” or “Xbox 360 only”; over Bluetooth, the Puck or USB with the Steam pad only they go to the Steam controller pad (same buttons, sticks, triggers)");
       return b;
     }
     applyGroup(ctx, src, g, shiftG) {
@@ -301,15 +306,23 @@
       const dzIn = (def) => { const v = S("deadzone_inner_radius"); if (v == null) return def; return v > 100 ? v / 32767 * 10000 : v * 100; };
       switch (mode) {
         case "joystick_move": case "joystick_camera": case "joystick_to_camera_angles": case "mouse_joystick":
-          if (mode === "joystick_camera" || mode === "joystick_to_camera_angles") { setMode(3); setU16(b, ao + 6, sens(1500)); const c = S("curve_exponent"); if (c) setU16(b, ao + 10, c * 100); scales(); if (mode === "joystick_to_camera_angles") this.note("camera angles (game action) on a stick: used as stick → mouse"); break; }
+          if (mode === "joystick_camera" || mode === "joystick_to_camera_angles") { setMode(3); setU16(b, ao + 6, sens(1500)); const c = curveIn(S("curve_exponent"), S("custom_curve_exponent")); if (c && c !== 100) setU16(b, ao + 10, c); scales(); if (mode === "joystick_to_camera_angles") this.note("camera angles (game action) on a stick: used as stick → mouse"); break; }
           if (pad) { setMode(ctx.padXbox ? 12 : 6); setU16(b, ao + 2, 1000); setU16(b, ao + 4, 1000); }
           else if (ctx.padXbox) { setMode(12); ctx.usesPad = true; }
           else setMode(0);
+          if (!pad) {
+            /* Steam's dead zones are in stick units (0..32767), ours 0.01 % of the radius */
+            const di = S("deadzone_inner_radius"), dout = S("deadzone_outer_radius"), c = curveIn(S("curve_exponent"), S("custom_curve_exponent"));
+            if (di != null) setU16(b, ao + 2, Math.min(9000, di / 32767 * 10000));
+            if (dout != null && dout < 32767) setU16(b, ao + 4, Math.min(9000, (32767 - dout) / 32767 * 10000));
+            if (c && c !== 100) setU16(b, ao + 10, c);
+          }
+          if (get(g, "gameactions")) this.note(`${AN_SRC[i]}: an analog game action (${entries(get(g, "gameactions")).map(([, v]) => v).join(", ")}): sent as ${ctx.padXbox ? "the Xbox" : "the Steam"} stick`);
           { const o = S("output_joystick"); if (o != null && ((i % 2 === 0 && o === 2) || (i % 2 === 1 && o === 1))) b[ao + 1] |= 4; }
           if (pad && ctx.padXbox) ctx.usesPad = true;
           break;
         case "joystick_mouse":
-          setMode(3); setU16(b, ao + 6, sens(pad ? 1200 : 1500)); { const c = S("curve_exponent"); if (c && !pad) setU16(b, ao + 10, c * 100); } scales(); break;
+          setMode(3); setU16(b, ao + 6, sens(pad ? 1200 : 1500)); { const c = curveIn(S("curve_exponent"), S("custom_curve_exponent")); if (c && c !== 100 && !pad) setU16(b, ao + 10, c); } scales(); break;
         case "absolute_mouse": case "touchpad_to_camera_angles":
           if (pad) { setMode(3); setU16(b, ao + 6, sens(1200)); if (S("trackball") === 1 || S("friction") != null && S("trackball") !== 0) { if (S("trackball") !== 0) { b[ao + 1] |= 0x80; const f = S("friction"); setU16(b, ao + 4, f ? f * 100 : 200); } } }
           else { setMode(3); setU16(b, ao + 6, sens(1500)); }
@@ -319,7 +332,7 @@
           setMode(4); if (pad) setU16(b, ao + 6, 30); else setU16(b, ao + 6, 800); break;
         case "dpad":
           setMode(S("layout") === 1 ? 2 : 1); setU16(b, ao + 2, dzIn(pad ? 2000 : 3000));
-          if (pad && S("requires_click") === 1) b[ao + 1] |= 1;
+          if (pad && S("requires_click") !== 0) b[ao + 1] |= 1; /* Steam's default on a trackpad: click to press */
           break;
         case "four_buttons": /* button pad: diamond regions */
           setMode(1); setU16(b, ao + 2, dzIn(pad ? 2000 : 3000)); if (pad && S("requires_click") !== 0) b[ao + 1] |= 1; break;
@@ -329,6 +342,7 @@
           const n = Math.max(S("touch_menu_button_count") || 0, ...entries(inputs).filter(([k]) => k.startsWith("touch_menu_button_")).map(([k]) => +k.slice(18) + 1), 0);
           setMode(10); setU16(b, ao + 2, pad ? 2500 : 3000); b[ao + 8] = 1;
           if (pad) setU16(b, ao + 6, Math.max(2, Math.min(10, n || 8))); else b[xo + 6] = Math.max(2, Math.min(8, n || 8));
+          if (n > (pad ? 10 : 8)) this.note(`${mode.replace(/_/g, " ")} on ${AN_SRC[i]}: ${n} entries, this controller has ${pad ? 10 : 8} slices there: entries ${pad ? 11 : 9}-${n} are left out`);
           if (mode !== "radial_menu") this.note(`${mode.replace("_", " ")} on ${AN_SRC[i]}: used as a radial menu (no on-screen menu: find the slices by feel)`);
           if (S("touchmenu_button_fire_type") === 1 || S("requires_click") === 1) b[ao + 1] |= 1;
           break; }
@@ -361,7 +375,8 @@
         if (nm === "scroll_counterclockwise" || nm === "scroll_wheel_counterclockwise") { if (pad) bindAt(i === 2 ? 55 : 57, inp); continue; }
         if (nm === "edge") { bindAt(ring, inp); if (!u16(b, ao + 12)) { const r = S("edge_binding_radius"); setU16(b, ao + 12, r && r > 1000 && r <= 32767 ? r / 32767 * 10000 : 9000); } continue; }
         if (nm === "click") {
-          const soft = () => { if (pad) { b[ao + 1] |= 0x10; setU16(b, ao + 16, 3000); } };
+          /* a soft press: on a single-button pad the pad's pressure fires it; elsewhere the click does */
+          const soft = () => { if (pad && m === 11) { b[ao + 1] |= 0x10; setU16(b, ao + 16, 3000); } else if (pad) this.note(`${AN_SRC[i]}: soft press on the click: the full click is used`); };
           if (m === 11) { if (pad) { if (bindAt(center, inp, { soft }) && !(b[ao + 1] & 0x10)) b[ao + 1] |= 1; } else bindAt(ring, inp); clickBound = true; continue; }
           bindAt(pad ? (i === 2 ? 26 : 22) : (i === 0 ? 15 : 5), inp, { soft }); clickBound = true; continue;
         }
@@ -465,7 +480,7 @@
       const btn = gb != null ? (SWITCH[gb] ?? DIAMOND[gb] ?? null) : null;
       if (btn != null) { G(K("gm_act_button"), btn); G(K("gm_act_mode"), inv === 1 ? 2 : inv === 2 ? 3 : 1); }
       else if (gb != null && gb !== "0" && gb !== "1") this.note("gyro activation button “" + gb + "”: not recognised, the gyro is always on");
-      if (S("gyro_ratchet_button_mask")) this.note("gyro ratchet button: Steam stores it as a button mask; set it on the Gyro page");
+      if (S("gyro_ratchet_button_mask")) this.note("gyro activation buttons: Steam stores them as a button mask this page cannot read — the gyro is on all the time; set the activation button on the Gyro page (“this profile”)");
       if (S("acceleration")) G(K("gm_accel"), 50);
       if (conv == null && S("invert_x") == null && S("invert_y") == null) { /* nothing */ }
       if (S("haptic_intensity")) G(K("gm_haptic"), Math.min(3, S("haptic_intensity")));
@@ -549,7 +564,13 @@
       if ((m === 0 || m === 12 || m === 6) && (b[ao + 1] & 4)) set.push(["output_joystick", i % 2 === 0 ? "2" : "1"]);
       if (b[ao + 1] & 0x20) set.push(["invert_x", "1"]); if (b[ao + 1] & 0x40) set.push(["invert_y", "1"]);
       if (u16(b, xo) && (m === 3)) set.push(["sensitivity_horiz_scale", String(u16(b, xo))]); if (u16(b, xo + 2) && m === 3) set.push(["sensitivity_vert_scale", String(u16(b, xo + 2))]);
-      if (pad && (b[ao + 1] & 1) && m !== 0) set.push(["requires_click", "1"]);
+      if (pad && (m === 1 || m === 2 || m === 5 || m === 8 || m === 9 || m === 10)) set.push(["requires_click", b[ao + 1] & 1 ? "1" : "0"]);
+      else if (pad && (b[ao + 1] & 1) && m !== 0) set.push(["requires_click", "1"]);
+      if (!pad && (m === 0 || m === 12)) {
+        if (u16(b, ao + 2)) set.push(["deadzone_inner_radius", String(Math.round(u16(b, ao + 2) / 10000 * 32767))]);
+        if (u16(b, ao + 4)) set.push(["deadzone_outer_radius", String(Math.round(32767 - u16(b, ao + 4) / 10000 * 32767))]);
+      }
+      if (!pad && (m === 0 || m === 12 || m === 3) && u16(b, ao + 10) && u16(b, ao + 10) !== 100) set.push(["curve_exponent", String(curveOut(u16(b, ao + 10)))]);
       if (m === 1 || m === 2 || m === 5 || m === 9 || m === 8) { add("dpad_north", base); add("dpad_south", base + 1); add("dpad_west", base + 2); add("dpad_east", base + 3); }
       if (m === 10) {
         let list;

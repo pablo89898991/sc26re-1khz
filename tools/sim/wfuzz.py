@@ -103,6 +103,10 @@ def scenario(seed, mode, n_profiles=20, steps=400, disconnects=False):
             s.cfg("gm_act_mode", r.randrange(4)); s.cfg("gm_output", r.choice([0, 0, 1, 3]))
             s.cfg("gm_ratchet", r.choice([-1, 8, 18]))
         s.run(5)
+        # what the start sent (a mouse region moves the pointer to its place) is delivered before counting starts
+        for _ in range(400):
+            if not s.host()["queued"]: break
+            s.run(5)
         s.log = []
         down_until = -1
         for i in range(steps):
@@ -144,7 +148,9 @@ def scenario(seed, mode, n_profiles=20, steps=400, disconnects=False):
             diff = {k: (ed.get(k, 0), eh.get(k, 0)) for k in set(ed) | set(eh) if ed.get(k, 0) != eh.get(k, 0)}
             if diff: probs.append("PC got different presses (sent, received): %s" % dict(list(diff.items())[:6]))
             md, mh = mouse_sum(dev, ""), mouse_sum(host, "H")
-            if md != mh: probs.append("mouse movement sent %s received %s" % (md, mh))
+            if md != mh:
+                probs.append("mouse movement sent %s received %s" % (md, mh))
+                open("/tmp/wmouse_%d_%d_%d.log" % (seed, mode, pi), "w").write("\n".join(s.log))
         if probs:
             found.append((seed, mode, pi, "; ".join(probs)))
             json.dump({"profs": [p.b.hex() for p in profs]}, open("/tmp/wfail_%d_%d_%d.json" % (seed, mode, pi), "w"))

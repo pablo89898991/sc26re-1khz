@@ -252,7 +252,7 @@ def roundtrip_of_rich_config():
     txt = config(G, [(0, "Default", [(0, "button_diamond active"), (1, "right_joystick active"), (2, "right_trackpad active"), (3, "left_trackpad active"),
                                       (4, "right_trigger active"), (5, "switch active"), (6, "button_diamond inactive modeshift"), (7, "gyro active"), (8, "dpad active")])])
     r, e = roundtrip(txt)
-    assert all("Xbox pad" in n or "3D to 2D" in n for n in r["notes"]), r["notes"]
+    assert all("Xbox 360 pad" in n or "3D to 2D" in n or "soft press" in n for n in r["notes"]), r["notes"]
     assert not e["dropped"], e["dropped"]
 
 @test

@@ -152,6 +152,12 @@ static uint8_t kbd_pend[8];  /* keys pressed while the link refused reports (rep
 static uint32_t xbox_buttons;
 static uint8_t xbox_trig[2];   /* Xbox LT / RT from XTRIG actions, 0..255 */
 static float xbox_stick[2][2]; /* Xbox sticks from "Xbox stick" modes, -1..1 (summed) */
+#ifdef SC26RE_SIM
+bool sim_xbox_live(void);
+#define xbox_live() sim_xbox_live()
+#else
+#define xbox_live() xinput_enabled()
+#endif
 static int16_t xbox_stick_out[2][2];
 static uint8_t move_dirs; /* mouse move actions held: up, down, left, right */
 /* radial menu slices, clockwise from the top */
@@ -2792,6 +2798,28 @@ void remap_process(struct controller_report *r, float dt)
 				}
 			}
 		}
+	}
+	/* no Xbox pad to send to (Bluetooth, Puck, or USB with the Steam pad only): the
+	 * Xbox outputs go to the Steam pad instead - same buttons, sticks, triggers -
+	 * so a layout made for the Xbox pad still works there (Steam Input sees them) */
+	if(!xbox_live())
+	{
+		int32_t v;
+
+		pad |= xbox_buttons & (BIT(30) - 1U);
+		xbox_buttons = 0U;
+		v = r->stick_left_x + xbox_stick_out[0][0];
+		r->stick_left_x = (int16_t)CLAMP(v, -32767, 32767);
+		v = r->stick_left_y + xbox_stick_out[0][1];
+		r->stick_left_y = (int16_t)CLAMP(v, -32767, 32767);
+		v = r->stick_right_x + xbox_stick_out[1][0];
+		r->stick_right_x = (int16_t)CLAMP(v, -32767, 32767);
+		v = r->stick_right_y + xbox_stick_out[1][1];
+		r->stick_right_y = (int16_t)CLAMP(v, -32767, 32767);
+		memset(xbox_stick_out, 0, sizeof(xbox_stick_out));
+		r->trigger_left = (int16_t)MAX(r->trigger_left, (int16_t)(xbox_trig[0] * 32767 / 255));
+		r->trigger_right = (int16_t)MAX(r->trigger_right, (int16_t)(xbox_trig[1] * 32767 / 255));
+		xbox_trig[0] = xbox_trig[1] = 0U;
 	}
 	r->buttons = (r->buttons & ~hide) | pad;
 	mon_pad = pad;
