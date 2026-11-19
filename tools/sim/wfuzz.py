@@ -134,6 +134,12 @@ def scenario(seed, mode, n_profiles=20, steps=400, disconnects=False):
         fuzz.neutral(s)
         if gyro: s.lib.sim_gyro(0, 0, 0)
         s.run(15000)
+        # a mouse region over the radio may still be on its way (a big screen): let it arrive
+        m = (ctypes.c_float * 16)()
+        for _ in range(12):
+            s.lib.sim_mouse_state(m)
+            if not (s.host()["queued"] or any(abs(m[k]) >= 1 for k in (0, 1, 6, 7))): break
+            s.run(5000)
         h = s.host()
         dev = [e for e in s.log if e.split()[1] in ("K", "M")]
         host = [e for e in s.log if e.split()[1] in ("HK", "HM")]

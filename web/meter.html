@@ -919,7 +919,7 @@ async function featRead(d,path){
      Steam (running at the same time) is recognised and the read repeated */
   const tagged=path.startsWith("sc26re/") && d.__tagged!==false, tag=pathTag(path);
   return serial(async()=>{
-    let lastErr=null, lastData=null;
+    let lastErr=null, lastData=null, empty=0;
     for(let attempt=0;attempt<8;attempt++){
       try{
         await d.__send(1,pathCmd(0xED,path));
@@ -937,8 +937,11 @@ async function featRead(d,path){
         }
         if(o<0){ if(r && !recvErr) noteForeign(); throw (recvErr||new Error("no reply from the controller")); }
         const data=r.slice(o+2,o+2+r[o+1]);
+        /* an empty answer, three times: this firmware does not have the setting (an older one) */
+        if(!data.length){ if(++empty>=3) return data; throw new Error("no such setting"); }
+        empty=0;
         if(tagged){
-          if(!data.length || data[0]!==tag){ lastData=data; noteForeign(); throw new Error("reply for another request (Steam?)"); }
+          if(data[0]!==tag){ lastData=data; noteForeign(); throw new Error("reply for another request (Steam?)"); }
           d.__tagged=true;
           return data.slice(1);
         }

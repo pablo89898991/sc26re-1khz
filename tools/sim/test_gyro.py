@@ -63,4 +63,52 @@ s = gsim(p, gm_enabled=1, gm_act_button=-1, gm_act_mode=0, gm_axis_roll=0, gm_sp
 s.set(ax=0, ay=16000, az=0); s.run(50); s.lib.sim_gyro(0, 0, -100)
 e = s.run(300); dx = sum(m[1] for m in e.mouse())
 check("profile gyro space (world) overrides the global setting", abs(dx) > 300, dx)
+# fuzz gm 9423: a profile's own gyro values outside the ranges (a negative tilt limit) held the
+# gyro joystick in a corner with the controller at rest; they count as the page would store them
+GK = ["gm_output", "gm_act_button", "gm_act_mode", "gm_axis_pitch", "gm_axis_yaw", "gm_axis_roll", "gm_sens", "gm_scale_p", "gm_scale_y", "gm_scale_r",
+      "gm_curve", "gm_accel", "gm_accel_lo", "gm_accel_hi", "gj_dz", "gj_anti", "gj_max", "gj_curve", "gj_tilt", "gm_haptic"]
+for label, tilt in (("negative", -5), ("zero", 0), ("huge", 30000)):
+    p = Profile(); p.flags(PF_GYRO | PF_GYRO_ON)
+    vals = dict(gm_output=3, gm_act_button=-1, gm_act_mode=0, gm_axis_pitch=2, gm_axis_yaw=1, gm_axis_roll=0, gm_sens=100, gm_scale_p=100, gm_scale_y=100,
+                gm_scale_r=100, gm_curve=10, gj_dz=0, gj_anti=0, gj_max=300, gj_curve=100, gj_tilt=tilt)
+    for k, n in enumerate(GK): p.s16(44 + 2 * k, vals.get(n, 0))
+    for k in range(20, 30): p.s16(44 + 2 * k, -1 if k % 2 == 0 and k < 28 else 0)
+    s = gsim(p, gm_enabled=1)
+    s.set(ax=0, ay=0, az=16000); s.run(300)
+    rest = (s.out["rsx"], s.out["rsy"])
+    s.lib.sim_gyro(0, 40, 0); s.run(200); s.lib.sim_gyro(0, 0, 0); turned = (s.out["rsx"], s.out["rsy"])
+    check("gyro joystick deflection, %s tilt limit in the profile: centred at rest, moves when turned" % label, rest == (0, 0) and turned != (0, 0), (rest, turned))
+# dead bands (hard / soft), "hold to turn off", the 360 calibration with its button, precision smoothing
+p = Profile(); p.bind("B", key("b"))
+for soft in (0, 1):
+    s = gsim(p, gm_enabled=1, gm_act_button=-1, gm_act_mode=0, gm_band_y_lo=-500, gm_band_y_hi=500, gm_band_soft=soft, gm_axis_roll=0)
+    s.lib.sim_gyro(0, 3, 0); slow = mv(s.run(300))
+    s.lib.sim_gyro(0, 20, 0); fast = mv(s.run(300))
+    check("gyro mouse dead band (%s): 3 deg/s inside does nothing, 20 deg/s moves" % ("soft" if soft else "hard"), slow == 0 and fast > 50, (slow, fast))
+    if soft: soft_fast = fast
+    else: hard_fast = fast
+check("soft dead band starts from 0 at its edge (less than hard)", soft_fast < hard_fast * 0.85, (soft_fast, hard_fast))
+s = gsim(p, gm_enabled=1, gm_act_button=17, gm_act_mode=2)
+s.lib.sim_gyro(0, 60, 0)
+a, b = mv(s.run(300)), mv(s.run(300, L4=1))
+check("gyro mouse 'hold to turn off'", a > 100 and b < 10, (a, b))
+s = gsim(p, gm_enabled=1, gm_cal_button=1, gm_cal_speed=1500)
+s.lib.gyro_mouse_cal_start(); s.run(20)
+s.run(30, B=1); hidden = not s.out_btn("B"); s.run(30, B=0)   # (B's own binding still acts, as in Steam Input)
+s.run(2000)
+s.run(30, B=1); s.run(30, B=0); s.run(50)
+c = s.cfg_get("gm_cal_hi") * 32768 + s.cfg_get("gm_cal_lo")
+check("360 calibration with a bound button: it starts and stops the turn, the counts are saved", 2900 < c < 3300 and hidden, (c, hidden))
+s.run(30, B=1); back = s.out_btn("B") or any(key("b") in k for k in Events(s.log).kbd()); s.run(30, B=0)
+check("after the calibration the button is the game's again", back)
+# quick turn and the gyro on/off chord with "unbound send nothing" (their buttons unbound): they still work
+p2 = Profile(); p2.flags(PF_BLOCK)
+s = gsim(p2, gm_enabled=1, gm_act_button=-1, gm_act_mode=0, gm_qt1_btn=17, gm_qt1_deg=90, gm_qt_ms=0)
+qt = sum(m[1] for m in s.run(20, L4=1).mouse()); s.run(20, L4=0)
+check("quick turn on an unbound button with 'unbound send nothing'", abs(qt) > 1000, qt)
+s.run(30, LB=1, RB=1, VIEW=1); s.run(30, LB=0, RB=0, VIEW=0); s.run(20)
+check("LB+RB+View turns the gyro mouse off with 'unbound send nothing'", s.cfg_get("gm_enabled") == 0, s.cfg_get("gm_enabled"))
+s = gsim(p, gm_enabled=1, gm_act_button=-1, gm_act_mode=0, gm_smooth=50, gm_axis_roll=0)
+s.lib.sim_gyro(0, 2, 0); a = s.run(400).mouse(); s.lib.sim_gyro(0, 0, 0); s.run(400)
+check("precision smoothing: a slow turn still moves, nothing left moving after it", sum(abs(m[1]) for m in a) > 0 and mv(s.run(300)) == 0)
 print("\n%d passed, %d failed" % (ok, fail))

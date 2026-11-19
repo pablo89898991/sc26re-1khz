@@ -103,6 +103,8 @@ enum sc26re_cfg_id
 };
 
 int16_t sc26re_cfg_get(enum sc26re_cfg_id id);
+/* value limited to the setting's range, as a write through the page would be (profile values) */
+int16_t sc26re_cfg_clamp(enum sc26re_cfg_id id, int16_t value);
 bool sc26re_cfg_is_auto(enum sc26re_cfg_id id);
 
 /* Registry ids overridden by a cfg value; true and *value set when overridden. */

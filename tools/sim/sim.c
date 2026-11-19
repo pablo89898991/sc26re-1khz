@@ -390,7 +390,7 @@ void sim_step(const uint8_t *in, uint8_t *out, int dt_us)
 	remap_process(&r, (float)dt_us * 1e-6f);
 #ifdef WITH_GM
 	gyro_mouse_joystick(&r);              /* main.c order */
-	r.buttons = gyro_mouse_filter_buttons(r.buttons);
+	r.buttons = gyro_mouse_filter_buttons(r.buttons, remap_raw_buttons()); /* as main.c */
 	gm_state = r; gm_state_valid = true;  /* hardware_store_state */
 #endif
 	memcpy(out, &r, sizeof(r));
@@ -415,6 +415,18 @@ unsigned sim_xbox_trigger(int t) { return remap_xbox_trigger(t); }
 int sim_xbox_stick(int i, int axis) { int16_t x, y; remap_xbox_stick(i, &x, &y); return axis ? y : x; }
 uint8_t sim_mouse_buttons(void) { return remap_mouse_buttons(); }
 
+/* capsense thresholds (olympus.c): in use, the user's (0 = default), the defaults */
+static const uint16_t cap_def[3] = { 720, 576, 900 };
+static uint16_t cap_cur[3] = { 720, 576, 900 }, cap_user[3];
+static uint8_t boot_level = 2; /* user/haptic_boot_level, valve_settings.c: 2 = normal */
+static uint8_t gm_on_any(void)
+{
+#ifdef WITH_GM
+	return gyro_mouse_enabled() ? 1U : 0U;
+#else
+	return gm_on ? 1U : 0U;
+#endif
+}
 /* feature report like the firmware: req[0]=op, req[1]=len, path\0data. Returns reply length in rsp. */
 int sim_feature(const uint8_t *req, uint8_t *rsp)
 {
@@ -442,6 +454,21 @@ int sim_feature(const uint8_t *req, uint8_t *rsp)
 		else if(strcmp(path, "sc26re/rmp_diag") == 0) { remap_diag(cur); len = 14; ok = true; }
 		else if(remap_path(path)) ok = remap_read(path, cur, 60, &len);
 		else if(sc26re_cfg_path(path)) ok = sc26re_cfg_read(path, cur, 60, &len);
+		/* the firmware's other read-only paths (valve_settings.c), sizes as there, plausible values */
+		else if(strcmp(path, "sc26re/host") == 0) { sys_put_le32(600000U, cur); len = 4; ok = true; }
+		else if(strcmp(path, "sc26re/gm_state") == 0) { cur[0] = gm_on_any(); sys_put_le32(16364U, &cur[6]); len = 22; ok = true; }
+		else if(strcmp(path, "sc26re/imu_stats") == 0) { len = 20; ok = true; }
+		else if(strcmp(path, "sc26re/boot") == 0) { sys_put_le32((uint32_t)now_ms, &cur[4]); len = 28; ok = true; }
+		else if(strcmp(path, "sc26re/gyro_full_cal") == 0) { len = 7; ok = true; }
+		else if(strcmp(path, "sc26re/stest") == 0) { len = 24; ok = true; }
+		else if(strcmp(path, "sc26re/prs_cal") == 0) { len = 8; ok = true; }
+		else if(strcmp(path, "sc26re/gyro_cal") == 0) { len = 13; ok = true; }
+		else if(strcmp(path, "sc26re/capsense") == 0) { for(int i = 0; i < 6; ++i) sys_put_le16(i < 3 ? cap_cur[i] : cap_user[i - 3], &cur[2 * i]); len = 12; ok = true; }
+		else if(strcmp(path, "user/haptic_boot_level") == 0)
+		{
+			/* Valve's own settings come without the sc26re tag (valve_feature.c) */
+			rsp[2] = boot_level; rsp[1] = 1; return 3;
+		}
 		if(ok) { rsp[2] = tag; rsp[1] = (uint8_t)(len + 1); }
 		else rsp[1] = 0;
 		return rsp[1] + 2;
@@ -451,11 +478,19 @@ int sim_feature(const uint8_t *req, uint8_t *rsp)
 	{
 		if(remap_path(path)) err = remap_stage(path, data, dlen);
 		else if(sc26re_cfg_path(path)) err = sc26re_cfg_stage(path, data, dlen);
+		else if(strcmp(path, "user/haptic_boot_level") == 0) err = (dlen >= 1 && data[0] <= 2) ? (boot_level = data[0], 0) : -EINVAL;
+		else if(strcmp(path, "sc26re/capsense") == 0 && dlen >= 6)
+		{
+			/* olympus_capsense_set: the user's values, 0 = default */
+			for(int i = 0; i < 3; ++i) { uint16_t v = sys_get_le16(&data[2 * i]); cap_user[i] = v > 16000 ? 16000 : v; cap_cur[i] = cap_user[i] ? cap_user[i] : cap_def[i]; }
+			err = 0;
+		}
 	}
 	else if(op == 0xEF)
 	{
 		if(remap_path(path)) err = remap_commit(path);
 		else if(sc26re_cfg_path(path)) err = sc26re_cfg_commit(path);
+		else if(strcmp(path, "sc26re/capsense") == 0 || strcmp(path, "user/haptic_boot_level") == 0) err = 0;
 	}
 	else if(op == 0xF0)
 	{

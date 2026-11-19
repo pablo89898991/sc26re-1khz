@@ -27,9 +27,7 @@
 #include "valve_settings.h"
 #include "watchdog.h"
 
-#if CONFIG_IBEX_RGBW_LED
-#include "rgbw_led.h"
-#endif
+#include "rgbw_led.h" /* struct rgbw_color also without the LED (the gyro chord keeps one) */
 
 #define BOOT_CHORD_SETTLE_MS 150
 #define PERSONALITY_PERSIST_DELAY_MS 60000
@@ -813,7 +811,7 @@ int main(void)
 				last_state_cyc = k_cycle_get_32();
 			}
 		}
-		current.buttons = gyro_mouse_filter_buttons(current.buttons);
+		current.buttons = gyro_mouse_filter_buttons(current.buttons, remap_raw_buttons());
 		hardware_store_state(&current);
 		imu_keep_on(gyro_mouse_enabled());
 		if(changed || refresh_due || esb_state_boundary)

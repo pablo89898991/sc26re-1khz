@@ -1078,7 +1078,7 @@ int analog_read_report(struct controller_report *report)
 			averaged[channel] += samples[sample * ANALOG_CHANNEL_COUNT + channel];
 		}
 	}
-	int32_t trigger_raw[2];
+	int32_t trigger_raw[2] = { 0, 0 }; /* both trigger channels are always in the loop below */
 
 	for(size_t channel = 0; channel < ANALOG_CHANNEL_COUNT; ++channel)
 	{

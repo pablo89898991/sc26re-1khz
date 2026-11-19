@@ -2062,7 +2062,11 @@ int imu_calibrate_gyro_auto(void)
 
 bool imu_streaming(void)
 {
+#if IMU_HAS_DEVICE
 	return atomic_get(&imu_motion_trigger_enabled) != 0;
+#else
+	return false;
+#endif
 }
 
 int imu_calibrate_gyro(void)
@@ -2088,8 +2092,10 @@ static int imu_save_gyro_bias(const float bias_in[3], bool persist)
 	k_mutex_lock(&imu_io_lock, K_FOREVER);
 	memcpy(gyro_bias, bias_in, sizeof(gyro_bias));
 	memcpy(gyro_bias_candidate, bias_in, sizeof(gyro_bias_candidate));
+#if IMU_HAS_DEVICE
 	/* use it right away, until the fusion engine reports its own estimate again */
 	memcpy(latest_sflp_bias, bias_in, sizeof(latest_sflp_bias));
+#endif
 	memcpy(staged_gyro_bias, gyro_bias, sizeof(staged_gyro_bias));
 	memcpy(saved_bias, gyro_bias, sizeof(saved_bias));
 	gyro_bias_dirty = false;

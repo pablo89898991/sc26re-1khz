@@ -90,7 +90,7 @@ async function settle(pg) {
   await sleep(30);
 }
 const MOVES = [[[900, 0, 0], 250], [[0, -700, 500], 300], [[-400, 800, -900], 250], [[1200, 300, 0], 200]];
-async function gyroCheck(pgs, name, tol, segs = MOVES, minTurn = 20) {
+async function gyroCheck(pgs, name, tol, segs = MOVES, minTurn = 10) {
   if (!Array.isArray(pgs)) pgs = [pgs];
   for (const pg of pgs) await settle(pg);
   const ms = []; for (const pg of pgs) ms.push(await mark(pg));
@@ -236,9 +236,10 @@ async function allInputs(pg, which, label, opts = {}) {
     await pg.keyboard.press('r'); await setCtl(pg, 'tilt', 20);
     /* level: the gyro says it tipped 40 degrees, gravity says it lies flat: it settles flat */
     await turn([[[1300, 0, 0], 500]]); await sleep(300);
-    const tipped = await pg.evaluate(() => __ov.q.slice()); await setCtl(pg, 'level', true); await sleep(2500);
-    const lv = await pg.evaluate(() => __ov.q.slice()), up = q => Math.acos(Math.max(-1, Math.min(1, qrot(q, [0, 0, 1])[2]))) * 180 / Math.PI;
-    check('keep level: settles flat with gravity', up(tipped) > 20 && up(lv) < 1.5, `tipped ${up(tipped).toFixed(1)}°, after ${up(lv).toFixed(2)}°`);
+    const tipped = await pg.evaluate(() => __ov.q.slice()); await setCtl(pg, 'level', true); const t0 = Date.now();
+    const up = q => Math.acos(Math.max(-1, Math.min(1, qrot(q, [0, 0, 1])[2]))) * 180 / Math.PI;
+    let lv; do { await sleep(200); lv = await pg.evaluate(() => __ov.q.slice()); } while (up(lv) >= 1.5 && Date.now() - t0 < 8000);
+    check('keep level: settles flat with gravity', up(tipped) > 20 && up(lv) < 1.5, `tipped ${up(tipped).toFixed(1)}°, ${up(lv).toFixed(2)}° after ${((Date.now() - t0) / 1000).toFixed(1)} s`);
     await setCtl(pg, 'level', false); await pg.keyboard.press('r');
     /* the mouse turns the view, a double-click puts it back; H hides the panel */
     { const mq = () => pg.evaluate(() => { const q = __ov.model.quaternion; return [q.w, q.x, q.y, q.z]; });

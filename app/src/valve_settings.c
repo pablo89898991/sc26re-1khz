@@ -180,6 +180,7 @@ static void esb_forgot_save_locked(void)
 
 static void import_ofw_esb_bonds_locked(void)
 {
+#if FIXED_PARTITION_EXISTS(valve_storage)
 	const struct flash_area *fa;
 	struct valve_nvs nvs;
 	bool imported = false;
@@ -244,6 +245,7 @@ static void import_ofw_esb_bonds_locked(void)
 		}
 	}
 	flash_area_close(fa);
+#endif /* boards without Valve's storage (the micro:bit) have nothing to import */
 }
 
 static void select_available_wireless_transport(void)

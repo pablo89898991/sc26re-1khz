@@ -256,9 +256,12 @@ static void quick_turn_start(int16_t deg)
 	(void)haptics_play_feedback((uint8_t)gm(SC26RE_CFG_GM_HAPTIC), HAPTICS_CHANNELS_PRIMARY);
 }
 
-uint32_t gyro_mouse_filter_buttons(uint32_t raw)
+uint32_t gyro_mouse_filter_buttons(uint32_t raw, uint32_t physical)
 {
-	bool chord = (raw & CHORD_MASK) == CHORD_MASK;
+	/* the presses come from the physical buttons: with the remapper on, a bound button (or an
+	 * unbound one with "unbound send nothing") is gone from raw, and the chord, the quick turns
+	 * and the calibration button stopped working */
+	bool chord = (physical & CHORD_MASK) == CHORD_MASK;
 
 	/* LB + RB + View: toggle on release; with A as well: calibration */
 	if(chord)
@@ -268,12 +271,12 @@ uint32_t gyro_mouse_filter_buttons(uint32_t raw)
 			chord_down = true;
 			chord_saw_a = false;
 		}
-		if(raw & CHORD_CAL_EXTRA)
+		if(physical & CHORD_CAL_EXTRA)
 		{
 			chord_saw_a = true;
 		}
 	}
-	else if(chord_down && (raw & (CHORD_MASK | CHORD_CAL_EXTRA)) == 0U)
+	else if(chord_down && (physical & (CHORD_MASK | CHORD_CAL_EXTRA)) == 0U)
 	{
 		chord_down = false;
 		if(chord_saw_a)
@@ -288,11 +291,11 @@ uint32_t gyro_mouse_filter_buttons(uint32_t raw)
 	/* quick turns: a press starts one; their buttons are the gyro mouse's
 	 * while it is on, so the game does not see them */
 	{
-		static uint32_t prev_raw;
-		uint32_t pressed = raw & ~prev_raw;
+		static uint32_t prev_phys;
+		uint32_t pressed = physical & ~prev_phys;
 		uint32_t own = 0U;
 
-		prev_raw = raw;
+		prev_phys = physical;
 		if(gm(SC26RE_CFG_GM_ENABLED) == 1)
 		{
 			int16_t rb = gm(SC26RE_CFG_GM_RATCHET);
@@ -341,7 +344,7 @@ uint32_t gyro_mouse_filter_buttons(uint32_t raw)
 			cal_hide = m;
 		}
 		/* hidden until released, also right after the calibration ended */
-		if(cal_hide != 0U && (prev_raw & cal_hide) == 0U && cal == CAL_IDLE)
+		if(cal_hide != 0U && (physical & cal_hide) == 0U && cal == CAL_IDLE)
 		{
 			cal_hide = 0U;
 		}

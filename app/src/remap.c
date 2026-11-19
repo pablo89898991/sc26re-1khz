@@ -1463,7 +1463,9 @@ bool remap_gyro_value(int id, int16_t *value)
 			int16_t v;
 
 			memcpy(&v, (const uint8_t *)p->gyro + k * sizeof(int16_t), sizeof(v));
-			*value = v;
+			/* the range a page write would have: a profile made elsewhere (or damaged) can hold
+			 * anything, and e.g. a tilt limit below 0 held the gyro joystick in a corner */
+			*value = sc26re_cfg_clamp((enum sc26re_cfg_id)id, v);
 			return true;
 		}
 	}
@@ -1820,8 +1822,10 @@ static void region_output(const struct remap_profile *p)
 		return;
 	}
 	{
-		float sw = (float)(p->ext.screen[0] ? p->ext.screen[0] : 1920U);
-		float sh = (float)(p->ext.screen[1] ? p->ext.screen[1] : 1080U);
+		/* up to 16384 px as on the page: a bigger size (a hand-made profile) only makes the
+		 * way into the corner take seconds */
+		float sw = (float)(p->ext.screen[0] ? MIN(p->ext.screen[0], 16384U) : 1920U);
+		float sh = (float)(p->ext.screen[1] ? MIN(p->ext.screen[1], 16384U) : 1080U);
 
 		int64_t now = k_uptime_get();
 
@@ -2106,7 +2110,15 @@ void remap_process(struct controller_report *r, float dt)
 			int n = CLAMP(ax->slices ? ax->slices : 8, 2, 8);
 			bool click = (raw & BIT(i ? CONTROLLER_BUTTON_RIGHT_STICK : CONTROLLER_BUTTON_LEFT_STICK)) != 0U;
 			bool fire_now;
-			int8_t prev = radial_sel[2 + i];
+			int8_t prev;
+
+			/* a slice chosen in a menu with more slices (a shift or a layer changed it
+			 * meanwhile) is not in this one */
+			if(radial_sel[2 + i] >= n)
+			{
+				radial_sel[2 + i] = -1;
+			}
+			prev = radial_sel[2 + i];
 
 			if(out)
 			{
@@ -2218,6 +2230,11 @@ void remap_process(struct controller_report *r, float dt)
 			int n = CLAMP(an->speed, 2, 10);
 			bool fire_now;
 			float rz = MAX(dz, 0.2f);
+
+			if(radial_sel[j] >= n)
+			{
+				radial_sel[j] = -1; /* chosen in a menu with more slices (a shift or a layer) */
+			}
 
 			if(touched)
 			{
@@ -3197,5 +3214,13 @@ void remap_sim_mouse(float *out)
 	memcpy(out, mouse_acc, sizeof(mouse_acc));
 	out[4] = flick_left;
 	out[5] = flick_rate;
+	out[6] = precise_pending[0];
+	out[7] = precise_pending[1];
+	out[8] = (float)rel_phase;
+	out[9] = (float)move_dirs;
+	out[10] = rel_tgt[0];
+	out[11] = rel_tgt[1];
+	out[12] = rel_cur[0];
+	out[13] = rel_cur[1];
 }
 #endif

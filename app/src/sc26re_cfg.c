@@ -141,6 +141,19 @@ int16_t sc26re_cfg_get(enum sc26re_cfg_id id)
 	return id < SC26RE_CFG_COUNT ? values[id] : SC26RE_CFG_AUTO;
 }
 
+int16_t sc26re_cfg_clamp(enum sc26re_cfg_id id, int16_t value)
+{
+	if(id >= SC26RE_CFG_COUNT)
+	{
+		return value;
+	}
+	if(value == SC26RE_CFG_AUTO && descs[id].def == SC26RE_CFG_AUTO)
+	{
+		return value;
+	}
+	return CLAMP(value, descs[id].min, descs[id].max);
+}
+
 bool sc26re_cfg_is_auto(enum sc26re_cfg_id id)
 {
 	return sc26re_cfg_get(id) == SC26RE_CFG_AUTO;
@@ -285,7 +298,9 @@ static int load_cb(const char *key, size_t len, settings_read_cb read_cb, void *
 	{
 		return 0;
 	}
-	values[i] = v == SC26RE_CFG_AUTO ? v : CLAMP(v, descs[i].min, descs[i].max);
+	/* "follow Steam" only where the setting can (an older firmware may have stored it for one
+	 * that no longer can: its default then, never INT16_MIN as a value) */
+	values[i] = v != SC26RE_CFG_AUTO ? CLAMP(v, descs[i].min, descs[i].max) : descs[i].def;
 	LOG_INF("loaded %s = %d", descs[i].name, values[i]);
 	return 0;
 }
