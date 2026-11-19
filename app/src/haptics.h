@@ -35,6 +35,7 @@ enum haptics_effect_type
 	HAPTICS_EFFECT_PCM_STEREO,
 	HAPTICS_EFFECT_SCREAM,
 	HAPTICS_EFFECT_MEOW,
+	HAPTICS_EFFECT_STRONG_CLICK, /* sc26re "strong" feedback: the click waveform with its gain_db applied */
 };
 
 struct haptics_effect
@@ -92,6 +93,7 @@ void haptics_get_debug(struct haptics_debug *debug);
 int haptics_debug_play_tick(uint8_t channels);
 int haptics_debug_play_click(uint8_t channels);
 int haptics_debug_play_pulse(uint8_t channels);
+int haptics_debug_play_strong(uint8_t channels);
 void haptics_touchpad_update(bool right, bool pressure_active, bool touch_active, int16_t x,
                              int16_t y);
 

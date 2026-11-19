@@ -99,7 +99,7 @@
 <body>
 <div class="top">
   <div class="topin">
-    <div class="brand">SC2 <span class="hz">Remapper</span> <span class="note" id="pagever" title="page version — if it is older than expected, press Ctrl+F5">p.2026-11-19c</span></div>
+    <div class="brand">SC2 <span class="hz">Remapper</span> <span class="note" id="pagever" title="page version — if it is older than expected, press Ctrl+F5">p.2026-11-19d</span></div>
     <button class="primary" id="connect">Connect controller</button>
     <span id="status" class="chip">not connected</span>
     <span class="grow"></span>
@@ -1021,7 +1021,7 @@ const GY=[
  ["gm_qt_ms","Quick turn time","num",[0,500,10],1,"ms, 0 = instant"],
  ["gm_output","Gyro drives","sel",[[0,"the mouse"],[1,"joystick camera — right stick"],[2,"joystick camera — left stick"],[3,"joystick deflection — right stick"],[4,"joystick deflection — left stick"]],1,""],
  ["gj_tilt","Deflection: full at","num",[5,90,1],1,"° of tilt since the gyro turned on"],
- ["gm_curve","Response curve","num",[0.5,4,0.1],10,"1.0 = linear (true 1:1)"],
+ ["gm_curve","Response curve","num",[0.5,4,0.1],10,"1.0 = linear (true 1:1) · above: slow turns move less (steadier aim) · below: slow turns move more, the hand’s shake too"],
  ["gm_accel","Acceleration","num",[0,400,5],1,"% extra speed at fast turns; 0 = off"],
  ["gm_accel_lo","Acceleration starts at","num",[0,1000,5],1,"°/s"],
  ["gm_accel_hi","Acceleration full at","num",[1,2000,5],1,"°/s"],
@@ -1033,7 +1033,7 @@ const GY=[
  ["gm_smooth","Precision smoothing","num",[0,100,0.5],10,"°/s: slower turns are smoothed (hides hand tremor); 0 = off"],
  ["gm_ratchet","Ratchet (pause) button","sel",BTNOPTS,1,"while held the gyro stops moving — re-centre your hands, then let go"],
  ["gm_space","Gyro space","sel",[[0,"local (the axis settings below)"],[1,"player space"],[2,"world space"]],1,"player / world: turning about the vertical works the same however you hold the controller; a profile can choose its own"],
- ["gm_haptic","Haptics","sel",[[0,"off"],[1,"tick (light)"],[2,"click"],[3,"strong"]],1,"when the activation button starts the mouse and on quick turns"],
+ ["gm_haptic","Haptics","sel",[[0,"off"],[1,"tick (light)"],[2,"click"],[3,"strong"]],1,"when the activation button starts the mouse, and on quick turns (the Quick turns buttons on this page)"],
 ];
 const GYI={}; for(const e of GY) if(e[0]!=="#") GYI[e[0]]=e;
 function ctlHtml(n,short){

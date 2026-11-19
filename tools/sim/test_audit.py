@@ -184,6 +184,22 @@ def main_loop_hides_the_gyro_mouse_buttons_before_the_xbox_pad():
     assert src.index("remap_process(&current") < f < src.index("xinput_send(&current"), "filter after the Xbox output"
     assert f < src.index("bool changed = first"), "filter after the change check"
 
+@test
+def strong_haptic_is_stronger_than_click():
+    """v51 test 46, tester: "strong" (remapper bindings, zones, gyro mouse) played the button pulse,
+    which the Ibex renders with the tick waveform: weaker than "click". Now the click waveform with
+    a gain above 0 dB (haptics.c and the Ibex backend are not in the simulator: the source is checked)"""
+    import os, re
+    d = os.path.join(os.path.dirname(os.path.abspath(__file__)), "../../app/src/")
+    h, ib = open(d + "haptics.c").read(), open(d + "haptics_pwm_ibex.c").read()
+    fb = h[h.index("int haptics_play_feedback("):]; fb = fb[:fb.index("\n}\n")]
+    assert re.search(r"case 3: return haptics_debug_play_strong\(", fb), "level 3 is not the strong click"
+    st = h[h.index("int haptics_debug_play_strong("):]; st = st[:st.index("\n}\n")]
+    g = re.search(r"#define HAPTICS_STRONG_CLICK_GAIN_DB (\d+)", h)
+    assert "HAPTICS_EFFECT_STRONG_CLICK" in st and "HAPTICS_STRONG_CLICK_GAIN_DB" in st and g and int(g.group(1)) >= 3, st
+    cs = ib[ib.index("case HAPTICS_EFFECT_STRONG_CLICK:"):]; cs = cs[:cs.index("case HAPTICS_EFFECT_TONE:")]
+    assert "haptics_waveform_click" in cs and ".use_gain = true" in cs and "effect->gain_db" in cs, cs
+
 if __name__ == "__main__":
     ok = bad = 0
     for t in TESTS:

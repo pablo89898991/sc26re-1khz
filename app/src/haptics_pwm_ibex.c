@@ -1908,14 +1908,15 @@ int haptics_backend_effect(const struct haptics_effect *effect)
 #if CONFIG_IBEX_HAPTICS_GRIP_TICK_HZ > 0
 	if(effect->type == HAPTICS_EFFECT_TICK || effect->type == HAPTICS_EFFECT_PULSE_ONE_SHOT ||
 	   effect->type == HAPTICS_EFFECT_BUTTON_PULSE || effect->type == HAPTICS_EFFECT_CLICK ||
-	   effect->type == HAPTICS_EFFECT_PULSE_CLICK)
+	   effect->type == HAPTICS_EFFECT_PULSE_CLICK || effect->type == HAPTICS_EFFECT_STRONG_CLICK)
 	{
 		uint8_t grip = effect->channels & (HAPTICS_CHANNEL_LEFT_1 | HAPTICS_CHANNEL_RIGHT_1);
 
 		if(grip != 0)
 		{
 			bool click = effect->type == HAPTICS_EFFECT_CLICK ||
-			             effect->type == HAPTICS_EFFECT_PULSE_CLICK;
+			             effect->type == HAPTICS_EFFECT_PULSE_CLICK ||
+			             effect->type == HAPTICS_EFFECT_STRONG_CLICK;
 			struct haptics_effect rest = *effect;
 
 			(void)submit_grip_tick(grip, effect->gain_db,
@@ -1960,6 +1961,22 @@ int haptics_backend_effect(const struct haptics_effect *effect)
 				.waveform_format = HAPTICS_WAVEFORM_CLICK_SAMPLE_FORMAT,
 				.waveform_rate_hz = HAPTICS_WAVEFORM_CLICK_SAMPLE_RATE_HZ,
 				.gain_db = effect->gain_db,
+			};
+
+			return submit_channels_start(effect->channels, IBEX_HAPTICS_SLOT_CLICK, apply_waveform,
+			                             &context, ARRAY_SIZE(haptics_waveform_click));
+		}
+		case HAPTICS_EFFECT_STRONG_CLICK:
+		{
+			/* the click with its gain applied (OFW plays the table waveforms at a fixed level):
+			 * +6 dB, the output limits what goes past full scale */
+			struct waveform_context context = {
+				.waveform = haptics_waveform_click,
+				.waveform_len = ARRAY_SIZE(haptics_waveform_click),
+				.waveform_format = HAPTICS_WAVEFORM_CLICK_SAMPLE_FORMAT,
+				.waveform_rate_hz = HAPTICS_WAVEFORM_CLICK_SAMPLE_RATE_HZ,
+				.gain_db = effect->gain_db,
+				.use_gain = true,
 			};
 
 			return submit_channels_start(effect->channels, IBEX_HAPTICS_SLOT_CLICK, apply_waveform,

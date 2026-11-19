@@ -57,6 +57,8 @@ LOG_MODULE_REGISTER(haptics);
 #define HAPTICS_CLICK_DURATION_MS HAPTICS_WAVEFORM_DURATION_MS(HAPTICS_CLICK_WAVEFORM_SAMPLES)
 #define HAPTICS_PULSE_ONE_SHOT_GAIN_DB 2
 #define HAPTICS_PULSE_CLICK_GAIN_DB 4
+/* remapper / gyro mouse "strong": the click at twice its amplitude */
+#define HAPTICS_STRONG_CLICK_GAIN_DB 6
 
 #define VALVE_HAPTIC_REPORT_CLASS 0x86
 #define VALVE_HAPTIC_REPORT_PCM_MONO 0x87
@@ -432,6 +434,7 @@ __weak int haptics_backend_effect(const struct haptics_effect *effect)
 			return haptics_backend_tone(HAPTICS_DEFAULT_PULSE_FREQUENCY_HZ,
 			                            HAPTICS_TICK_DURATION_MS);
 		case HAPTICS_EFFECT_CLICK:
+		case HAPTICS_EFFECT_STRONG_CLICK:
 			return haptics_backend_tone(HAPTICS_CLICK_FREQUENCY_HZ, HAPTICS_CLICK_DURATION_MS);
 		case HAPTICS_EFFECT_TONE:
 		case HAPTICS_EFFECT_LFO_TONE:
@@ -811,6 +814,8 @@ static const char *haptics_effect_name(enum haptics_effect_type type)
 			return "scream";
 		case HAPTICS_EFFECT_MEOW:
 			return "meow";
+		case HAPTICS_EFFECT_STRONG_CLICK:
+			return "strong_click";
 		default:
 			return "?";
 	}
@@ -2242,7 +2247,9 @@ int haptics_play_feedback(uint8_t level, uint8_t channels)
 	{
 		case 1: return haptics_debug_play_tick(channels);
 		case 2: return haptics_debug_play_click(channels);
-		case 3: return haptics_debug_play_pulse(channels);
+		/* the button pulse played the tick waveform on the Ibex: "strong" was a tick, weaker than
+		 * "click" (up to v51 test 46) */
+		case 3: return haptics_debug_play_strong(channels);
 		default: return 0;
 	}
 }
@@ -2264,6 +2271,19 @@ int haptics_debug_play_click(uint8_t channels)
 	struct haptics_effect command = {
 		.type = HAPTICS_EFFECT_CLICK,
 		.channels = channels,
+		.frequency_hz = HAPTICS_CLICK_FREQUENCY_HZ,
+		.duration_ms = HAPTICS_CLICK_DURATION_MS,
+	};
+
+	return haptics_submit_effect(&command);
+}
+
+int haptics_debug_play_strong(uint8_t channels)
+{
+	struct haptics_effect command = {
+		.type = HAPTICS_EFFECT_STRONG_CLICK,
+		.channels = channels,
+		.gain_db = HAPTICS_STRONG_CLICK_GAIN_DB,
 		.frequency_hz = HAPTICS_CLICK_FREQUENCY_HZ,
 		.duration_ms = HAPTICS_CLICK_DURATION_MS,
 	};
