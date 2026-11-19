@@ -331,6 +331,44 @@ def stick_region_over_the_radio_ends_where_asked():
         assert run(link, loss, ci, [({"lsx": 32767}, 5000)]) == (1440, 540), link
         assert run(link, loss, ci, [({"lsx": 32767}, 30), ({"lsx": 0}, 20), ({"lsy": 32767}, 40), ({"lsy": 0}, 5000)]) == (960, 540), link
 
+@test
+def start_press_with_long_press():
+    p = Profile(); p.bind("A", key("a"), key("b"), mode=M_START | M_HOLD); p.btime(0, hold=300)
+    s = Sim(); s.use(p); s.run(10); s.log.clear()
+    s.run(100, A=1); ks = Events(s.log).kbd()
+    assert any(key("a") in k for k in ks) and key("a") not in held(s), ("a tap at once", ks)
+    s.run(250); assert held(s) == (key("b"),), held(s)
+    s.run(40, A=0); assert held(s) == ()
+    s.log.clear(); s.run(60, A=1); s.run(300, A=0)
+    assert not any(key("b") in k for k in Events(s.log).kbd()), "short: no long press"
+
+@test
+def turbo_mouse_click_over_slow_links():
+    """turbo on a mouse button: every click reaches the PC as its own click, also over a slow link"""
+    for link, loss, ci in [(0, 0, 15), (1, 0, 15), (2, 0, 15), (1, 100, 15), (2, 50, 45)]:
+        p = Profile(); p.bind("RB", MOUSE_L, mode=M_TURBO); p.times(turbo=40)
+        s = Sim(); s.transport(link, 1 if link == 1 else 0, loss=loss, ci=ci); s.use(p); s.run(10); s.log.clear()
+        s.run(1500, RB=1); s.run(2000, RB=0)
+        dev = sum(1 for k, e in enumerate(s.log) if e.split()[1] == "M" and int(e.split()[2]) & 1 and not any(f.split()[1] == "M" and int(f.split()[2]) & 1 for f in s.log[max(0, k - 1):k]))
+        presses = lambda kind: sum(1 for a, b2 in zip([0] + [int(e.split()[2]) & 1 for e in s.log if e.split()[1] == kind], [int(e.split()[2]) & 1 for e in s.log if e.split()[1] == kind]) if b2 and not a)
+        d, h = presses("M"), presses("HM")
+        assert d >= 5 and d == h and s.host()["mb"] == 0, (link, loss, d, h)
+
+@test
+def macro_with_all_sixteen_steps_ends():
+    p = Profile(); p.macro(0, [(key("a") if k % 2 == 0 else 0, 2) for k in range(16)]); p.bind("A", MACRO + 0)
+    s = Sim(); s.use(p); s.run(10); s.log.clear()
+    s.run(30, A=1); s.run(30, A=0); s.run(800)
+    assert Events(s.log).taps(key("a")) == 8 and held(s) == (), (Events(s.log).taps(key("a")), held(s))
+
+@test
+def wheel_left_and_right():
+    p = Profile(); p.bind("X", 0x74); p.bind("B", 0x75)
+    s = Sim(); s.use(p); s.run(10); h0 = s.host()["pan"]
+    s.run(30, B=1); s.run(30, B=0); s.run(30); r = s.host()["pan"] - h0
+    s.run(30, X=1); s.run(30, X=0); s.run(30); l = s.host()["pan"] - h0 - r
+    assert r > 0 and l < 0, (r, l)
+
 if __name__ == "__main__":
     ok = fail = 0
     only = sys.argv[1:]

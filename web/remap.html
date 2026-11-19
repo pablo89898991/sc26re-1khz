@@ -572,7 +572,7 @@ function editor(){
     ed.querySelectorAll("[data-ma]").forEach(x=>{ const k=+x.dataset.ma; x.value=String(b[mo(k)]); if(x.value==="") x.value="0"; x.onchange=()=>{ b[mo(k)]=+x.value; if(!b[mo(k)+1]) b[mo(k)+1]=5; setDirty(); render(); }; });
     ed.querySelectorAll("[data-mt]").forEach(x=>{ const k=+x.dataset.mt; x.onchange=()=>{ b[mo(k)+1]=Math.max(0,Math.min(255,Math.round(+x.value/10))); setDirty(); render(); }; });
     $("#mclear").onclick=()=>{ b.fill(0,mo(0),mo(0)+32); setDirty(); render(); };
-    ed.querySelectorAll("[data-pcopy]").forEach(x=>x.onclick=()=>{ const t=+x.dataset.pcopy; if(!confirm(`Overwrite profile ${t+1} with profile ${cur+1}?`)) return; prof[t]=b.slice(); setDirty(); buildTabs(); });
+    ed.querySelectorAll("[data-pcopy]").forEach(x=>x.onclick=()=>{ const t=+x.dataset.pcopy; if(!confirm(`Overwrite profile ${t+1} with profile ${cur+1}?`)) return; prof[t]=b.slice(); setDirty(true,t); buildTabs(); });
     ed.querySelectorAll("[data-pre]").forEach(x=>x.onclick=()=>{ if(!confirm("Replace this profile with the preset?")) return; const nb=emptyProfile(); PRESETS[+x.dataset.pre][1](nb); const nm=nameOf(b); prof[cur]=nb; if(nm){ const e=new TextEncoder().encode(nm).slice(0,14); prof[cur].fill(0,2,16); prof[cur].set(e,2); } setDirty(); render(); });
     return;
   }
@@ -774,8 +774,12 @@ function editor(){
   wireShift(g);
 }
 function collect(){ saveName(); }
-let dirty=false;
-function setDirty(v=true){ dirty=v; $("#dirty").style.display=v?"":"none"; }
+/* unsaved changes per profile: Save writes every changed one (a profile copied into another
+ * slot, a Steam Input import into several slots), not just the one on screen */
+let dirty=false; const dirtyP=new Set();
+function setDirty(v=true,p){ if(v) dirtyP.add(p===undefined?cur:p); else if(p===undefined) dirtyP.clear(); else dirtyP.delete(p);
+  dirty=dirtyP.size>0; const el=$("#dirty"); el.style.display=dirty?"":"none";
+  el.textContent=dirty?`unsaved changes: profile ${[...dirtyP].sort().map(k=>k+1).join(", ")}`:"unsaved changes"; }
 $("#dlgDone").onclick=()=>$("#dlg").close();
 $("#dlgClear").onclick=()=>{ if(typeof sel==="number"){ prof[cur].fill(0,bOff(sel),bOff(sel)+14); setDirty(); render(); } };
 $("#dlg").addEventListener("close",()=>{ layer=0; });
@@ -913,8 +917,9 @@ async function saveSlot(p){ const b=prof[p];
 $("#write").onclick=async()=>{
   bulk++;
   try{ collect(); $("#pstatus").textContent="saving…";
-    const okb=await saveSlot(cur); if(okb) setDirty(false);
-    $("#pstatus").innerHTML=okb?`<span class="ok">profile ${cur+1} saved to the controller</span>`:'<span class="err">saved, but reading it back differs — try again</span>';
+    const todo=[...new Set([cur,...dirtyP])].sort(), bad=[];
+    for(const k of todo){ if(todo.length>1) $("#pstatus").textContent=`saving profile ${k+1}…`; if(await saveSlot(k)) setDirty(false,k); else bad.push(k+1); }
+    $("#pstatus").innerHTML=!bad.length?`<span class="ok">profile ${todo.map(k=>k+1).join(", ")} saved to the controller</span>`:`<span class="err">profile ${bad.join(", ")}: saved, but reading it back differs — try again</span>`;
     buildTabs();
   }catch(e){ $("#pstatus").innerHTML=`<span class="err">${e.message}</span>`; }
   finally{ bulk--; }
@@ -945,10 +950,10 @@ $("#vimport").onchange=async e=>{ const f=e.target.files[0]; e.target.value=""; 
     $("#vbody").innerHTML=h; $("#vbody").querySelectorAll("select,input").forEach(x=>x.onchange=vPreview); vPreview(); $("#vdlg").showModal();
   }catch(err){ $("#pstatus").innerHTML=`<span class="err">${esc(err.message)}</span>`; } };
 async function vApply(save){ const pv=vPreview(); if(!pv) return; $("#vdlg").close(); collect();
-  const done=[]; pv.r.profiles.forEach((b,k)=>{ if(b){ prof[k]=b; done.push(k); } }); setDirty(); render();
-  if(!save){ $("#pstatus").innerHTML=`<span class="ok">imported into profile ${done.map(k=>k+1).join(", ")} — press Save to controller on each</span>`; return; }
-  bulk++; try{ let bad=[]; for(const k of done){ $("#pstatus").textContent=`saving profile ${k+1}…`; if(!await saveSlot(k)) bad.push(k+1); }
-    if(!bad.length) setDirty(false); buildTabs();
+  const done=[]; pv.r.profiles.forEach((b,k)=>{ if(b){ prof[k]=b; done.push(k); setDirty(true,k); } }); render();
+  if(!save){ $("#pstatus").innerHTML=`<span class="ok">imported into profile ${done.map(k=>k+1).join(", ")} — Save to controller writes them all</span>`; return; }
+  bulk++; try{ let bad=[]; for(const k of done){ $("#pstatus").textContent=`saving profile ${k+1}…`; if(await saveSlot(k)) setDirty(false,k); else bad.push(k+1); }
+    buildTabs();
     $("#pstatus").innerHTML=bad.length?`<span class="err">profile ${bad.join(", ")}: read back differs — save again</span>`:`<span class="ok">imported and saved: profile ${done.map(k=>k+1).join(", ")}</span>`;
   }catch(e){ $("#pstatus").innerHTML=`<span class="err">${esc(e.message)} (imported profiles are in the editor)</span>`; } finally{ bulk--; } }
 $("#vload").onclick=()=>vApply(false); $("#vsave").onclick=()=>vApply(true); $("#vcancel").onclick=()=>$("#vdlg").close();

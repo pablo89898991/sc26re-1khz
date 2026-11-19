@@ -112,6 +112,8 @@
   const CURVE = [100, 60, 150, 200, 300];
   const curveIn = (c, custom) => c == null ? 0 : c === 5 ? Math.round((custom || 1) * 100) : (CURVE[c] || 0);
   const curveOut = e => { let k = 0; for (let j = 0; j < CURVE.length; j++) if (Math.abs(CURVE[j] - e) < Math.abs(CURVE[k] - e)) k = j; return k; };
+  /* Steam's long press time when a layout does not give one (Steamworks activators doc: 0.15 s) */
+  const STEAM_LONG_MS = 150;
   const AN_SRC = ["joystick", "right_joystick", "left_trackpad", "right_trackpad"];
   const AN_BASE = [30, 34, 38, 42];
 
@@ -439,7 +441,7 @@
         }
         if (!acts.length) continue;
         bound += acts.length;
-        if (an === "long_press") { b[o] |= 1; const t = S("long_press_time"); if (t) b[bt] = Math.min(255, Math.round(t / 10)); }
+        if (an === "long_press") { b[o] |= 1; const t = S("long_press_time") || STEAM_LONG_MS; b[bt] = Math.max(1, Math.min(255, Math.round(t / 10))); }
         else if (an === "double_press") { b[o] = (b[o] | 2) & ~16; const t = S("double_tap_time"); if (t) b[bt + 1] = Math.min(255, Math.round(t / 10)); }
         else if (an === "release") b[o] = (b[o] | 16) & ~2;
         else if (an === "start_press") b[o] = (b[o] | 8) & ~4;
@@ -522,11 +524,14 @@
     const addGroup = (mode, inputs, settings) => { const id = String(gid++); const g = N(["id", id], ["mode", mode], ["name", ""], ["description", ""], ["inputs", N(...inputs)]); if (settings && settings.length) g.list.push(["settings", N(...settings)]); groups.push(g); return id; };
     const layerOf = new Set(); /* profiles used as layers */
     profiles.forEach(b => { if (!b) return; for (let o = 488; o < 488 + 14 * 112; o += 14) for (let k = 1; k < 13; k++) { const a = b[o + k]; if (a >= 0xC4 && a < 0xC8) layerOf.add(a - 0xC4); } });
+    const isLayer = j => opts.layers ? !!opts.layers[j] : layerOf.has(j);
     const inputOf = (b, o, bt, extra) => {
       const m = b[o], acts = g => [1, 2, 3, 4].map(k => b[o + g * 4 + k]).filter(Boolean);
       const L = [];
       const mk = (name, g, settings) => {
-        const bs = []; for (const a of acts(g)) { const s = actString(a); if (s) bs.push(["binding", s]); else if (s !== "") dropped.add(a >= 0xC8 && a < 0xCC ? "macros" : a >= 0xD0 && a < 0xDA ? "analog output actions" : a >= 0x76 && a <= 0x79 ? "mouse move actions" : "action 0x" + a.toString(16)); }
+        const bs = []; for (const a of acts(g)) { if (a >= 0xC0 && a < 0xC8 && !profiles[(a - 0xC0) & 3]) { dropped.add("switches to an empty profile"); continue; }
+          if (a >= 0xC0 && a < 0xC4 && isLayer(a - 0xC0)) { dropped.add("a profile switch to a profile used as a layer (Steam: a layer is not an action set)"); continue; }
+          if (a >= 0xC4 && a < 0xC8 && !isLayer(a - 0xC4)) { dropped.add("a layer that is exported as an action set"); continue; } const s = actString(a); if (s) bs.push(["binding", s]); else if (s !== "") dropped.add(a >= 0xC8 && a < 0xCC ? "macros" : a >= 0xD0 && a < 0xDA ? "analog output actions" : a >= 0x76 && a <= 0x79 ? "mouse move actions" : "action 0x" + a.toString(16)); }
         if (!bs.length) return;
         const st = []; const hp = b[o + 13] & 3; if (hp) st.push(["haptic_intensity", String(hp)]);
         for (const x of settings || []) st.push(x);
@@ -540,7 +545,7 @@
       const ch = b[o + 13] >> 2, chName = ch ? (SWITCHNAME[ch - 1] || Object.keys(DIAMOND).find(k => DIAMOND[k] === ch - 1)) : null;
       if (chName) mk("Chorded_Press", 0, [...T, ["chord_button", chName]]);
       else mk(m & 8 ? "Start_Press" : (extra && extra.soft ? "Soft_Press" : "Full_Press"), 0, T);
-      if (m & 1) mk("Long_Press", 1, b[bt] ? [["long_press_time", String(b[bt] * 10)]] : []);
+      if (m & 1) mk("Long_Press", 1, [["long_press_time", String(b[bt] ? b[bt] * 10 : (u16(b, 118) || 250))]]); /* always: Steam's default differs from ours */
       if ((m & 1) && (b[bt + 5] & 1)) dropped.add("“another input cancels” on long presses");
       if (m & 2) mk("Double_Press", 2, b[bt + 1] ? [["double_tap_time", String(b[bt + 1] * 10)]] : []);
       if (m & 16) mk("release", 2, []);
@@ -658,13 +663,16 @@
       return N(["id", String(pid)], ["name", name], ["group_source_bindings", N(...gsb)]);
     };
     const actions = [], layersNode = [], loc = [];
+    const firstSet = profiles.findIndex((x, j) => x && !isLayer(j));
+    const setKey = j => j === firstSet ? "Default" : "Preset_" + (1000000 + j);
     profiles.forEach((b, k) => {
       if (!b) return;
       const nm = new TextDecoder().decode(b.slice(2, 16)).replace(/\0.*$/, "") || "Profile " + (k + 1);
-      const key = (opts.layers ? opts.layers[k] : layerOf.has(k)) ? "Layer_" + (k + 1) : "Set_" + (k + 1);
+      /* Steam's own names for a layout without game actions: the first set "Default", the others "Preset_100000<n>" */
+      const key = setKey(k);
       layer = opts.layers ? !!opts.layers[k] : layerOf.has(k);
       presets.push(presetFor(b, key, k));
-      if (layer) layersNode.push([key, N(["title", nm], ["legacy_set", "1"], ["set_layer", "1"], ["parent_set_name", "Set_" + (1 + Math.max(0, profiles.findIndex((x, j) => x && !(opts.layers ? opts.layers[j] : layerOf.has(j)))))])]);
+      if (layer) layersNode.push([key, N(["title", nm], ["legacy_set", "1"], ["set_layer", "1"], ["parent_set_name", setKey(Math.max(0, profiles.findIndex((x, j) => x && !isLayer(j))))])]);
       else actions.push([key, N(["title", nm], ["legacy_set", "1"])]);
       loc.push([key, nm]);
     });
