@@ -779,6 +779,10 @@ int main(void)
 			remap_process(&current, remap_last_ms ? (float)(remap_now - remap_last_ms) * 0.001f : 0.001f);
 			remap_last_ms = remap_now;
 			gyro_mouse_joystick(&current);
+			/* the gyro mouse's buttons (its chord, ratchet, quick turns, 360 calibration) leave
+			 * the report before the Xbox 360 output takes the pad from it: filtered further
+			 * down, the Xbox-only pad still showed them (LB + RB + View to the game) */
+			current.buttons = gyro_mouse_filter_buttons(current.buttons, remap_raw_buttons());
 			/* in-game stick measurement (gyro as joystick calibration) */
 			stick_test_apply(&current, raw_buttons);
 			/* Xbox 360 output (USB, pad_out = 1): the game gets the pad there */
@@ -811,7 +815,6 @@ int main(void)
 				last_state_cyc = k_cycle_get_32();
 			}
 		}
-		current.buttons = gyro_mouse_filter_buttons(current.buttons, remap_raw_buttons());
 		hardware_store_state(&current);
 		imu_keep_on(gyro_mouse_enabled());
 		if(changed || refresh_due || esb_state_boundary)

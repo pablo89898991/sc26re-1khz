@@ -9,8 +9,33 @@ static void dturn(double q[4], const double w[3], double dt)
 	double o[4] = { q[0]*d[0]-q[1]*d[1]-q[2]*d[2]-q[3]*d[3], q[0]*d[1]+q[1]*d[0]+q[2]*d[3]-q[3]*d[2], q[0]*d[2]-q[1]*d[3]+q[2]*d[0]+q[3]*d[1], q[0]*d[3]+q[1]*d[2]-q[2]*d[1]+q[3]*d[0] };
 	double l = sqrt(o[0]*o[0]+o[1]*o[1]+o[2]*o[2]+o[3]*o[3]); for(int i = 0; i < 4; ++i) q[i] = o[i] / l;
 }
+/* the same turn just under 0.1 rad (the edge of the series) 10000 times: each turn is exact to a
+ * few nanoradians, a missing series term adds up (about h^5 / 12 rad a turn: 3e-4 rad here) */
+static double edge(double ax, double ay, double az, double n, int steps)
+{
+	double l = sqrt(ax*ax + ay*ay + az*az); ax /= l; ay /= l; az /= l;
+	float r[3] = { (float)(ax * n), (float)(ay * n), (float)(az * n) };
+	float q[4] = { 1, 0, 0, 0 };
+	for(int i = 0; i < steps; ++i) imu_raw_orient_turn(q, r, q);
+	double rn = sqrt((double)r[0]*r[0] + (double)r[1]*r[1] + (double)r[2]*r[2]), a = rn * steps / 2;
+	double e[4] = { cos(a), r[0] / rn * sin(a), r[1] / rn * sin(a), r[2] / rn * sin(a) };
+	/* conj(e) * q: its vector part is the error (acos of a dot product is too coarse for floats) */
+	double w = e[0]*q[0] + e[1]*q[1] + e[2]*q[2] + e[3]*q[3];
+	double x = e[0]*q[1] - e[1]*q[0] - e[2]*q[3] + e[3]*q[2];
+	double y = e[0]*q[2] + e[1]*q[3] - e[2]*q[0] - e[3]*q[1];
+	double z = e[0]*q[3] - e[1]*q[2] + e[2]*q[1] - e[3]*q[0];
+	return 2 * atan2(sqrt(x*x + y*y + z*z), fabs(w));
+}
 int main(void)
 {
+	double edge_worst = 0;
+	srand(3);
+	for(int k = 0; k < 40; ++k)
+	{
+		double ax = rand() % 2001 - 1000, ay = rand() % 2001 - 1000, az = rand() % 2001 - 1000;
+		double e = edge(ax, ay, az, k % 2 ? 0.0999 : 0.08 + (rand() % 1000) * 0.0000199, 10000);
+		if(e > edge_worst) edge_worst = e;
+	}
 	srand(7);
 	double worst = 0;
 	for(int run = 0; run < 200; ++run)
@@ -30,6 +55,6 @@ int main(void)
 		double dot = fabs((f[0]*q[0]+f[1]*q[1]+f[2]*q[2]+f[3]*q[3]) / l), err = 2 * acos(dot > 1 ? 1 : dot) * 180 / M_PI;
 		if(err > worst) worst = err;
 	}
-	printf("worst %.4f deg\n", worst);
-	return worst < 0.05 ? 0 : 1;
+	printf("edge of the series %.2g rad / 10000 turns (< 1.5e-4), worst %.4f deg (< 0.05)\n", edge_worst, worst);
+	return worst < 0.05 && edge_worst < 1.5e-4 ? 0 : 1;
 }

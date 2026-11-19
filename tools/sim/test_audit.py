@@ -1,4 +1,4 @@
-"""Whole-system audit (v51 test 44): cases the fuzzers found, kept as fixed tests."""
+"""Whole-system audit (v51 test 44, 45): cases the fuzzers and reviews found, kept as fixed tests."""
 import sys, traceback, struct
 from simlib import *
 
@@ -31,14 +31,34 @@ def stick_radial_slices_change_with_a_slice_chosen():
 
 @test
 def pad_radial_slices_change_with_a_slice_chosen():
-    """the same on a trackpad: 10 slices, then a shift with 3"""
+    """the same on a trackpad: slice 10 of 10 chosen, lifted as a shift makes it 3 slices"""
     p = Profile(); p.analog(2, RADIAL, speed=10, dz_in=2000)
     p.shift(SH_LPAD, BTN["B"], mode=RADIAL, speed=3, dz_in=2000)
+    # slice 10 of 10 and slice 1 of 3, as the shift has them (the shift is held when they fire)
+    p.bind("LP_CW", key("q"), shifted_index=SHIFT_SRC.index(SRC["LP_CW"])); p.bind("LP_UP", key("1"), shifted_index=SHIFT_SRC.index(SRC["LP_UP"]))
     s = fresh(p)
-    s.set(LP_TOUCH=1, lpx=-20000, lpy=20000); s.run(40)   # slice 8 or 9 of 10
-    s.set(LP_TOUCH=0, lpx=0, lpy=0, B=1); s.run(80)      # lifted as the shift makes it 3 slices
-    s.run(20, B=0)
-    s.set(LP_TOUCH=1, lpx=0, lpy=25000); s.run(40); s.set(LP_TOUCH=0, lpx=0, lpy=0); s.run(60)
+    s.set(LP_TOUCH=1, lpx=-15000, lpy=26000); s.run(40)            # up, a little left: slice 10 of 10
+    e = s.run(80, LP_TOUCH=0, lpx=0, lpy=0, B=1)                   # lifted as the shift makes it 3 slices
+    got = set(c for k in e.kbd() for c in k)
+    assert got == set(), ("the slice from the 10-slice menu is not in the 3-slice one", got)
+    s.set(LP_TOUCH=1, lpx=0, lpy=25000); s.run(40); e = s.run(60, LP_TOUCH=0, lpx=0, lpy=0)
+    assert set(c for k in e.kbd() for c in k) == {key("1")}, "the 3-slice menu works"
+
+@test
+def region_over_bluetooth_with_a_huge_screen_size():
+    """a profile made elsewhere with a 65535 px screen: the way into the corner is capped (16384 px)"""
+    p = Profile(); p.analog(1, REGION, dz_in=1000); p.screen(65535, 65535)
+    s = Sim(); s.transport(2); s.link(1); s.use(p); s.run(50)
+    s.run(100, rsx=20000)
+    t0 = s.lib.sim_time(); last = t0
+    for _ in range(200):
+        e = s.run(50)
+        if [x for x in e if x.split()[1] == "HM"]: last = s.lib.sim_time()
+        elif s.lib.sim_time() - last > 500: break
+    h = s.host()
+    # with the cap the cursor goes 1.25 x 16384 up and comes back half of that: -12288; uncapped -49152
+    assert -16384 <= h["dy"] <= 0, ("the way into the corner is not capped", h["dy"])
+    assert last - t0 < 2500, ("the cursor still on its way after %d ms" % (last - t0))
 
 # ---------------- live settings (sc26re_cfg.c) ----------------
 AUTO = -32768
@@ -93,6 +113,46 @@ def settings_survive_restart_and_bad_store():
     assert cfg_raw(s, "gm_sens")[0] == 100, ("a setting that cannot follow Steam loads as its default", cfg_raw(s, "gm_sens"))
     assert cfg_raw(s, "gyro_fsr")[0] == 2000 and cfg_raw(s, "remap_profile")[0] == 3
     assert cfg_raw(s, "trig_click")[0] == AUTO, "this one may follow Steam"
+
+# ---------------- found by mutation testing (mutate2.py old) ----------------
+@test
+def mouse_backlog_capped_after_a_trackpad_jump():
+    """a trackpad as mouse at its fastest (400 %) and the finger 'jumping' across the pad in one
+    report (a glitch): 256000 counts. At most 32767 wait (a quarter second over USB), the cursor
+    must not run on for seconds"""
+    p = Profile(); p.analog(3, MOUSE, speed=65535); p.anx(3, scale_x=400, scale_y=400)
+    s = fresh(p)
+    s.run(10, RP_TOUCH=1, rpx=-32000, rpy=-32000)
+    s.run(1, rpx=32000, rpy=32000)
+    s.run(10, RP_TOUCH=0, rpx=0, rpy=0); s.run(1000)
+    h = s.host()
+    assert 30000 < h["dx"] <= 32767 + 127 and -32767 - 127 <= h["dy"] < -30000, (h["dx"], h["dy"])
+
+@test
+def layer_keeps_the_extras_of_the_stick_that_holds_it():
+    """the right stick's outer ring holds a layer: the stick keeps its own settings, also the v7
+    extras (here the horizontal / vertical sensitivity), not the layer's 400 %"""
+    base = Profile(); base.analog(1, MOUSE, speed=4000, ring=5000); base.bind("RS_RING", LAYER + 2); base.bind("A", key("a"))
+    lay = Profile(); lay.analog(1, MOUSE, speed=4000); lay.anx(1, scale_x=400, scale_y=400); lay.bind("A", key("x"))
+    s = Sim(); s.upload(2, lay); s.use(base); s.run(5)
+    s.run(200, rsx=32767)
+    e = Events(s.run(30, A=1)); s.run(20, A=0)
+    assert key("x") in e.kbd()[-1], "the layer is on (held by the ring)"
+    dx = sum(m[1] for m in s.run(500, rsx=32767).mouse())
+    assert 1800 <= dx <= 2200, ("4000 counts/s at 100 %", dx)
+
+# ---------------- the firmware's main loop (main.c is not in the simulator) ----------------
+@test
+def main_loop_hides_the_gyro_mouse_buttons_before_the_xbox_pad():
+    """v51 test 45: the gyro mouse filter ran after the Xbox 360 output had taken the pad from the
+    report: with the Xbox-only output the game saw LB + RB + View (the gyro chord), the ratchet and
+    the quick turn buttons. It must also come before the "report changed" check."""
+    import os
+    src = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "../../app/src/main.c")).read()
+    f = src.index("current.buttons = gyro_mouse_filter_buttons(current.buttons, remap_raw_buttons());")
+    assert src.count("gyro_mouse_filter_buttons(") == 1, "called once per report"
+    assert src.index("remap_process(&current") < f < src.index("xinput_send(&current"), "filter after the Xbox output"
+    assert f < src.index("bool changed = first"), "filter after the change check"
 
 if __name__ == "__main__":
     ok = bad = 0

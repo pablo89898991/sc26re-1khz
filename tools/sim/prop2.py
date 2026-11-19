@@ -203,8 +203,16 @@ def p_shift_layer(r):
     s.run(20, **{name: 1}); d = held(s); s.run(20, **{name: 0})
     if c != {KEYS[3]} or d != {KEYS[2]}: err("layer source %s: in layer %s after %s" % (name, c, d))
 
+# the profile's gyro values in remap_gyro_keys order; the firmware holds each to its setting's range
+# (v51 test 44: a profile made elsewhere can hold anything)
+GKEYS = ["gm_output", "gm_act_button", "gm_act_mode", "gm_axis_pitch", "gm_axis_yaw", "gm_axis_roll", "gm_sens", "gm_scale_p",
+         "gm_scale_y", "gm_scale_r", "gm_curve", "gm_accel", "gm_accel_lo", "gm_accel_hi", "gj_dz", "gj_anti", "gj_max", "gj_curve",
+         "gj_tilt", "gm_haptic", "gm_qt1_btn", "gm_qt1_deg", "gm_qt2_btn", "gm_qt2_deg", "gm_qt3_btn", "gm_qt3_deg", "gm_qt4_btn",
+         "gm_qt4_deg", "gm_qt_ms", "gm_ratchet"]
+
 def p_profiles(r):
     s = Sim()
+    rng = {n: struct.unpack("<hhhB", s.read("sc26re/" + n)[:7])[1:3] for n in GKEYS}
     profs = []
     for k in range(4):
         p = Profile("p%d" % k); p.bind("A", KEYS[k])
@@ -221,7 +229,8 @@ def p_profiles(r):
         if h != {KEYS[k]}: err("profile %d: A gives %s" % (k, h))
         p = profs[k]
         for q in range(30):
-            v = s.lib.sim_gyro_key(q); want = struct.unpack_from("<h", p.b, 44 + 2 * q)[0] if p.b[17] & PF_GYRO else -32768
+            lo, hi = rng[GKEYS[q]]
+            v = s.lib.sim_gyro_key(q); want = min(max(struct.unpack_from("<h", p.b, 44 + 2 * q)[0], lo), hi) if p.b[17] & PF_GYRO else -32768
             if v != want: err("profile %d gyro key %d: %d want %d" % (k, q, v, want)); break
         led = (ctypes.c_uint8 * 3)(); s.lib.sim_led(led)
         want = bytes(p.b[40:43]) if any(p.b[40:43]) else led0

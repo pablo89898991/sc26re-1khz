@@ -103,9 +103,13 @@ def scenario(seed, mode, n_profiles=20, steps=400, disconnects=False):
             s.cfg("gm_act_mode", r.randrange(4)); s.cfg("gm_output", r.choice([0, 0, 1, 3]))
             s.cfg("gm_ratchet", r.choice([-1, 8, 18]))
         s.run(5)
-        # what the start sent (a mouse region moves the pointer to its place) is delivered before counting starts
-        for _ in range(400):
-            if not s.host()["queued"]: break
+        # what the start sent (a mouse region moves the pointer to its place) is delivered before counting
+        # starts: over Bluetooth a 16384 px wide region takes ~3 s, the 2 s waited here before left the
+        # rest in the radio queue, and it counted as received but never sent (seed 9818 BT)
+        m = (ctypes.c_float * 16)()
+        for _ in range(4000):
+            s.lib.sim_mouse_state(m)
+            if not (s.host()["queued"] or any(abs(m[k]) >= 1 for k in (0, 1, 6, 7))): break
             s.run(5)
         s.log = []
         down_until = -1

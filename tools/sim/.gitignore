@@ -6,3 +6,4 @@ libsim_cov.so
 *.gcov
 libsim_gm.so
 libsim_gm_asan.so
+libsim_mut*.so
