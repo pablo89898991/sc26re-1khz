@@ -63,6 +63,7 @@ def sim_run(case, cfg=None):
     for slot, hx in case.get("extra", {}).items():
         q = Profile(); q.b[:] = bytes.fromhex(hx); s.upload(int(slot), q)
     s.use(_prof(case), slot=SLOT)
+    s.lib.sim_xbox(1 if s.cfg_get("pad_out") else 0)  # Xbox actions go to the Xbox pad only while it is on
     s.run(50)
     sb = bytes.fromhex(case["script"])
     for o in range(0, len(sb), 40):
@@ -125,9 +126,12 @@ def fmt(c):
 
 # ---------------- the cases
 CASES = []
-def case(name, what):
+TOL = {}
+def case(name, what, tol_ms=6):
+    """tol_ms: how far apart in time the same output may come (pulse trains whose spacing depends on
+    the report loop's own timing get more)"""
     def deco(f):
-        CASES.append((name, what, f)); return f
+        CASES.append((name, what, f)); TOL[name] = tol_ms; return f
     return deco
 
 
@@ -310,7 +314,7 @@ def _():
     return p, [N(50), S(60, RP_TOUCH=1), S(120, RP_TOUCH=1, rpx=25000), N(200), S(60, RP_TOUCH=1), N(200)]
 
 
-@case("pad_scroll_wheel", "LP circle scroll: clockwise q, counter-clockwise e")
+@case("pad_scroll_wheel", "LP circle scroll: clockwise q, counter-clockwise e", tol_ms=40)
 def _():
     p = Profile(); p.analog(2, SCROLL, speed=30); p.bind("LP_CW", key("q")); p.bind("LP_CCW", key("e"))
     return p, [N(50)] + ring_points(0, 25000, 90, -270, 16, 25) + [N(150)] + ring_points(0, 25000, 90, 450, 16, 25) + [N(200)]
@@ -422,7 +426,7 @@ def main():
             if r.get("error"): print("ERR %-28s %s" % (r["name"], r["error"])); nbad += 1; continue
             sim = sim_run(c, res.get("cfg"))["log"]
             hw = parse_log(bytes.fromhex(r["log"]))
-            probs = same(hw, sim)
+            probs = same(hw, sim, TOL.get(r["name"], 6))
             if r.get("flags", 0) & 16: probs.insert(0, "stopped early (Steam button or an upload)")
             nbad += bool(probs)
             print(("ok  " if not probs else "BAD ") + r["name"])
