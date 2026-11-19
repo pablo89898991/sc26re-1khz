@@ -313,6 +313,19 @@ def strong_haptic_is_stronger_than_click():
     cs = ib[ib.index("case HAPTICS_EFFECT_STRONG_CLICK:"):]; cs = cs[:cs.index("case HAPTICS_EFFECT_TONE:")]
     assert "haptics_waveform_click" in cs and ".use_gain = true" in cs and "effect->gain_db" in cs, cs
 
+@test
+def xbox_class_descriptor_names_the_real_endpoints():
+    """v51 test 53: the XInput class descriptor (0x21) names the IN / OUT endpoints. They were
+    filled in only in xi_enable (after SET_CONFIGURATION), but Windows reads the configuration
+    descriptor before that: it got 0x81 / 0x01, which belong to another interface, and the
+    xusb22 pad never showed up in XInput. They must be filled in when the descriptor is built."""
+    import os
+    src = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "../../app/src/xinput.c")).read()
+    g = src[src.index("static void *xi_get_desc("):]; g = g[:g.index("\n}\n")]
+    assert "xi_desc.xusb[6] = xi_desc.in_ep.bEndpointAddress" in g, g
+    assert "xi_desc.xusb[13] = xi_desc.out_ep.bEndpointAddress" in g, g
+    assert g.index("xusb[6]") < g.index("return xi_fs_desc"), g
+
 if __name__ == "__main__":
     ok = bad = 0
     for t in TESTS:

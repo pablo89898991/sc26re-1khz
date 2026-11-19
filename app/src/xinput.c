@@ -233,6 +233,12 @@ static void *xi_get_desc(struct usbd_class_data *const c_data, const enum usbd_s
 {
 	ARG_UNUSED(c_data);
 	ARG_UNUSED(speed);
+	/* the stack renumbers the endpoints at init and builds the configuration
+	 * descriptor from this list on every request: the class specific descriptor
+	 * must name the real endpoints already then (xusb22 opens the pipes it names),
+	 * not only after SET_CONFIGURATION */
+	xi_desc.xusb[6] = xi_desc.in_ep.bEndpointAddress;
+	xi_desc.xusb[13] = xi_desc.out_ep.bEndpointAddress;
 	return xi_fs_desc;
 }
 
@@ -356,7 +362,7 @@ void xinput_setup(struct usbd_context *ctx, bool on)
 	/* Windows keeps what it learned about a device per VID / PID / bcdDevice: a release
 	 * number of its own makes it read the descriptors again (with the Xbox interface and
 	 * its compatible ID) instead of using what it stored for the plain Steam Controller */
-	(void)usbd_device_set_bcd_device(ctx, 0x0362); /* changed with the descriptors / requests (v51test50) */
+	(void)usbd_device_set_bcd_device(ctx, 0x0363); /* changed with the descriptors / requests (v51test53) */
 }
 
 void xinput_diag(uint8_t out[8])
