@@ -52,7 +52,7 @@ bool xinput_guide_tap(uint32_t buttons, int64_t now)
  * (power off) used to open the Steam overlay / menu on every profile change: Steam saw
  * Steam pressed and let go.
  *
- * - let go within STEAM_DECIDE_MS with nothing else pressed: a 100 ms tap goes to Steam
+ * - let go within STEAM_DECIDE_MS (0.8 s) with nothing else pressed: a 100 ms tap goes to Steam
  *   (the menu / overlay opens as before, a moment later)
  * - a D-pad direction or Y joins first: the controller's chord, Steam never sees the button
  * - any other button joins, or it is held STEAM_DECIDE_MS: Steam gets it from then on, so
@@ -61,7 +61,7 @@ bool xinput_guide_tap(uint32_t buttons, int64_t now)
  * out = the report's buttons, phys = the physical buttons (the chord is read from these).
  * Pure function of the buttons and the time (tested in the simulator).
  */
-#define STEAM_DECIDE_MS 600
+#define STEAM_DECIDE_MS 800
 #define STEAM_TAP_MS 100
 
 uint32_t steam_button_hold_back(uint32_t out, uint32_t phys, int64_t now)
