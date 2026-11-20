@@ -37,6 +37,14 @@ st.append((50, {}))
 c = case("diag_soft_shift", "shift by the LT soft pull: how many passes after the pull it engages", p, st)
 c["snap"] = False; c["tol"] = 2
 c["sim"] = hwt.sim_run(c)["log"]; cs.append(c)
+for lvl, nm in ((2, "click"), (3, "strong"), (0, "none")):
+    p = Profile(); p.bind("A", key("h"), haptic=lvl); p.shift(1, BTN["B"])
+    st = [(60, {})]
+    for i in range(9): st += [(2, dict(A=1)), (14, dict(A=1, B=1)), (14, {})]
+    st.append((40, {}))
+    c = case("diag_haptic_stall_" + nm, "A plays a %s haptic, B (a shift) 2 ms later: is the loop held up by the haptic?" % nm, p, st)
+    c["snap"] = False; c["tol"] = 2
+    c["sim"] = hwt.sim_run(c)["log"]; cs.append(c)
 for c in cs: print(c["name"], [(e["t"], e["dx"]) for e in c["sim"]])
 doc = dict(version=2, slot=hwt.SLOT, cfg=hwt.cfg_names(), cases=cs)
 json.dump(doc, open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "../../web/hwdiag.json"), "w"), separators=(",", ":"))
