@@ -121,6 +121,41 @@ const uint8_t remap_gyro_keys[REMAP_GYRO_KEYS] = {
 	SC26RE_CFG_GM_QT3_BTN, SC26RE_CFG_GM_QT3_DEG, SC26RE_CFG_GM_QT4_BTN, SC26RE_CFG_GM_QT4_DEG,
 	SC26RE_CFG_GM_QT_MS, SC26RE_CFG_GM_RATCHET,
 };
+
+/* the slot of each gyro setting in a profile, + 1 (0: not a gyro setting): remap_gyro_value()
+ * runs some 20 times per gyro sample */
+static const uint8_t gyro_key_slot[SC26RE_CFG_COUNT] = {
+	[SC26RE_CFG_GM_OUTPUT] = 1,
+	[SC26RE_CFG_GM_ACT_BUTTON] = 2,
+	[SC26RE_CFG_GM_ACT_MODE] = 3,
+	[SC26RE_CFG_GM_AXIS_PITCH] = 4,
+	[SC26RE_CFG_GM_AXIS_YAW] = 5,
+	[SC26RE_CFG_GM_AXIS_ROLL] = 6,
+	[SC26RE_CFG_GM_SENS] = 7,
+	[SC26RE_CFG_GM_SCALE_P] = 8,
+	[SC26RE_CFG_GM_SCALE_Y] = 9,
+	[SC26RE_CFG_GM_SCALE_R] = 10,
+	[SC26RE_CFG_GM_CURVE] = 11,
+	[SC26RE_CFG_GM_ACCEL] = 12,
+	[SC26RE_CFG_GM_ACCEL_LO] = 13,
+	[SC26RE_CFG_GM_ACCEL_HI] = 14,
+	[SC26RE_CFG_GJ_DZ] = 15,
+	[SC26RE_CFG_GJ_ANTI] = 16,
+	[SC26RE_CFG_GJ_MAX] = 17,
+	[SC26RE_CFG_GJ_CURVE] = 18,
+	[SC26RE_CFG_GJ_TILT] = 19,
+	[SC26RE_CFG_GM_HAPTIC] = 20,
+	[SC26RE_CFG_GM_QT1_BTN] = 21,
+	[SC26RE_CFG_GM_QT1_DEG] = 22,
+	[SC26RE_CFG_GM_QT2_BTN] = 23,
+	[SC26RE_CFG_GM_QT2_DEG] = 24,
+	[SC26RE_CFG_GM_QT3_BTN] = 25,
+	[SC26RE_CFG_GM_QT3_DEG] = 26,
+	[SC26RE_CFG_GM_QT4_BTN] = 27,
+	[SC26RE_CFG_GM_QT4_DEG] = 28,
+	[SC26RE_CFG_GM_QT_MS] = 29,
+	[SC26RE_CFG_GM_RATCHET] = 30,
+};
 BUILD_ASSERT(SC26RE_CFG_COUNT < 256, "gyro keys are bytes");
 
 /* output monitor */
@@ -1717,9 +1752,10 @@ bool remap_gyro_value(int id, int16_t *value)
 		}
 		return false;
 	}
-	for(int k = 0; k < REMAP_GYRO_KEYS; ++k)
+	if(id >= 0 && id < SC26RE_CFG_COUNT && gyro_key_slot[id] != 0U)
 	{
-		if(remap_gyro_keys[k] == id)
+		int k = gyro_key_slot[id] - 1;
+
 		{
 			int16_t v;
 

@@ -1,0 +1,106 @@
+From 557a2768d13672abbd07c5e4246b8c953f0d0e8f Mon Sep 17 00:00:00 2001
+From: sc26re <sc26re@localhost>
+Date: Sat, 21 Nov 2026 00:58:34 +0100
+Subject: [PATCH] drivers: i2c: nrfx_twim_rtio: register reads as one TXRX
+ transfer
+
+A write without a stop followed by a read with a stop goes out as one
+TWIM TXRX transfer: one interrupt and one RTIO step instead of two.
+---
+ drivers/i2c/i2c_nrfx_twim_rtio.c | 57 ++++++++++++++++++++++++++++++++
+ 1 file changed, 57 insertions(+)
+
+diff --git a/drivers/i2c/i2c_nrfx_twim_rtio.c b/drivers/i2c/i2c_nrfx_twim_rtio.c
+index 84fcc314..6418929f 100644
+--- a/drivers/i2c/i2c_nrfx_twim_rtio.c
++++ b/drivers/i2c/i2c_nrfx_twim_rtio.c
+@@ -32,6 +32,7 @@ struct i2c_nrfx_twim_rtio_data {
+ 	nrfx_twim_t twim;
+ 	uint8_t *user_rx_buf;
+ 	uint16_t user_rx_buf_size;
++	bool merged; /* a write + read went out as one TXRX transfer */
+ };
+ 
+ static bool i2c_nrfx_twim_rtio_msg_start(const struct device *dev, uint8_t flags, uint8_t *buf,
+@@ -58,6 +59,49 @@ static void i2c_nrfx_twim_rtio_sqe_signaled(struct rtio_iodev_sqe *iodev_sqe, vo
+ 	(void)i2c_nrfx_twim_rtio_complete(dev, 0);
+ }
+ 
++/* A register write without a stop followed by a read with a stop (a register read): one TXRX
++ * transfer with a repeated start, one interrupt and one RTIO step instead of two. */
++static bool i2c_nrfx_twim_rtio_try_txrx(const struct device *dev, struct rtio_sqe *sqe,
++					uint16_t addr)
++{
++	const struct i2c_nrfx_twim_rtio_config *config = dev->config;
++	struct i2c_nrfx_twim_rtio_data *data = dev->data;
++	struct i2c_rtio *ctx = config->ctx;
++	struct rtio_iodev_sqe *next = rtio_txn_next(ctx->txn_curr);
++	const uint8_t *tx;
++	size_t tx_len;
++
++	if (next == NULL || next->sqe.op != RTIO_OP_RX || (sqe->iodev_flags & I2C_MSG_STOP) ||
++	    !(next->sqe.iodev_flags & I2C_MSG_STOP) || next->sqe.iodev != sqe->iodev ||
++	    !nrf_dma_accessible_check(&config->common.twim, next->sqe.rx.buf) ||
++	    next->sqe.rx.buf_len > config->common.max_transfer_size) {
++		return false;
++	}
++	if (sqe->op == RTIO_OP_TINY_TX) {
++		tx = sqe->tiny_tx.buf;
++		tx_len = sqe->tiny_tx.buf_len;
++	} else {
++		tx = sqe->tx.buf;
++		tx_len = sqe->tx.buf_len;
++	}
++	if (tx_len == 0 || tx_len > config->common.max_transfer_size ||
++	    !nrf_dma_accessible_check(&config->common.twim, tx)) {
++		return false;
++	}
++	{
++		nrfx_twim_xfer_desc_t xfer = NRFX_TWIM_XFER_DESC_TXRX(
++			addr, (uint8_t *)tx, tx_len, next->sqe.rx.buf, next->sqe.rx.buf_len);
++
++		data->user_rx_buf = NULL;
++		data->merged = true;
++		if (nrfx_twim_xfer(config->common.twim, &xfer, 0) != 0) {
++			data->merged = false;
++			return false;
++		}
++	}
++	return true;
++}
++
+ static bool i2c_nrfx_twim_rtio_start(const struct device *dev)
+ {
+ 	const struct i2c_nrfx_twim_rtio_config *config = dev->config;
+@@ -67,6 +111,11 @@ static bool i2c_nrfx_twim_rtio_start(const struct device *dev)
+ 	struct i2c_dt_spec *dt_spec = sqe->iodev->data;
+ 	struct rtio_iodev_sqe *iodev_sqe;
+ 
++	if ((sqe->op == RTIO_OP_TINY_TX || sqe->op == RTIO_OP_TX) &&
++	    i2c_nrfx_twim_rtio_try_txrx(dev, sqe, dt_spec->addr)) {
++		return false;
++	}
++
+ 	switch (sqe->op) {
+ 	case RTIO_OP_RX:
+ 		if (!nrf_dma_accessible_check(&config->common.twim, sqe->rx.buf)) {
+@@ -136,8 +185,16 @@ static void i2c_nrfx_twim_rtio_complete(const struct device *dev, int status)
+ {
+ 	/** Finalize if there are no more pending xfers */
+ 	const struct i2c_nrfx_twim_rtio_config *config = dev->config;
++	struct i2c_nrfx_twim_rtio_data *data = dev->data;
+ 	struct i2c_rtio *ctx = config->ctx;
+ 
++	if (data->merged) {
++		/* the write is done with the read: step past it */
++		data->merged = false;
++		if (status == 0) {
++			ctx->txn_curr = rtio_txn_next(ctx->txn_curr);
++		}
++	}
+ 	if (i2c_rtio_complete(ctx, status)) {
+ 		(void)i2c_nrfx_twim_rtio_start(dev);
+ 	} else {
+-- 
+2.43.0
+
