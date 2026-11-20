@@ -352,6 +352,48 @@ uint32_t hwtest_dwt(void)
 	return DWT->CYCCNT;
 }
 
+static uint32_t im_n, im_t0, im_wall[5], im_own[5];
+static uint64_t im_u0;
+
+void hwtest_imu_mark(int m)
+{
+	k_thread_runtime_stats_t st;
+	uint32_t t = hwtest_dwt();
+
+	(void)k_thread_runtime_stats_get(k_current_get(), &st);
+	if(m > 0)
+	{
+		im_wall[m - 1] += t - im_t0;
+		im_own[m - 1] += (uint32_t)(st.execution_cycles - im_u0);
+	}
+	else
+	{
+		im_n++;
+	}
+	im_t0 = t;
+	im_u0 = st.execution_cycles;
+}
+
+/* 11 u32: ticks, then per section wall us x10 / tick, then own run time us x10 / tick:
+ * 1 settings + mid read, 2 I2C read, 3 the report + gravity, 4 gyro mouse feed, 5 sending */
+static void perf4_read(uint8_t *buf)
+{
+	uint32_t v[12] = { im_n };
+	uint32_t cpu_mhz = SystemCoreClock / 1000000U;
+
+	for(int i = 0; i < 5 && im_n; ++i)
+	{
+		v[1 + i] = (uint32_t)((uint64_t)im_wall[i] * 10U / cpu_mhz / im_n);
+		v[6 + i] = (uint32_t)(k_cyc_to_ns_floor64(im_own[i]) / 100U / im_n);
+		im_wall[i] = im_own[i] = 0;
+	}
+	im_n = 0;
+	for(int i = 0; i < 12; ++i)
+	{
+		sys_put_le32(v[i], &buf[4 * i]);
+	}
+}
+
 void hwtest_perf3(uint32_t wall_cyc, uint32_t own_cyc)
 {
 	p3_n++;
@@ -437,11 +479,18 @@ static void perf3_read(uint8_t *buf)
 #else
 uint32_t hwtest_dwt(void) { return 0; }
 void hwtest_perf3(uint32_t wall_cyc, uint32_t own_cyc) { (void)wall_cyc; (void)own_cyc; }
+void hwtest_imu_mark(int m) { (void)m; }
 #endif
 
 bool hwtest_read(const char *path, uint8_t *buf, size_t capacity, size_t *len)
 {
 #ifndef SC26RE_SIM
+	if(strcmp(path, "sc26re/perf4") == 0 && capacity >= 48)
+	{
+		perf4_read(buf);
+		*len = 48;
+		return true;
+	}
 	if(strcmp(path, "sc26re/perf3") == 0 && capacity >= 48)
 	{
 		perf3_read(buf);
@@ -450,18 +499,19 @@ bool hwtest_read(const char *path, uint8_t *buf, size_t capacity, size_t *len)
 	}
 #endif
 #ifndef SC26RE_SIM
-	if(strcmp(path, "sc26re/perf2") == 0 && capacity >= 40)
+	if(strcmp(path, "sc26re/perf2") == 0 && capacity >= 48)
 	{
-		/* the remapper pass by section, us summed since the last read */
-		extern void remap_perf_get(uint32_t out[10]);
-		uint32_t v[10];
+		/* the remapper pass by section, us summed since the last read; then the bindings
+		 * loop's lookups (binding() + bound()) in us and the bound sources counted */
+		extern void remap_perf_get(uint32_t out[12]);
+		uint32_t v[12];
 
 		remap_perf_get(v);
-		for(int i = 0; i < 10; ++i)
+		for(int i = 0; i < 12; ++i)
 		{
 			sys_put_le32(v[i], &buf[4 * i]);
 		}
-		*len = 40;
+		*len = 48;
 		return true;
 	}
 #endif

@@ -32,6 +32,9 @@
 #include "gyro_mouse.h"
 #include "remap.h"
 #include "sdl/controller_constants.h"
+#ifdef CONFIG_IBEX_HWTEST
+#include "hwtest.h"
+#endif
 
 LOG_MODULE_REGISTER(imu);
 
@@ -1644,6 +1647,9 @@ static void imu_fast_thread_main(void *arg1, void *arg2, void *arg3)
 		float accel[3];
 
 		k_sem_take(&imu_tick_sem, K_FOREVER);
+#ifdef CONFIG_IBEX_HWTEST
+		hwtest_imu_mark(0);
+#endif
 		if(atomic_get(&imu_motion_trigger_enabled) == 0 || atomic_get(&imu_stream_active) == 0)
 		{
 			/* the stream thread configures the sensor; wait for it */
@@ -1762,6 +1768,9 @@ static void imu_fast_thread_main(void *arg1, void *arg2, void *arg3)
 			}
 		}
 		/* gyro X/Y/Z then accel X/Y/Z, little endian; BDU keeps each pair coherent */
+#ifdef CONFIG_IBEX_HWTEST
+		hwtest_imu_mark(1);
+#endif
 		uint32_t c0 = k_cycle_get_32();
 
 		if(i2c_burst_read_dt(&imu_i2c, IMU_REG_OUTX_L_G, raw, sizeof(raw)) != 0)
@@ -1778,6 +1787,9 @@ static void imu_fast_thread_main(void *arg1, void *arg2, void *arg3)
 			imu_read_us_max = MAX(imu_read_us_max, us);
 			k_spin_unlock(&imu_stats_lock, key);
 		}
+#ifdef CONFIG_IBEX_HWTEST
+		hwtest_imu_mark(2);
+#endif
 		atomic_inc(&imu_fast_reads);
 		atomic_set(&imu_last_read_ms, (atomic_val_t)k_uptime_get_32());
 		avg2 = sc26re_cfg_get(SC26RE_CFG_GYRO_AVG) >= 2;
@@ -1814,6 +1826,9 @@ static void imu_fast_thread_main(void *arg1, void *arg2, void *arg3)
 			gyro_mouse_gravity(ga);
 		}
 		k_mutex_unlock(&imu_io_lock);
+#ifdef CONFIG_IBEX_HWTEST
+		hwtest_imu_mark(3);
+#endif
 		{
 			/* gyro as mouse: feed every sample (also handles its button chords) */
 			struct controller_report st;
@@ -1826,6 +1841,9 @@ static void imu_fast_thread_main(void *arg1, void *arg2, void *arg3)
 			gyro_mouse_feed(gm_dps, gm_have_state ? remap_raw_buttons() : 0U,
 			                gm_last_us ? (float)(now_us - gm_last_us) * 1e-6f : 0.001f);
 			gm_last_us = now_us;
+#ifdef CONFIG_IBEX_HWTEST
+			hwtest_imu_mark(4);
+#endif
 		}
 		if(transport_usb_state_reports_allowed() && imu_paces_usb() &&
 		   sc26re_cfg_get(SC26RE_CFG_REPORT_RATE) >= 1000)
@@ -1872,6 +1890,9 @@ static void imu_fast_thread_main(void *arg1, void *arg2, void *arg3)
 			}
 			hardware_signal_input_changed();
 		}
+#ifdef CONFIG_IBEX_HWTEST
+		hwtest_imu_mark(5);
+#endif
 	}
 }
 #else

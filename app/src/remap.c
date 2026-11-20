@@ -255,24 +255,35 @@ uint8_t remap_mouse_buttons(void)
 
 #if defined(CONFIG_IBEX_HWTEST) && !defined(SC26RE_SIM)
 /* where a remapper pass spends its time (sc26re/perf, test builds) */
-static uint32_t perf_t0, perf_sec[10];
+#include <cmsis_core.h>
+static uint32_t perf_t0, perf_sec[10], perf_look, perf_nbound;
+extern uint32_t hwtest_dwt(void);
 #define PERF_MARK(i)                                                                                         \
 	do                                                                                                       \
 	{                                                                                                        \
-		uint32_t perf_now = k_cycle_get_32();                                                                \
+		uint32_t perf_now = hwtest_dwt();                                                                    \
 		perf_sec[(i) - 1] += perf_now - perf_t0;                                                             \
 		perf_t0 = perf_now;                                                                                  \
 	} while(0)
-void remap_perf_get(uint32_t out[10])
+#define PERF_LOOK0() uint32_t perf_l0 = hwtest_dwt()
+#define PERF_LOOK1(isbound) do { perf_look += hwtest_dwt() - perf_l0; perf_nbound += (isbound) ? 1U : 0U; } while(0)
+void remap_perf_get(uint32_t out[12])
 {
+	uint32_t mhz = SystemCoreClock / 1000000U;
+
 	for(int i = 0; i < 10; ++i)
 	{
-		out[i] = k_cyc_to_us_floor32(perf_sec[i]);
+		out[i] = perf_sec[i] / mhz;
 		perf_sec[i] = 0;
 	}
+	out[10] = perf_look / mhz;
+	out[11] = perf_nbound;
+	perf_look = perf_nbound = 0;
 }
 #else
 #define PERF_MARK(i) ((void)0)
+#define PERF_LOOK0() ((void)0)
+#define PERF_LOOK1(isbound) ((void)0)
 #endif
 
 static bool bound(const struct remap_binding *b)
@@ -2973,11 +2984,14 @@ void remap_process(struct controller_report *r, float dt)
 	PERF_MARK(6);
 	for(int s = 0; s < REMAP_SRC_COUNT; ++s)
 	{
+		PERF_LOOK0();
 		const struct remap_binding *b = binding(p, s);
 		struct src_state *ss = &st[s];
+		bool b_on = bound(b);
 
+		PERF_LOOK1(b_on);
 		out_src = (int8_t)s;
-		if(!bound(b))
+		if(!b_on)
 		{
 			continue;
 		}

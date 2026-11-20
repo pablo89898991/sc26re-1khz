@@ -57,6 +57,8 @@ void hwtest_perf(uint32_t read_us, uint32_t remap_us, uint32_t gap_us);
 /* remapper pass: its wall time in CPU cycles and the main thread's own run time in it */
 void hwtest_perf3(uint32_t wall_cyc, uint32_t own_cyc);
 uint32_t hwtest_dwt(void);
+/* the IMU fast thread's tick by section (sc26re/perf4): 0 = woke, 1..5 = end of a section */
+void hwtest_imu_mark(int m);
 void hwtest_buffer_lost(void);
 
 #endif
