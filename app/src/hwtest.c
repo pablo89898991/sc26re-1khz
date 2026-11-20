@@ -394,6 +394,52 @@ static void perf4_read(uint8_t *buf)
 	}
 }
 
+/* 9 u32: ICACHECNF, HFCLKSTAT, cycles / 1000 loop steps with interrupts off, same with them on
+ * (x1000 steps), cache hits and misses since the last read, DWT cycles over a 1000 us busy wait,
+ * SCB->CPACR, the read's own thread priority */
+static void perf5_read(uint8_t *buf)
+{
+	static bool prof;
+	uint32_t v[12] = { 0 };
+	volatile uint32_t x = 0;
+	uint32_t t, key;
+
+	v[0] = NRF_NVMC->ICACHECNF;
+	v[1] = NRF_CLOCK->HFCLKSTAT;
+	key = irq_lock();
+	t = hwtest_dwt();
+	for(int i = 0; i < 1000; ++i)
+	{
+		x++;
+	}
+	v[2] = hwtest_dwt() - t;
+	irq_unlock(key);
+	t = hwtest_dwt();
+	for(int i = 0; i < 1000000; ++i)
+	{
+		x++;
+	}
+	v[3] = hwtest_dwt() - t;
+	v[4] = NRF_NVMC->IHIT;
+	v[5] = NRF_NVMC->IMISS;
+	if(!prof)
+	{
+		NRF_NVMC->ICACHECNF |= NVMC_ICACHECNF_CACHEPROFEN_Msk;
+		prof = true;
+	}
+	NRF_NVMC->IHIT = 0;
+	NRF_NVMC->IMISS = 0;
+	t = hwtest_dwt();
+	k_busy_wait(1000);
+	v[6] = hwtest_dwt() - t;
+	v[7] = SCB->CPACR;
+	v[8] = (uint32_t)(k_thread_priority_get(k_current_get()) + 64);
+	for(int i = 0; i < 12; ++i)
+	{
+		sys_put_le32(v[i], &buf[4 * i]);
+	}
+}
+
 void hwtest_perf3(uint32_t wall_cyc, uint32_t own_cyc)
 {
 	p3_n++;
@@ -485,6 +531,12 @@ void hwtest_imu_mark(int m) { (void)m; }
 bool hwtest_read(const char *path, uint8_t *buf, size_t capacity, size_t *len)
 {
 #ifndef SC26RE_SIM
+	if(strcmp(path, "sc26re/perf5") == 0 && capacity >= 48)
+	{
+		perf5_read(buf);
+		*len = 48;
+		return true;
+	}
 	if(strcmp(path, "sc26re/perf4") == 0 && capacity >= 48)
 	{
 		perf4_read(buf);
