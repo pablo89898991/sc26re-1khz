@@ -30,6 +30,13 @@ st.append((50, {}))
 c = case("diag_pass_gaps", "shift by A / B in steps of 7..17 ms: each change shows up in the first pass after the step edge", p, st)
 c["snap"] = False; c["tol"] = 2
 c["sim"] = hwt.sim_run(c)["log"]; cs.append(c)
+p = Profile(); p.shift(5, None); p.b[328 + 20 * 5] = 31   # RPAD shifted by the LT soft pull
+st = [(60, {})]
+for i in range(30): st.append((9 + (i * 5) % 11, dict(tl=32767) if i % 2 == 0 else {}))
+st.append((50, {}))
+c = case("diag_soft_shift", "shift by the LT soft pull: how many passes after the pull it engages", p, st)
+c["snap"] = False; c["tol"] = 2
+c["sim"] = hwt.sim_run(c)["log"]; cs.append(c)
 for c in cs: print(c["name"], [(e["t"], e["dx"]) for e in c["sim"]])
 doc = dict(version=2, slot=hwt.SLOT, cfg=hwt.cfg_names(), cases=cs)
 json.dump(doc, open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "../../web/hwdiag.json"), "w"), separators=(",", ":"))
