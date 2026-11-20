@@ -6,7 +6,7 @@ controller by hwtest.html?set=hwrand and compared with the simulator.
 
 Kept off the controller: profile switches and layers (they would read the user's other profiles),
 the Steam button (stops the test), the calibration chord (any 3 of LB / RB / X / Y) and the gyro
-mouse chord (LB + RB + View); the profile's own gyro settings are cleared (the gyro mouse is off
+mouse chord (LB + RB + View), the remapper on / off chord (LB + RB + Menu); the profile's own gyro settings are cleared (the gyro mouse is off
 for the run anyway)."""
 import json, os, random, struct, sys
 import fuzz, hwt
@@ -44,8 +44,10 @@ def rnd_steps(r, n):
         st = s.state
         fuzz.rnd_input(r, s)
         b = st["buttons"] & ~(1 << B["STEAM"])
-        if sum(1 for x in CHORD3 if b >> x & 1) >= 3: b &= ~(1 << r.choice(CHORD3))
-        if (b >> B["LB"] & 1) and (b >> B["RB"] & 1) and (b >> B["VIEW"] & 1): b &= ~(1 << B["VIEW"])
+        while sum(1 for x in CHORD3 if b >> x & 1) >= 3:   # any 3 of them: the calibration chord
+            b &= ~(1 << r.choice([x for x in CHORD3 if b >> x & 1]))
+        if (b >> B["LB"] & 1) and (b >> B["RB"] & 1):
+            b &= ~(1 << B["VIEW"]) & ~(1 << B["MENU"])   # gyro mouse chord / remapper on-off chord
         st["buttons"] = b
         steps.append((r.choice([15, 25, 40, 70, 110, 160]), {k: v for k, v in st.items() if v}))
     steps.append((250, {}))   # everything let go

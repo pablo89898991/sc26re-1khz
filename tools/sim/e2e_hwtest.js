@@ -27,7 +27,7 @@ async function slot3() { let out = ''; for (let o = 0; o < 3232; ) { const r = a
   const pg = await ctx.newPage();
   const errs = []; pg.on('pageerror', e => errs.push(e.message));
   await pg.addInitScript({ path: __dirname + '/webhid_shim.js' });
-  await pg.goto('http://127.0.0.1:8766/hwtest.html');
+  await pg.goto('http://127.0.0.1:8766/hwtest.html' + (process.env.HWSET ? '?set=' + process.env.HWSET : ''));
   await pg.click('#connect');
   check('connects and finds the test firmware', await pg.waitForFunction(() => !document.querySelector('#run').disabled, null, { timeout: 15000 }).then(() => true, () => false), await pg.textContent('#status'));
   await pg.click('#run');
