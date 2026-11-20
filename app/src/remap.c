@@ -253,6 +253,28 @@ uint8_t remap_mouse_buttons(void)
 	return mouse_sent_buttons;
 }
 
+#if defined(CONFIG_IBEX_HWTEST) && !defined(SC26RE_SIM)
+/* where a remapper pass spends its time (sc26re/perf, test builds) */
+static uint32_t perf_t0, perf_sec[10];
+#define PERF_MARK(i)                                                                                         \
+	do                                                                                                       \
+	{                                                                                                        \
+		uint32_t perf_now = k_cycle_get_32();                                                                \
+		perf_sec[(i) - 1] += perf_now - perf_t0;                                                             \
+		perf_t0 = perf_now;                                                                                  \
+	} while(0)
+void remap_perf_get(uint32_t out[10])
+{
+	for(int i = 0; i < 10; ++i)
+	{
+		out[i] = k_cyc_to_us_floor32(perf_sec[i]);
+		perf_sec[i] = 0;
+	}
+}
+#else
+#define PERF_MARK(i) ((void)0)
+#endif
+
 static bool bound(const struct remap_binding *b)
 {
 	for(size_t g = 0; g < 3; ++g)
@@ -2145,6 +2167,9 @@ void remap_process(struct controller_report *r, float dt)
 	uint32_t newp = raw & ~raw_prev; /* inputs pressed this report (interruptible long press) */
 
 	raw_prev = raw;
+#if defined(CONFIG_IBEX_HWTEST) && !defined(SC26RE_SIM)
+	perf_t0 = k_cycle_get_32();
+#endif
 #if defined(CONFIG_IBEX_HWTEST) || defined(SC26RE_SIM)
 	if(hwtest_ended)
 	{
@@ -2310,6 +2335,7 @@ void remap_process(struct controller_report *r, float dt)
 	layer_holder_next = -1;
 	stick_out = 0U;
 
+	PERF_MARK(1);
 	/* mode shifts: while a group's shift button is held it uses its
 	 * alternative settings and bindings; its sources restart cleanly */
 	for(int g = 0; g < REMAP_SHIFT_GROUPS; ++g)
@@ -2379,6 +2405,7 @@ void remap_process(struct controller_report *r, float dt)
 			else { r->touchpad_right_x = ax; r->touchpad_right_y = ay; }
 		}
 	}
+	PERF_MARK(2);
 	/* sticks */
 	for(int i = 0; i < 2; ++i)
 	{
@@ -2458,6 +2485,7 @@ void remap_process(struct controller_report *r, float dt)
 		}
 		region_was[i] = an->mode == REMAP_ANALOG_REGION && out;
 	}
+	PERF_MARK(3);
 	/* trackpads: active while touched or while clicked */
 	memset(pad_joy, 0, sizeof(pad_joy));
 	memset(xbox_stick, 0, sizeof(xbox_stick));
@@ -2704,6 +2732,7 @@ void remap_process(struct controller_report *r, float dt)
 			}
 		}
 	}
+	PERF_MARK(4);
 	/* gyro (profile gyro settings): tilt directions or a mouse region */
 	gyro_dirs = 0U;
 	region_on[4] = false;
@@ -2775,6 +2804,7 @@ void remap_process(struct controller_report *r, float dt)
 			region_pos[4][1] = gyro_reg[1];
 		}
 	}
+	PERF_MARK(5);
 	/* triggers: soft pull point with a little hysteresis */
 	uint8_t xtrig_an[2] = { 0U, 0U };
 
@@ -2923,6 +2953,7 @@ void remap_process(struct controller_report *r, float dt)
 	xbox_trig[0] = xtrig_an[0];
 	xbox_trig[1] = xtrig_an[1];
 	move_dirs = 0U;
+	PERF_MARK(6);
 	for(int s = 0; s < REMAP_SRC_COUNT; ++s)
 	{
 		const struct remap_binding *b = binding(p, s);
@@ -3092,6 +3123,7 @@ void remap_process(struct controller_report *r, float dt)
 		}
 	}
 
+	PERF_MARK(7);
 	/* sticks: mouse / scroll, or to Steam with the dead zones applied */
 	for(int i = 0; i < 2; ++i)
 	{
@@ -3285,6 +3317,7 @@ void remap_process(struct controller_report *r, float dt)
 	r->buttons = (r->buttons & ~hide) | pad;
 	mon_pad = pad;
 	block_pressed = false;
+	PERF_MARK(8);
 	refresh_outputs();
 
 	{
@@ -3387,7 +3420,9 @@ void remap_process(struct controller_report *r, float dt)
 			}
 		}
 	}
+	PERF_MARK(9);
 	send_mouse();
+	PERF_MARK(10);
 }
 
 

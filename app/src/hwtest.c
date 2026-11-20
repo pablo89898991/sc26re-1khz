@@ -324,6 +324,22 @@ void hwtest_perf(uint32_t read_us, uint32_t remap_us, uint32_t gap_us)
 
 bool hwtest_read(const char *path, uint8_t *buf, size_t capacity, size_t *len)
 {
+#ifndef SC26RE_SIM
+	if(strcmp(path, "sc26re/perf2") == 0 && capacity >= 40)
+	{
+		/* the remapper pass by section, us summed since the last read */
+		extern void remap_perf_get(uint32_t out[10]);
+		uint32_t v[10];
+
+		remap_perf_get(v);
+		for(int i = 0; i < 10; ++i)
+		{
+			sys_put_le32(v[i], &buf[4 * i]);
+		}
+		*len = 40;
+		return true;
+	}
+#endif
 	if(strcmp(path, "sc26re/perf") == 0 && capacity >= 48)
 	{
 		/* passes, mean / max of the scan (incl. its wait) and the remapper, the longest gap,
