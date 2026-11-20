@@ -136,6 +136,8 @@ static const struct ibex_setting_entry setting_entries[IBEX_SETTING_COUNT] = {
 	[84] = OFW_SETTING_ENTRY(1, 0, 1, "imu_use_bias", NULL),
 	[85] = OFW_SETTING_ENTRY(100, 0, 200, "imu_gyro_threshold", NULL),
 	[86] = UNKNOWN_SETTING_ENTRY(0, 0, 1, "unknown_86", NULL),
+	[87] = UNKNOWN_SETTING_ENTRY(-1, -1, 100, "unknown_87", NULL), /* new in Valve firmware, auto-added */
+	[88] = UNKNOWN_SETTING_ENTRY(-1, -1, 100, "unknown_88", NULL), /* new in Valve firmware, auto-added */
 };
 
 static int16_t setting_values[IBEX_SETTING_COUNT];

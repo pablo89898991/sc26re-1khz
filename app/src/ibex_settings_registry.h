@@ -8,7 +8,7 @@
 #include "sdl/controller_constants.h"
 
 #define IBEX_SETTING_SDL_COUNT SETTING_COUNT
-#define IBEX_SETTING_COUNT (IBEX_SETTING_SDL_COUNT + 5)
+#define IBEX_SETTING_COUNT (IBEX_SETTING_SDL_COUNT + 7)
 
 enum ibex_setting_id
 {
