@@ -122,7 +122,7 @@ $("#run").onclick=async()=>{
   $("#run").disabled=true; $("#stop").disabled=false; stopReq=false; $("#log").textContent="";
   let doc, backup=null;
   try{
-    const set=new URLSearchParams(location.search).get("set"); doc=await (await fetch((set==="hwrand"?"hwrand.json":"hwtests.json")+"?"+Date.now())).json();
+    const set=new URLSearchParams(location.search).get("set"); doc=await (await fetch((set==="hwrand"?"hwrand.json":set==="hwdiag"?"hwdiag.json":"hwtests.json")+"?"+Date.now())).json();
     if(doc.version<2) throw new Error("old test list"); const slot=doc.slot, used=new Set([slot]); for(const c of doc.cases){ for(const s of Object.keys(c.extra||{})) used.add(+s); if(c.slot!=null) used.add(c.slot); }
     log(`${doc.cases.length} tests. Saving a copy of profile slot(s) ${[...used].map(s=>s+1).join(", ")} and the active profile…`);
     backup={slots:{}, remap_profile:await cfgGet("remap_profile"), remap_on:await cfgGet("remap_on"), gm_enabled:await cfgGet("gm_enabled")};
