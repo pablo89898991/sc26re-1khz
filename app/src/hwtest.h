@@ -59,6 +59,8 @@ void hwtest_perf3(uint32_t wall_cyc, uint32_t own_cyc);
 uint32_t hwtest_dwt(void);
 /* the IMU fast thread's tick by section (sc26re/perf4): 0 = woke, 1..5 = end of a section */
 void hwtest_imu_mark(int m);
+/* CPU cycles of an IMU tick section run with interrupts off (sc26re/perf4) */
+void hwtest_imu_pure(int i, uint32_t cyc);
 void hwtest_buffer_lost(void);
 
 #endif

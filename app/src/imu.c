@@ -34,6 +34,11 @@
 #include "sdl/controller_constants.h"
 #ifdef CONFIG_IBEX_HWTEST
 #include "hwtest.h"
+#define IMU_PURE0() unsigned int pure_key = irq_lock(); uint32_t pure_c = hwtest_dwt()
+#define IMU_PURE1(i) do { hwtest_imu_pure((i), hwtest_dwt() - pure_c); irq_unlock(pure_key); } while(0)
+#else
+#define IMU_PURE0() do { } while(0)
+#define IMU_PURE1(i) do { } while(0)
 #endif
 
 LOG_MODULE_REGISTER(imu);
@@ -1813,6 +1818,8 @@ static void imu_fast_thread_main(void *arg1, void *arg2, void *arg3)
 			k_timer_start(&imu_mid_timer, K_USEC(done_us < 450U ? 500U - done_us : 50U), K_NO_WAIT);
 		}
 		k_mutex_lock(&imu_io_lock, K_FOREVER);
+		{
+		IMU_PURE0();
 		load_cached_imu_report(&report);
 		process_accel(accel, &report);
 		process_gyro(gyro, &report);
@@ -1825,6 +1832,8 @@ static void imu_fast_thread_main(void *arg1, void *arg2, void *arg3)
 			accel_report_axes(accel, ga);
 			gyro_mouse_gravity(ga);
 		}
+		IMU_PURE1(0);
+		}
 		k_mutex_unlock(&imu_io_lock);
 #ifdef CONFIG_IBEX_HWTEST
 		hwtest_imu_mark(3);
@@ -1834,6 +1843,7 @@ static void imu_fast_thread_main(void *arg1, void *arg2, void *arg3)
 			struct controller_report st;
 			uint32_t now_us = report.imu_timestamp_us;
 
+			IMU_PURE0();
 			gm_have_state = hardware_load_state(&st);
 			/* the physical buttons: the remapper hides mapped and (with "unbound
 			 * inputs do nothing") unbound ones from the stored state, which
@@ -1841,6 +1851,7 @@ static void imu_fast_thread_main(void *arg1, void *arg2, void *arg3)
 			gyro_mouse_feed(gm_dps, gm_have_state ? remap_raw_buttons() : 0U,
 			                gm_last_us ? (float)(now_us - gm_last_us) * 1e-6f : 0.001f);
 			gm_last_us = now_us;
+			IMU_PURE1(1);
 #ifdef CONFIG_IBEX_HWTEST
 			hwtest_imu_mark(4);
 #endif
@@ -1864,9 +1875,11 @@ static void imu_fast_thread_main(void *arg1, void *arg2, void *arg3)
 			}
 			if(hardware_load_state(&state))
 			{
+				IMU_PURE0();
 				load_cached_imu_report(&state);
 				hide_motion_if_mouse(&state);
 				(void)transport_usb_send(&state);
+				IMU_PURE1(2);
 			}
 			else
 			{
