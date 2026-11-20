@@ -692,7 +692,24 @@ static void drop_hold(struct src_state *s)
 static const struct remap_btime zero_bt;
 
 /* the per binding timing of a binding (in whichever profile it lives) */
+static const struct remap_btime *btime_lookup(const struct remap_binding *b);
+
 static const struct remap_btime *btime_of(const struct remap_binding *b)
+{
+	/* the bindings loop asks for the same binding several times in a row; the arrays
+	 * never move, so the last answer stays right */
+	static const struct remap_binding *last_b;
+	static const struct remap_btime *last_bt;
+
+	if(b != last_b)
+	{
+		last_bt = btime_lookup(b);
+		last_b = b;
+	}
+	return last_bt;
+}
+
+static const struct remap_btime *btime_lookup(const struct remap_binding *b)
 {
 	for(int k = 0; k < REMAP_PROFILES; ++k)
 	{

@@ -322,8 +322,133 @@ void hwtest_perf(uint32_t read_us, uint32_t remap_us, uint32_t gap_us)
 	pf_gap_hist[b]++;
 }
 
+#ifndef SC26RE_SIM
+/* ---- sc26re/perf3: where the CPU time goes (test builds) ---- */
+#include <cmsis_core.h>
+
+static uint32_t p3_n, p3_wall, p3_own;
+static int64_t p3_t0;
+static uint64_t p3_busy0;
+static struct
+{
+	const struct k_thread *t;
+	uint64_t c0;
+	uint64_t d;
+	int prio;
+} p3_th[10];
+static int p3_nth;
+
+uint32_t hwtest_dwt(void)
+{
+	static bool on;
+
+	if(!on)
+	{
+		CoreDebug->DEMCR |= CoreDebug_DEMCR_TRCENA_Msk;
+		DWT->CYCCNT = 0;
+		DWT->CTRL |= DWT_CTRL_CYCCNTENA_Msk;
+		on = true;
+	}
+	return DWT->CYCCNT;
+}
+
+void hwtest_perf3(uint32_t wall_cyc, uint32_t own_cyc)
+{
+	p3_n++;
+	p3_wall += wall_cyc;
+	p3_own += own_cyc;
+}
+
+static void p3_thread(const struct k_thread *t, void *arg)
+{
+	k_thread_runtime_stats_t st;
+	bool snap = arg != NULL;
+	int i;
+
+	if(k_thread_runtime_stats_get((k_tid_t)t, &st) != 0)
+	{
+		return;
+	}
+	for(i = 0; i < p3_nth && p3_th[i].t != t; ++i)
+	{
+	}
+	if(i == p3_nth)
+	{
+		if(p3_nth >= (int)ARRAY_SIZE(p3_th))
+		{
+			return;
+		}
+		p3_nth++;
+		p3_th[i].t = t;
+		p3_th[i].c0 = st.execution_cycles;
+	}
+	p3_th[i].prio = t->base.prio;
+	p3_th[i].d = snap ? 0 : st.execution_cycles - p3_th[i].c0;
+	p3_th[i].c0 = st.execution_cycles;
+}
+
+/* 12 u32: passes, remapper wall us / pass (x10), its own main-thread run time / pass (x10),
+ * window ms, non-idle us in the window, then the 7 busiest threads as prio << 24 | us */
+static void perf3_read(uint8_t *buf)
+{
+	k_thread_runtime_stats_t all;
+	int64_t now = k_uptime_get();
+	uint32_t v[12] = { 0 };
+	uint32_t cpu_mhz = SystemCoreClock / 1000000U;
+
+	for(int i = 0; i < p3_nth; ++i)
+	{
+		p3_th[i].d = 0;
+	}
+	k_thread_foreach_unlocked(p3_thread, NULL);
+	(void)k_thread_runtime_stats_all_get(&all);
+	v[0] = p3_n;
+	v[1] = p3_n ? (uint32_t)((uint64_t)p3_wall * 10U / cpu_mhz / p3_n) : 0;
+	v[2] = p3_n ? (uint32_t)(k_cyc_to_ns_floor64(p3_own) / 100U / p3_n) : 0;
+	v[3] = (uint32_t)(now - p3_t0);
+	v[4] = (uint32_t)k_cyc_to_us_floor64(all.total_cycles - p3_busy0);
+	for(int k = 0; k < 7; ++k)
+	{
+		int best = -1;
+
+		for(int i = 0; i < p3_nth; ++i)
+		{
+			if(p3_th[i].d != 0 && (best < 0 || p3_th[i].d > p3_th[best].d))
+			{
+				best = i;
+			}
+		}
+		if(best < 0)
+		{
+			break;
+		}
+		v[5 + k] = ((uint32_t)(uint8_t)(p3_th[best].prio + 64) << 24) |
+		           MIN((uint32_t)k_cyc_to_us_floor64(p3_th[best].d), 0xFFFFFFU);
+		p3_th[best].d = 0;
+	}
+	for(int i = 0; i < 12; ++i)
+	{
+		sys_put_le32(v[i], &buf[4 * i]);
+	}
+	p3_n = p3_wall = p3_own = 0;
+	p3_t0 = now;
+	p3_busy0 = all.total_cycles;
+}
+#else
+uint32_t hwtest_dwt(void) { return 0; }
+void hwtest_perf3(uint32_t wall_cyc, uint32_t own_cyc) { (void)wall_cyc; (void)own_cyc; }
+#endif
+
 bool hwtest_read(const char *path, uint8_t *buf, size_t capacity, size_t *len)
 {
+#ifndef SC26RE_SIM
+	if(strcmp(path, "sc26re/perf3") == 0 && capacity >= 48)
+	{
+		perf3_read(buf);
+		*len = 48;
+		return true;
+	}
+#endif
 #ifndef SC26RE_SIM
 	if(strcmp(path, "sc26re/perf2") == 0 && capacity >= 40)
 	{
