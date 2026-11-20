@@ -314,11 +314,42 @@ def gyro_activation_mask():
     r, p = one([gy], [(0, "gyro active")])
     g = lambda k: struct.unpack_from("<h", p.b, 44 + 2 * k)[0]
     assert g(1) == 27 and g(2) == 1, (g(1), g(2))           # LT held turns the gyro on
-    gy = group(0, "gyro_to_mouse", settings={"gyro_ratchet_button_mask": str((1 << 17) | (1 << 9))})
+    gy = group(0, "gyro_to_mouse", settings={"gyro_ratchet_button_mask": str((1 << 17) | (1 << 9) | (1 << 25) | (1 << 31)),
+                                            "gyro_ratchet_button_requireany_or_all": "1", "gyro_button_invert": "2",
+                                            "gyro_vertical_horizontal_ratio": "260"})
     r, p = one([gy], [(0, "gyro active")])
-    assert g(1) == 11 and any("2 buttons" in n for n in r["notes"]), (g(1), r["notes"])
+    am = struct.unpack_from("<I", p.b, Profile.GYX + 9)[0] if hasattr(Profile, "GYX") else struct.unpack_from("<I", p.b, 3112 + 9)[0]
+    assert am == (1 << 26) | (1 << 11) | (1 << 30) and p.b[3112 + 13] == 1 | 4, (hex(am), p.b[3112 + 13])
+    assert g(2) == 3 and g(7) == 260 and not r["notes"], (g(2), g(7), r["notes"])
     t = vdf(export=[p.b, None, None, None])["text"]
-    assert "gyro_ratchet_button_mask" in t and str(1 << 9) in t, "export writes the mask"
+    assert str((1 << 17) | (1 << 9) | (1 << 25) | (1 << 31)) in t and "requireany_or_all" in t and "gyro_vertical_horizontal_ratio" in t, "export writes the mask"
+    assert prof_of(vdf(t)["profiles"][0]).b == p.b, "round trip"
+    # Steam: no invert = on while held, "0" = off while held
+    for inv, want in ((None, 1), ("0", 2)):
+        st = {"gyro_ratchet_button_mask": str(1 << 20)}
+        if inv is not None: st["gyro_button_invert"] = inv
+        r, p = one([group(0, "gyro_to_mouse", settings=st)], [(0, "gyro active")])
+        assert g(2) == want and g(1) == 21, (inv, g(2), g(1))
+
+@test
+def gyro_activation_inputs_in_the_firmware():
+    """remap_gyro_act: several inputs, soft pull, stick deflection, any / all (v51 test 62)"""
+    import ctypes
+    def prof(mask, flags):
+        p = Profile(); struct.pack_into("<IB", p.b, Profile.GYX + 9, mask, flags); return p
+    def held(s):
+        h = ctypes.c_bool(False); ok = s.lib.remap_gyro_act(ctypes.byref(h)); return (bool(ok), h.value)
+    s = fresh(Profile()); assert held(s)[0] is False, "no mask: the single button"
+    # any of RB (9) / right pad touch (21)
+    s = fresh(prof((1 << 9) | (1 << 21), 0))
+    assert held(s) == (True, False)
+    s.run(20, RB=1); assert held(s) == (True, True); s.run(20, RB=0)
+    s.run(20, RP_TOUCH=1); assert held(s) == (True, True); s.run(20, RP_TOUCH=0); assert held(s) == (True, False)
+    # all of: LT soft pull + right stick pushed
+    s = fresh(prof(1 << 30, 1 | 4))
+    s.run(30, tl=26000); assert held(s) == (True, False)
+    s.run(30, rsx=25000); assert held(s) == (True, True)
+    s.run(30, tl=0); assert held(s) == (True, False)
 
 def roundtrip(text, opts=None):
     r = vdf(text, opts)

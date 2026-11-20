@@ -335,7 +335,7 @@ const RAWBTN=[[0,"A"],[1,"B"],[2,"X"],[3,"Y"],[19,"LB"],[9,"RB"],[27,"LT click"]
 const SHBTN=[[0,"— none —"],...RAWBTN.map(([v,n])=>[v+1,n]),[31,"LT soft pull (firmware v51 test 61+)"],[32,"RT soft pull (firmware v51 test 61+)"]];
 const shName=g=>(SHBTN.find(([v])=>v===shBtn(g))||[0,"?"])[1];
 const MODES_STICK=[[0,"Analog (to Steam)"],[12,"Xbox stick (to the Xbox pad)"],[1,"D-pad 4-way"],[2,"D-pad 8-way"],[3,"Mouse"],[4,"Scroll"],[7,"Flick stick"],[10,"Radial menu"],[11,"Single button (whole stick)"],[13,"Mouse region (absolute cursor)"]];
-const MODES_PAD=[[0,"To Steam (not remapped)"],[1,"D-pad 4-way"],[2,"D-pad 8-way"],[9,"9 zones (grid)"],[5,"Gates (4 corners)"],[3,"Mouse"],[6,"Joystick"],[7,"Flick stick"],[4,"Scroll wheel (circle)"],[8,"Directional swipe"],[10,"Radial menu"],[11,"Single button (whole pad)"],[12,"Xbox stick (finger position)"],[13,"Mouse region (absolute cursor)"]];
+const MODES_PAD=[[0,"To Steam (not remapped)"],[1,"D-pad 4-way"],[2,"D-pad 8-way"],[9,"9 zones (grid)"],[5,"Gates (4 corners)"],[3,"Mouse"],[6,"Joystick"],[7,"Flick stick"],[4,"Scroll wheel (circle)"],[8,"Directional swipe"],[10,"Radial menu"],[11,"Single button (whole pad)"],[12,"Xbox stick (finger position)"],[14,"Mouse joystick (finger speed = stick)"],[13,"Mouse region (absolute cursor)"]];
 const modeNameL=(an,L)=>((isPad(an)?MODES_PAD:MODES_STICK).find(([v])=>v===prof[cur][aOffL(an,L)])||[0,"?"])[1];
 const modeName=an=>modeNameL(an,0)+(shBtn(GRP_OF_AN[an])?` <em>⇧ ${shName(GRP_OF_AN[an])}:</em> ${modeNameL(an,1)}`:"");
 const HAPT=[[0,"off"],[1,"tick (light)"],[2,"click"],[3,"strong"]];
@@ -559,7 +559,19 @@ function editor(){
          slider("grdeg",b[GYX+8]||60,10,180,1,"Turn across the area","°","degrees of turning from the left edge to the right edge");
       h+=`<p class="note wrap">Turning moves an absolute cursor inside that part of the screen (it stops at the edges). It starts in the centre when the profile becomes active.</p>`;
     }
+    { /* activation inputs of this profile (several, any / all) - Steam's gyro activation buttons */
+      const am=(b[GYX+9]|b[GYX+10]<<8|b[GYX+11]<<16|b[GYX+12]<<24)>>>0, af=b[GYX+13];
+      const opts=[...RAWBTN.map(([v,n])=>[v,n]),[30,"LT soft pull"],[31,"RT soft pull"]];
+      h+=`<div class="sect" style="margin-left:0">Gyro on with (several inputs)</div>
+        <div class="gabox">${opts.map(([v,n])=>`<label class="note"><input type="checkbox" class="gab" data-b="${v}"${am>>>v&1?" checked":""}> ${n}</label>`).join(" ")}
+        <label class="note"><input type="checkbox" class="gaf" data-f="2"${af&2?" checked":""}> Left stick pushed</label> <label class="note"><input type="checkbox" class="gaf" data-f="4"${af&4?" checked":""}> Right stick pushed</label></div>
+        <div class="row2"><label>Needs</label><select id="gaall"><option value="0">any one of them</option><option value="1">all of them</option></select><small>how they act (hold to turn on / off, toggle) is the “… mode” setting of the gyro; none ticked = the single “Gyro moves the mouse with” button (firmware v51 test 62+)</small></div>`;
+    }
     ed.innerHTML=h;
+    { const setM=f=>{ let am=(b[GYX+9]|b[GYX+10]<<8|b[GYX+11]<<16|b[GYX+12]<<24)>>>0; am=f(am)>>>0; b[GYX+9]=am&255; b[GYX+10]=am>>>8&255; b[GYX+11]=am>>>16&255; b[GYX+12]=am>>>24; setDirty(); };
+      ed.querySelectorAll(".gab").forEach(e=>e.onchange=()=>setM(am=>e.checked?am|(1<<+e.dataset.b):am&~(1<<+e.dataset.b)));
+      ed.querySelectorAll(".gaf").forEach(e=>e.onchange=()=>{ b[GYX+13]=(b[GYX+13]&~+e.dataset.f)|(e.checked?+e.dataset.f:0); setDirty(); });
+      $("#gaall").value=String(b[GYX+13]&1); $("#gaall").onchange=e=>{ b[GYX+13]=(b[GYX+13]&~1)|+e.target.value; setDirty(); }; }
     $("#gymode").value=String(gm); $("#gymode").onchange=e=>{ b[GYX]=+e.target.value; setDirty(); render(); };
     $("#gyspace").value=String(b[GYX+1]); $("#gyspace").onchange=e=>{ b[GYX+1]=+e.target.value; setDirty(); render(); };
     wireSl("gtdz",v=>{ b[GYX+2]=Math.round(v); }); if($("#gt8")) $("#gt8").onchange=e=>{ b[GYX+3]=e.target.checked?1:0; setDirty(); };
@@ -632,6 +644,15 @@ function editor(){
       h+=pct("anti",P(14),0,90,"Anti dead zone","");
       h+=slider("crv",cv||1,0.5,4,0.05,"Response curve","×","1.0 linear");
     }
+    if(pad&&m===14){
+      h+=`<div class="row2"><label>Drives</label><select id="aoth"><option value="0">the ${j?"right":"left"} stick</option><option value="4">the ${j?"left":"right"} stick</option></select><small>firmware v51 test 62+</small></div>`;
+      h+=`<div class="row2"><label></label><label class="note"><input type="checkbox" id="mjx"${b[o+1]&8?" checked":""}> to the Xbox pad (Pad output “Steam + Xbox” / “Xbox only”), else the Steam pad</label></div>`;
+      h+=slider("asp",sp||100,10,1000,5,"Sensitivity","%","100 % = full deflection when the finger crosses the pad in about a second");
+      h+=pct("anti",P(14),0,90,"Minimum output","smallest deflection the game sees while the finger moves (Steam: minimum joystick output)");
+      h+=`<div class="row2"><label></label><label class="note"><input type="checkbox" id="tball"${b[o+1]&0x80?" checked":""}> trackball — keeps turning after the finger leaves</label></div>`;
+      if(b[o+1]&0x80) h+=slider("tfric",(U16(o+4)||200)/100,0.2,20,0.1,"Friction","/ s","higher = stops sooner");
+      h+=`<p class="note wrap">Like Steam’s “Mouse joystick”: moving the finger deflects the stick in that direction as far as the finger is fast, so a stick-only game turns its camera like a mouse would. A finger at rest = stick centred.</p>`;
+    }
     if(pad&&m===9){
       const G=k=>S16(22+j*8+k*2)/100;
       h+=`<div class="gridwrap">${gridSvg(j)}<div>${slider("gl",G(0),-99,99,0.5,"Left line","%","zones 1·4·7 end here")}${slider("gr",G(1),-99,99,0.5,"Right line","%","zones 3·6·9 start here")}${slider("gt",G(2),-99,99,0.5,"Top line","%","zones 1·2·3 above")}${slider("gb",G(3),-99,99,0.5,"Bottom line","%","zones 7·8·9 below")}</div></div>
@@ -682,7 +703,7 @@ function editor(){
       else h+=pct("dzi",P(2),0,50,"Dead zone","the stick at rest leaves the cursor alone; let go = back to the centre");
       h+=`<p class="note wrap">The ${pad?"finger":"stick"} position is the cursor position inside that part of the screen. Over the USB cable the controller sends an absolute position; over the Puck / Bluetooth it moves the cursor into the top-left corner first and then to the spot (set your screen size in Profile settings, and switch off “Enhance pointer precision” in Windows).</p>`;
     }
-    if(m===3||m===4){
+    if(m===3||m===4||(pad&&m===14)){
       h+=slider("xsx",(XU(0)||100),10,400,1,"Horizontal","%","sensitivity left / right")+slider("xsy",(XU(2)||100),10,400,1,"Vertical","%","sensitivity up / down");
     }
     if(pad&&m===3) h+=slider("xes",XU(4),0,5000,10,"Edge spin","counts / s","a finger resting at the edge keeps the cursor moving; 0 = off");
@@ -713,6 +734,7 @@ function editor(){
       if(nm===11&&!pad&&U16(o+2)<500) setU16(o+2,3000);
       if(nm===13){ const xo=anxOff(an); if(!b[xo+10]){ b[xo+8]=50; b[xo+9]=50; b[xo+10]=100; b[xo+11]=100; } if(!pad) setU16(o+2,1000); }
       if(nm===3&&pad){ setU16(o+10,0); setU16(o+4,0); }
+      if(nm===14){ setU16(o+6,100); setU16(o+2,0); setU16(o+4,0); setU16(o+14,0); b[o+1]&=~0x88; }
       setDirty(); render(); };
     if($("#aact")){ $("#aact").value=String(b[o+1]&0x10?16:b[o+1]&1); $("#aact").onchange=e=>{ b[o+1]=(b[o+1]&~0x11)|+e.target.value; if(+e.target.value===16&&!U16(o+16)) setU16(o+16,3000); setDirty(); render(); }; }
     const W=(id,k,mul=100)=>wireSl(id,v=>setU16(o+k,Math.round(v*mul)));
@@ -733,6 +755,7 @@ function editor(){
     if($("#asp")) wireSl("asp",v=>setU16(o+6,Math.round(m===4&&!pad?v*100:v)));
     ["gl","gr","gt","gb"].forEach((id,k)=>wireSl(id,v=>{ setS16(22+j*8+k*2,Math.round(v*100)||1); const sv=$(".gridsvg"); if(sv) sv.outerHTML=gridSvg(j); }));
     if($("#aoth")){ $("#aoth").value=String(b[o+1]&4); $("#aoth").onchange=e=>{ b[o+1]=(b[o+1]&~4)|+e.target.value; setDirty(); }; }
+    if($("#mjx")) $("#mjx").onchange=e=>{ b[o+1]=(b[o+1]&~8)|(e.target.checked?8:0); setDirty(); };
     if($("#srep")) $("#srep").onchange=e=>{ b[o+1]=(b[o+1]&~8)|(e.target.checked?8:0); setDirty(); };
     if($("#rinv")) $("#rinv").onchange=e=>{ b[o+1]=(b[o+1]&~2)|(e.target.checked?2:0); setDirty(); render(); };
     if($("#ahap")){ $("#ahap").value=String(b[o+8]); $("#ahap").onchange=e=>{ b[o+8]=+e.target.value; setDirty(); }; }
@@ -912,8 +935,8 @@ async function refreshState(){
 let padOutNow=null, padOutBoot=null, linkNow=null;
 function usesXbox(b){
   for(let s=0;s<66+46+4;s++){ const o=(s<66?488+s*14:s<112?1412+(s-66)*14:SCLICK+(s-112)*14)+1; for(let k=0;k<12;k++){ const a=b[o+k]; if((a>=0xA0&&a<0xBE)||a===0xDA||a===0xDB) return true; } }
-  for(let i=0;i<4;i++) if(b[256+i*18]===12) return true;
-  for(let g=0;g<8;g++) if(b[328+g*20+2]===12) return true;
+  for(let i=0;i<4;i++) if(b[256+i*18]===12||(i>=2&&b[256+i*18]===14&&b[256+i*18+1]&8)) return true;
+  for(let g=0;g<8;g++) if(b[328+g*20+2]===12||(b[328+g*20+2]===14&&b[328+g*20+3]&8)) return true;
   return false;
 }
 function updXbWarn(){ const w=$("#xbwarn"); if(!w) return;

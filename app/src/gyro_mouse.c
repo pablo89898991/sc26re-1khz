@@ -218,7 +218,20 @@ static bool active(uint32_t buttons, uint32_t pressed)
 	/* either of the two activation buttons */
 	uint32_t mask = ((b >= 0 && b <= 29) ? BIT(b) : 0U) | ((b2 >= 0 && b2 <= 29) ? BIT(b2) : 0U);
 	bool held = (buttons & mask) != 0U;
+	static bool held_prev;
 
+	/* the profile's own activation inputs (Steam's mask: several buttons, soft pulls, stick
+	 * deflection, any or all of them) replace the buttons */
+	if(remap_gyro_act(&held))
+	{
+		pressed = held && !held_prev ? 1U : 0U;
+		mask = 1U;
+		held_prev = held;
+	}
+	else
+	{
+		held_prev = false;
+	}
 	if(mask == 0U || mode == 0)
 	{
 		return true;
@@ -485,7 +498,9 @@ void gyro_mouse_feed(const float dps[3], uint32_t buttons, float dt_s)
 		static bool act_prev;
 		int16_t ab = gm(SC26RE_CFG_GM_ACT_BUTTON);
 
-		if(act_now && !act_prev && ab >= 0 && ab <= 29 && gm(SC26RE_CFG_GM_ACT_MODE) != 0)
+		bool own;
+
+		if(act_now && !act_prev && ((ab >= 0 && ab <= 29) || remap_gyro_act(&own)) && gm(SC26RE_CFG_GM_ACT_MODE) != 0)
 		{
 			(void)haptics_play_feedback((uint8_t)gm(SC26RE_CFG_GM_HAPTIC), HAPTICS_CHANNELS_PRIMARY);
 		}

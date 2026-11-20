@@ -941,6 +941,16 @@ def _():
     def o(l, P): need(l[1]["lsy"] > 10000, "finger up -> left stick up (lsy %d)" % l[1]["lsy"], P)
     return p, [N(50), pad(0, 0, 16000, 80), N(80)], o
 
+@case("pad_mouse_joystick", "RP mouse joystick: the finger's speed is the right stick, resting = centred (v51 test 62)", snap=True)
+def _():
+    p = Profile(); p.analog(3, MOUSEJOY, speed=100)
+    st = [N(50), pad(1, 20000, 0, 40)] + [pad(1, 20000 - i * 1200, 0, 5) for i in range(1, 21)] + [pad(1, -4000, 0, 80), N(80)]
+    def o(l, P):
+        need(abs(l[1]["rsx"]) < 3000, "finger resting: centred (rsx %d)" % l[1]["rsx"], P)
+        need(min(e["rsx"] for e in l[5:22]) < -10000, "finger moving left: stick left (min rsx %d)" % min(e["rsx"] for e in l[5:22]), P)
+        need(abs(l[-2]["rsx"]) < 3000, "finger stopped: centred again (rsx %d)" % l[-2]["rsx"], P)
+    return p, st, o
+
 @case("pad_xstick", "RP to the Xbox right stick (Steam pad stick without the Xbox output)", snap=True)
 def _():
     p = Profile(); p.analog(3, XSTICK)

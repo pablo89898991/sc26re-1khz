@@ -105,7 +105,13 @@
     button_back_right_upper: 7, button_back_right: 8, button_capture: 4 };
   const SWITCHNAME = Object.fromEntries(Object.entries(SWITCH).map(([k, v]) => [v, k]));
   /* Steam's gyro activation mask bit -> button bit, and back */
-  const GYRO_MASK_BTN = { 0: 23, 1: 27, 2: 9, 3: 19, 4: 3, 5: 1, 6: 2, 7: 0, 8: 13, 9: 11, 10: 12, 11: 10, 12: 14, 13: 16, 14: 6, 15: 18, 16: 8, 17: 26, 18: 22, 19: 25, 20: 21, 22: 15, 46: 24, 47: 20 };
+  /* Steam's k_eGamepadButtonBitMask_* (read from the Steam client's own table): 0 RT, 1 LT, 2 RB, 3 LB,
+   * 4 / 5 / 6 / 7 north / east / west / south face, 8..11 D-pad up / right / left / down, 12 View,
+   * 13 Steam, 14 Menu, 15 / 16 lower back buttons, 17 / 18 pad clicks, 19 / 20 pad touches, 22 / 26
+   * stick clicks, 24 / 25 RT / LT soft pull, 30 / 31 left / right stick deflection, 41 / 42 upper back
+   * buttons, 44 / 45 grip touch (this controller), 46 / 47 stick touches. Values: firmware raw button
+   * bits; 130 / 131 = soft pull LT / RT (mask bits 30 / 31 of the profile); 140 / 141 = stick pushed */
+  const GYRO_MASK_BTN = { 0: 23, 1: 27, 2: 9, 3: 19, 4: 3, 5: 1, 6: 2, 7: 0, 8: 13, 9: 11, 10: 12, 11: 10, 12: 14, 13: 16, 14: 6, 15: 18, 16: 8, 17: 26, 18: 22, 19: 25, 20: 21, 22: 15, 24: 131, 25: 130, 26: 5, 30: 140, 31: 141, 41: 17, 42: 7, 44: 29, 45: 28, 46: 24, 47: 20 };
   const GYRO_MASK_BIT = Object.fromEntries(Object.entries(GYRO_MASK_BTN).map(([k, v]) => [v, +k]));
   const BTN_NAME = { 0: "A", 1: "B", 2: "X", 3: "Y", 6: "Menu", 7: "R4", 8: "R5", 9: "RB", 10: "D-pad down", 11: "D-pad right", 12: "D-pad left", 13: "D-pad up",
     14: "View", 15: "L3", 16: "Steam", 17: "L4", 18: "L5", 19: "LB", 20: "right stick touch", 21: "right pad touch", 22: "right pad click", 23: "RT click",
@@ -260,7 +266,20 @@
         this.applyGroup(ctx, src, this.group(gid), sg.g);
       }
       /* a shift of the gyro: not available */
-      for (const [src] of shifts) if (src === "gyro") this.note("mode shift of the gyro: not available (the gyro keeps its normal mode)");
+      for (const [src, gid] of shifts) if (src === "gyro" && ctx.shiftBtn && ctx.shiftBtn[src + " " + gid] != null) this.note("mode shift of the gyro: not available (the gyro keeps its normal mode)");
+      /* settings that change the feel and have no equivalent here: said once, by name */
+      {
+        const FEEL = { mouse_smoothing: "trackpad smoothing", gyro_precision_speed: "gyro precision speed", gyro_speed_deadzone: "gyro speed dead zone",
+          mouse_dampening_trigger: "trigger press mouse dampening", gyro_roll_scale: "gyro roll scale", flickstick_snap_tightness: "flick stick snap",
+          flickstick_depression_speed: "flick stick smoothing", friction_vert_scale: "vertical friction", edge_spin_radius: "edge spin radius",
+          gyro_to_joystick_out_min: "gyro joystick minimum output", gyro_speed_to_joystick_min: "gyro joystick minimum speed",
+          gyro_to_joystick_enable_angle_catchup: "gyro joystick angle catch-up", analog_emulation_period: "D-pad analog emulation",
+          gyro_button_haptic_effect: null, haptic_intensity_override: null };
+        const seen = new Set();
+        for (const [, gid] of active) { const st = get(this.group(gid) || {}, "settings"); if (!st) continue;
+          for (const [k, v] of entries(st)) if (FEEL[k] && v !== "0" && v !== "") seen.add(FEEL[k]); }
+        if (seen.size) this.note("settings not available here (left at the default feel): " + [...seen].join(", "));
+      }
       if (ctx.game) this.note(`${ctx.game} game action binding(s) skipped: they belong to the Steam Input API of that game (Steam alone knows the key behind them)`);
       for (const u of Object.keys(ctx.unsupported)) this.note("skipped: " + u);
       if (ctx.usesPad && this.opts.padXbox) this.note("gamepad outputs go to the Xbox 360 pad over USB with Pad output “Steam + Xbox 360” or “Xbox 360 only”; over Bluetooth, the Puck or USB with the Steam pad only they go to the Steam controller pad (same buttons, sticks, triggers)");
@@ -308,6 +327,13 @@
           if (name === "click") bindAt(58 + t, inp);          /* soft pull */
           else if (name === "edge") bindAt(t ? 23 : 27, inp);  /* full pull (the click) */
         }
+        /* Steam's threshold style (the order of its list): simple, hair trigger, hip fire aggressive /
+         * normal / relaxed, hip fire exclusive */
+        { const at = S("adaptive_threshold");
+          if (at != null && at > 0 && shiftG == null) {
+            b[104 + t] = at === 1 ? 1 : at >= 5 ? 3 : 2;
+            if (at >= 2 && at <= 4) setU16(b, 106 + 2 * t, [40, 75, 150][at - 2]);
+          } }
         const out = S("output_trigger");
         if (out === 1 || out === 2) {
           if (ctx.padXbox) { const s = 58 + t, o = shiftG != null ? SB_OFF(shiftIndex(s)) : B_OFF(s); this.addAct(ctx, o, 0, out === 1 ? 0xDA : 0xDB); ctx.usesPad = true; }
@@ -325,10 +351,26 @@
       const inv = () => { if (S("invert_x")) b[ao + 1] |= 0x20; if (S("invert_y")) b[ao + 1] |= 0x40; const r = S("rotation"); if (r) b[ao + 9] = Math.max(-90, Math.min(90, r)) & 255; };
       const sens = (def, k) => { const v = S("sensitivity"); return v == null ? def : def * v / 100; };
       const scales = () => { const h = S("sensitivity_horiz_scale"), v = S("sensitivity_vert_scale"); if (h != null && h !== 100) setU16(b, xo, h); if (v != null && v !== 100) setU16(b, xo + 2, v); };
-      const dzIn = (def) => { const v = S("deadzone_inner_radius"); if (v == null) return def; return v > 100 ? v / 32767 * 10000 : v * 100; };
+      const dzIn = (def) => { const v = S("deadzone_inner_radius") ?? S("deadzone"); if (v == null) return def; return v > 100 ? v / 32767 * 10000 : v * 100; };
       switch (mode) {
         case "joystick_move": case "joystick_camera": case "joystick_to_camera_angles": case "mouse_joystick":
-          if (mode === "joystick_camera" || mode === "joystick_to_camera_angles") { setMode(3); setU16(b, ao + 6, sens(1500)); const c = curveIn(S("curve_exponent"), S("custom_curve_exponent")); if (c && c !== 100) setU16(b, ao + 10, c); scales(); if (mode === "joystick_to_camera_angles") this.note("camera angles (game action) on a stick: used as stick → mouse"); break; }
+          if (mode === "mouse_joystick" && pad) {
+            /* Steam's mouse joystick: the finger's speed deflects the stick (firmware v51 test 62+) */
+            setMode(14); ctx.usesMouseJoy = true;
+            { const sv = S("sensitivity"); setU16(b, ao + 6, sv != null ? Math.max(10, Math.min(1000, sv)) : 100); }
+            const mdz = Math.max(S("mousejoystick_deadzone_x") || 0, S("mousejoystick_deadzone_y") || 0);
+            if (mdz) setU16(b, ao + 14, Math.min(9000, mdz / 32767 * 10000));
+            if (S("trackball") !== 0 && S("friction") != null) { b[ao + 1] |= 0x80; const f = S("friction"); setU16(b, ao + 4, f ? f * 100 : 200); }
+            if (ctx.padXbox) { b[ao + 1] |= 8; ctx.usesPad = true; }
+            { const o = S("output_joystick"); if (o != null && ((i === 2 && o === 2) || (i === 3 && o === 1))) b[ao + 1] |= 4; }
+            scales();
+            break;
+          }
+          if (S("output_joystick") === 3) {
+            /* the stick's output set to the mouse */
+            setMode(3); setU16(b, ao + 6, sens(pad ? 1200 : 1500)); scales(); break;
+          }
+          if (mode === "joystick_to_camera_angles") { setMode(3); setU16(b, ao + 6, sens(1500)); const c = curveIn(S("curve_exponent"), S("custom_curve_exponent")); if (c && c !== 100) setU16(b, ao + 10, c); scales(); this.note("camera angles (game action) on a stick: used as stick → mouse"); break; }
           if (pad) { setMode(ctx.padXbox ? 12 : 6); setU16(b, ao + 2, 1000); setU16(b, ao + 4, 1000); }
           else if (ctx.padXbox) { setMode(12); ctx.usesPad = true; }
           else setMode(0);
@@ -338,6 +380,7 @@
             if (di != null) setU16(b, ao + 2, Math.min(9000, di / 32767 * 10000));
             if (dout != null && dout < 32767) setU16(b, ao + 4, Math.min(9000, (32767 - dout) / 32767 * 10000));
             if (c && c !== 100) setU16(b, ao + 10, c);
+            const ad = S("anti_deadzone"); if (ad) setU16(b, ao + 14, Math.min(9000, ad > 100 ? ad / 32767 * 10000 : ad * 100));
           }
           if (get(g, "gameactions")) this.note(`${AN_SRC[i]}: an analog game action (${entries(get(g, "gameactions")).map(([, v]) => v).join(", ")}): sent as ${ctx.padXbox ? "the Xbox" : "the Steam"} stick`);
           { const o = S("output_joystick"); if (o != null && ((i % 2 === 0 && o === 2) || (i % 2 === 1 && o === 1))) b[ao + 1] |= 4; }
@@ -360,7 +403,7 @@
           setMode(1); setU16(b, ao + 2, dzIn(pad ? 2000 : 3000)); if (pad && S("requires_click") !== 0) b[ao + 1] |= 1; break;
         case "flickstick": case "flickstick_to_camera_angles":
           setMode(7); setU16(b, ao + 2, 8000); setU16(b, ao + 6, 100); break;
-        case "radial_menu": case "touch_menu": case "hotbar_menu": {
+        case "radial_menu": case "touch_menu": case "hotbar_menu": case "hotbar": {
           const n = Math.max(S("touch_menu_button_count") || 0, ...entries(inputs).filter(([k]) => k.startsWith("touch_menu_button_")).map(([k]) => +k.slice(18) + 1), 0);
           setMode(10); setU16(b, ao + 2, pad ? 2500 : 3000); b[ao + 8] = 1;
           if (pad) setU16(b, ao + 6, Math.max(2, Math.min(10, n || 8))); else b[xo + 6] = Math.max(2, Math.min(8, n || 8));
@@ -498,12 +541,14 @@
       const keys = ["gm_output", "gm_act_button", "gm_act_mode", "gm_axis_pitch", "gm_axis_yaw", "gm_axis_roll", "gm_sens", "gm_scale_p", "gm_scale_y", "gm_scale_r", "gm_curve", "gm_accel", "gm_accel_lo", "gm_accel_hi", "gj_dz", "gj_anti", "gj_max", "gj_curve", "gj_tilt", "gm_haptic", "gm_qt1_btn", "gm_qt1_deg", "gm_qt2_btn", "gm_qt2_deg", "gm_qt3_btn", "gm_qt3_deg", "gm_qt4_btn", "gm_qt4_deg", "gm_qt_ms", "gm_ratchet"];
       const K = n => keys.indexOf(n);
       const def = { gm_output: 0, gm_act_button: -1, gm_act_mode: 0, gm_axis_pitch: 2, gm_axis_yaw: 1, gm_axis_roll: 0, gm_sens: 100, gm_scale_p: 100, gm_scale_y: 100, gm_scale_r: 100, gm_curve: 10, gm_accel: 0, gm_accel_lo: 0, gm_accel_hi: 200, gj_dz: 0, gj_anti: 0, gj_max: 300, gj_curve: 100, gj_tilt: 30, gm_haptic: 0, gm_qt1_btn: -1, gm_qt1_deg: 0, gm_qt2_btn: -1, gm_qt2_deg: 0, gm_qt3_btn: -1, gm_qt3_deg: 0, gm_qt4_btn: -1, gm_qt4_deg: 0, gm_qt_ms: 60, gm_ratchet: -1 };
-      const toMouse = ["gyro_to_mouse", "gyro_to_camera_angles", "absolute_mouse", "mouse_joystick"].includes(mode);
-      const toJoy = ["gyro_to_joystick", "gyro_to_joystick_camera", "joystick_camera"].includes(mode), toDefl = mode === "gyro_to_joystick_deflection" || mode === "joystick_deflection";
+      /* the gyro's legacy modes: absolute_mouse = as mouse, mouse_joystick / joystick_camera = as a
+       * camera joystick, joystick_move = joystick deflection */
+      const toMouse = ["gyro_to_mouse", "gyro_to_camera_angles", "absolute_mouse"].includes(mode);
+      const toJoy = ["gyro_to_joystick", "gyro_to_joystick_camera", "joystick_camera", "mouse_joystick"].includes(mode), toDefl = mode === "gyro_to_joystick_deflection" || mode === "joystick_deflection" || mode === "joystick_move";
       if (!toMouse && !toJoy && !toDefl) { if (mode) this.note(`gyro as “${mode}”: not available`); return; }
       for (const [k, v] of Object.entries(def)) G(K(k), v);
       b[17] |= 2 | 4; /* own gyro settings, gyro on with this profile */
-      G(K("gm_output"), toMouse ? 0 : toJoy ? 1 : 3);
+      G(K("gm_output"), (toMouse ? 0 : toJoy ? 1 : 3) + (!toMouse && S("output_joystick") === 1 ? 1 : 0)); /* 1 = Steam's left stick */
       const ns = S("gyro_natural_sensitivity"); if (ns) G(K("gm_sens"), ns);
       else if (S("sensitivity")) G(K("gm_sens"), S("sensitivity"));
       const conv = S("gyro_to_2d_conversion_style");
@@ -528,13 +573,23 @@
           const MB = GYRO_MASK_BTN;
           let m = BigInt(mstr), bits = [];
           for (let i = 0; m; i++, m >>= 1n) if (m & 1n) bits.push(i);
-          const known = bits.filter(i => MB[i] != null);
+          const known = bits.filter(i => MB[i] != null), unknown = bits.filter(i => MB[i] == null);
           if (known.length) {
-            G(K("gm_act_button"), MB[known[0]]); G(K("gm_act_mode"), 1);
-            if (bits.length > 1) this.note(`gyro activation: ${bits.length} buttons in Steam, here only the first one (${BTN_NAME[MB[known[0]]] || MB[known[0]]}) turns the gyro on`);
+            /* all of them in the profile's activation mask (firmware v51 test 62+); the first plain
+             * button also as gm_act_button for older firmware */
+            let am = 0, af = S("gyro_ratchet_button_requireany_or_all") === 1 ? 1 : 0;
+            for (const k of known) { const v = MB[k]; if (v < 30) am |= 1 << v; else if (v === 130) am |= 1 << 30; else if (v === 131) am |= 1 << 31; else af |= v === 140 ? 2 : 4; }
+            b[GYX + 9] = am & 255; b[GYX + 10] = am >>> 8 & 255; b[GYX + 11] = am >>> 16 & 255; b[GYX + 12] = am >>> 24 & 255; b[GYX + 13] = af;
+            const plain = known.find(k => MB[k] < 30);
+            if (plain != null) G(K("gm_act_button"), MB[plain]);
+            /* Steam: no gyro_button_invert = on while held, "0" = off while held, "2" = toggle */
+            const inv2 = get(set, "gyro_button_invert");
+            G(K("gm_act_mode"), inv2 === "0" || inv2 === "1" ? 2 : inv2 === "2" ? 3 : 1);
+            if (unknown.length) this.note(`gyro activation: input(s) ${unknown.join(", ")} of Steam's mask are not on this controller, left out`);
           } else this.note("gyro activation buttons: none this controller knows (mask " + mstr + "), the gyro is on all the time");
         }
       }
+      { const r = S("gyro_vertical_horizontal_ratio"); if (r != null && r !== 100) G(K("gm_scale_p"), Math.max(0, Math.min(400, r))); }
       if (S("acceleration")) G(K("gm_accel"), 50);
       if (conv == null && S("invert_x") == null && S("invert_y") == null) { /* nothing */ }
       if (S("haptic_intensity")) G(K("gm_haptic"), Math.min(3, S("haptic_intensity")));
@@ -610,8 +665,15 @@
       const add = (name, s, extra) => { const k = SK(s); if (shiftG != null && k < 0) return; const n = bindSrc(b, s, k, extra); if (n) inp.push([name, n]); };
       let mode = "joystick_move";
       const sp = u16(b, ao + 6);
-      if (m === 0 || m === 12) mode = pad ? (m === 12 ? "mouse_joystick" : "absolute_mouse") : "joystick_move";
-      if (m === 6) mode = "mouse_joystick";
+      /* Steam's joystick_move on a trackpad = the finger position is the stick (ours 6 / 12);
+       * its mouse_joystick = the finger's speed is the stick (ours 14) */
+      if (m === 0 || m === 12) mode = pad ? (m === 12 ? "joystick_move" : "absolute_mouse") : "joystick_move";
+      if (m === 6) mode = "joystick_move";
+      if (m === 14) {
+        mode = "mouse_joystick"; set.push(["sensitivity", String(sp || 100)]);
+        if (u16(b, ao + 14)) { const v = String(Math.round(u16(b, ao + 14) / 10000 * 32767)); set.push(["mousejoystick_deadzone_x", v], ["mousejoystick_deadzone_y", v]); }
+        if (b[ao + 1] & 0x80) { set.push(["trackball", "1"]); set.push(["friction", String(Math.round((u16(b, ao + 4) || 200) / 100))]); } else set.push(["trackball", "0"]);
+      }
       if (m === 3) { mode = pad ? "absolute_mouse" : "joystick_mouse"; set.push(["sensitivity", String(Math.round(sp / (pad ? 12 : 15)))]); if (pad) { if (b[ao + 1] & 0x80) { set.push(["trackball", "1"]); set.push(["friction", String(Math.round((u16(b, ao + 4) || 200) / 100))]); } else set.push(["trackball", "0"]); } }
       if (m === 4) mode = "scrollwheel";
       if (m === 1 || m === 2) { mode = "dpad"; set.push(["layout", m === 2 ? "1" : "0"]); }
@@ -624,9 +686,9 @@
       if (m === 3 && pad && u16(b, xo + 4)) set.push(["edge_spin_velocity", String(Math.round(u16(b, xo + 4) / 10))]);
       /* our modes Steam has no name for (or names the same): kept for a round trip, Steam ignores the key */
       if (m === 0 || m === 5 || m === 8 || m === 9) set.push(["sc26re_mode", String(m)]);
-      if ((m === 0 || m === 12 || m === 6) && (b[ao + 1] & 4)) set.push(["output_joystick", i % 2 === 0 ? "2" : "1"]);
+      if ((m === 0 || m === 12 || m === 6 || m === 14) && (b[ao + 1] & 4)) set.push(["output_joystick", i % 2 === 0 ? "2" : "1"]);
       if (b[ao + 1] & 0x20) set.push(["invert_x", "1"]); if (b[ao + 1] & 0x40) set.push(["invert_y", "1"]);
-      if (u16(b, xo) && (m === 3)) set.push(["sensitivity_horiz_scale", String(u16(b, xo))]); if (u16(b, xo + 2) && m === 3) set.push(["sensitivity_vert_scale", String(u16(b, xo + 2))]);
+      if (u16(b, xo) && (m === 3 || m === 14)) set.push(["sensitivity_horiz_scale", String(u16(b, xo))]); if (u16(b, xo + 2) && (m === 3 || m === 14)) set.push(["sensitivity_vert_scale", String(u16(b, xo + 2))]);
       if (pad && (m === 1 || m === 2 || m === 5 || m === 8 || m === 9 || m === 10)) set.push(["requires_click", b[ao + 1] & 1 ? "1" : "0"]);
       else if (pad && (b[ao + 1] & 1) && m !== 0) set.push(["requires_click", "1"]);
       if (!pad && (m === 0 || m === 12)) {
@@ -664,8 +726,10 @@
         if (src === "dpad") { const inp = []; for (const [nm, bit] of [["dpad_north", 13], ["dpad_south", 10], ["dpad_west", 12], ["dpad_east", 11]]) { const n = bindSrc(b, bit, g != null ? SHIFT_SRC.indexOf(bit) : null); if (n) inp.push([nm, n]); } if (layer && !inp.length) return null; return addGroup("dpad", inp, [["layout", (g != null ? b[SH_OFF(1) + 1] : b[16]) ? "0" : "1"]]); }
         if (src.endsWith("trigger")) { const t = src === "left_trigger" ? 0 : 1, inp = []; const c = bindSrc(b, 58 + t, g != null ? SHIFT_SRC.indexOf(58 + t) : null); if (c) inp.push(["click", c]); const e = bindSrc(b, t ? 23 : 27, g != null ? SHIFT_SRC.indexOf(t ? 23 : 27) : null); if (e) inp.push(["edge", e]); const set = [], o2 = s2 => g != null ? (SHIFT_SRC.indexOf(s2) < 0 ? -1 : SB_OFF(SHIFT_SRC.indexOf(s2))) : B_OFF(s2);
           for (const s2 of [58 + t, t ? 23 : 27]) { const oo = o2(s2); if (oo < 0) continue; for (let k = 1; k < 13; k++) { if (b[oo + k] === 0xDA) set.push(["output_trigger", "1"]); if (b[oo + k] === 0xDB) set.push(["output_trigger", "2"]); } }
-          if (layer && !inp.length && !set.length) return null;
-          return addGroup("trigger", inp, set.slice(0, 1)); }
+          const outs = set.slice(0, 1);
+          if (g == null && b[104 + t]) { const tm = b[104 + t], hip = u16(b, 106 + 2 * t) || 75; outs.push(["adaptive_threshold", String(tm === 1 ? 1 : tm === 3 ? 5 : hip <= 55 ? 2 : hip <= 110 ? 3 : 4)]); }
+          if (layer && !inp.length && !outs.length) return null;
+          return addGroup("trigger", inp, outs); }
         const i = AN_SRC.indexOf(src); return analogGroup(b, i, g);
       };
       const srcs = ["button_diamond", "dpad", "joystick", "right_joystick", "left_trackpad", "right_trackpad", "left_trigger", "right_trigger"];
@@ -707,7 +771,19 @@
         if (g(19)) set.push(["haptic_intensity", String(g(19))]);
         if (g(3) < 0) set.push(["invert_y", "1"]); if (g(4) < 0) set.push(["invert_x", "1"]);
         const ab = g(1);
-        if (ab >= 0 && SWITCHNAME[ab]) { set.push(["gyro_button", SWITCHNAME[ab]]); set.push(["gyro_button_invert", String(g(2) === 2 ? 1 : g(2) === 3 ? 2 : 0)]); }
+        const am = (b[GYX + 9] | b[GYX + 10] << 8 | b[GYX + 11] << 16 | b[GYX + 12] << 24) >>> 0, af = b[GYX + 13];
+        if (g(7) !== 100 && g(7) > 0) set.push(["gyro_vertical_horizontal_ratio", String(g(7))]);
+        if (out === 2 || out === 4) set.push(["output_joystick", "1"]);
+        if (am || (af & 6)) {
+          /* the profile's activation inputs as Steam's mask, any / all, and the mode */
+          let m = 0n;
+          for (let v = 0; v < 32; v++) if (am >>> v & 1) { const k = v === 30 ? 25 : v === 31 ? 24 : GYRO_MASK_BIT[v]; if (k != null) m |= 1n << BigInt(k); }
+          if (af & 2) m |= 1n << 30n; if (af & 4) m |= 1n << 31n;
+          set.push(["gyro_ratchet_button_mask", String(m)]);
+          if (af & 1) set.push(["gyro_ratchet_button_requireany_or_all", "1"]);
+          if (g(2) === 2) set.push(["gyro_button_invert", "0"]); else if (g(2) === 3) set.push(["gyro_button_invert", "2"]);
+        }
+        else if (ab >= 0 && SWITCHNAME[ab]) { set.push(["gyro_button", SWITCHNAME[ab]]); set.push(["gyro_button_invert", String(g(2) === 2 ? 1 : g(2) === 3 ? 2 : 0)]); }
         else if (ab >= 0 && GYRO_MASK_BIT[ab] != null && g(2) === 1) set.push(["gyro_ratchet_button_mask", String(1n << BigInt(GYRO_MASK_BIT[ab]))]); /* held: Steam's mask */
         const id = addGroup(out === 0 ? "gyro_to_mouse" : out <= 2 ? "gyro_to_joystick_camera" : "gyro_to_joystick_deflection", [], set);
         gsb.push([id, "gyro active"]);

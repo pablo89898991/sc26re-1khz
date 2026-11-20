@@ -1050,6 +1050,93 @@ static void pad_mouse(int side, const struct remap_analog *an, const struct rema
 	pad_prev_valid[side] = true;
 }
 
+/* Steam's mouse joystick: the finger's speed is the stick deflection, so a trackpad turns the
+ * camera of a game that only reads a stick the way it turns a mouse camera. Full deflection at
+ * 60000 pad units/s at 100 %; a trackball keeps it rolling after the finger leaves, slowed by
+ * the friction; the minimum output (.anti_dz) gets past the game's own dead zone */
+static float mj_vel[2][2];  /* deflection, -1..1 */
+static float mj_win[2][3];  /* pad units x, y, seconds since the last speed sample */
+static int16_t mj_prev[2][2];
+static bool mj_prev_valid[2];
+
+static void pad_mousejoy(int side, const struct remap_analog *an, const struct remap_anx *ax, bool active, int16_t x,
+                         int16_t y, float dt, float out[2])
+{
+	float sens = (an->speed ? (float)an->speed : 100.0f) * 0.01f / 60000.0f;
+	float sx = ax_scale(ax->scale_x), sy = ax_scale(ax->scale_y);
+
+	if(!active)
+	{
+		mj_prev_valid[side] = false;
+		mj_win[side][0] = mj_win[side][1] = mj_win[side][2] = 0.0f;
+		if((an->flags & REMAP_AF_TRACKBALL) && dt > 0.0f)
+		{
+			float fr = an->dz_out ? (float)an->dz_out * 0.01f : 2.0f;
+			float keep = MAX(0.0f, 1.0f - fr * dt);
+
+			mj_vel[side][0] *= keep;
+			mj_vel[side][1] *= keep;
+			if(fabsf(mj_vel[side][0]) + fabsf(mj_vel[side][1]) < 0.02f)
+			{
+				mj_vel[side][0] = mj_vel[side][1] = 0.0f;
+			}
+		}
+		else
+		{
+			mj_vel[side][0] = mj_vel[side][1] = 0.0f;
+		}
+	}
+	else
+	{
+		if(mj_prev_valid[side])
+		{
+			mj_win[side][0] += (float)(x - mj_prev[side][0]);
+			mj_win[side][1] += (float)(y - mj_prev[side][1]);
+			mj_win[side][2] += dt;
+			/* the speed over at least 10 ms (trackpad scans come every ~4 ms, the loop runs faster) */
+			if(mj_win[side][2] >= 0.010f)
+			{
+				float vx = mj_win[side][0] / mj_win[side][2] * sens * sx;
+				float vy = mj_win[side][1] / mj_win[side][2] * sens * sy;
+
+				mj_vel[side][0] = 0.3f * mj_vel[side][0] + 0.7f * CLAMP(vx, -1.0f, 1.0f);
+				mj_vel[side][1] = 0.3f * mj_vel[side][1] + 0.7f * CLAMP(vy, -1.0f, 1.0f);
+				mj_win[side][0] = mj_win[side][1] = mj_win[side][2] = 0.0f;
+			}
+		}
+		else
+		{
+			mj_vel[side][0] = mj_vel[side][1] = 0.0f;
+		}
+		mj_prev[side][0] = x;
+		mj_prev[side][1] = y;
+		mj_prev_valid[side] = true;
+	}
+
+	float vx = mj_vel[side][0], vy = mj_vel[side][1], m = sqrtf(vx * vx + vy * vy);
+
+	if(m > 1.0f)
+	{
+		vx /= m;
+		vy /= m;
+		m = 1.0f;
+	}
+	if(m < 0.02f)
+	{
+		/* stopped (or a slow drift of a resting finger): centred, no minimum output */
+		vx = vy = 0.0f;
+	}
+	else if(an->anti_dz)
+	{
+		float a = (float)an->anti_dz * 0.0001f, k = (a + (1.0f - a) * m) / m;
+
+		vx *= k;
+		vy *= k;
+	}
+	out[0] = vx;
+	out[1] = vy;
+}
+
 /*
  * Mouse reports come from two threads: this remapper (main loop) and the gyro
  * mouse (IMU thread), whose reports carry the remapper's buttons. Each reads the
@@ -1569,6 +1656,59 @@ void remap_raw_capture(const struct controller_report *r)
 
 	raw_state = *r;
 	k_spin_unlock(&raw_lock, key);
+}
+
+bool remap_gyro_act(bool *held)
+{
+	const struct remap_profile *p = active();
+	const struct remap_gyx *gx;
+
+	if(!remap_enabled() || p->magic != REMAP_MAGIC || p->version != REMAP_VERSION)
+	{
+		return false;
+	}
+	gx = &p->ext.gyx;
+	if(gx->act_mask == 0U && (gx->act_flags & (REMAP_GA_LS | REMAP_GA_RS)) == 0U)
+	{
+		return false;
+	}
+
+	struct controller_report rs;
+	k_spinlock_key_t key = k_spin_lock(&raw_lock);
+
+	rs = raw_state;
+	k_spin_unlock(&raw_lock, key);
+
+	uint32_t want = gx->act_mask;
+	uint32_t have = rs.buttons & 0x3FFFFFFFU;
+	int n_want = 0, n_have = 0;
+
+	if(soft_past[0])
+	{
+		have |= BIT(30);
+	}
+	if(soft_past[1])
+	{
+		have |= BIT(31);
+	}
+	n_want = __builtin_popcount(want);
+	n_have = __builtin_popcount(want & have);
+	/* stick deflection: out past 30 % of its travel */
+	for(int i = 0; i < 2; ++i)
+	{
+		if(gx->act_flags & (i ? REMAP_GA_RS : REMAP_GA_LS))
+		{
+			float x = (float)(i ? rs.stick_right_x : rs.stick_left_x), y = (float)(i ? rs.stick_right_y : rs.stick_left_y);
+
+			n_want++;
+			if(x * x + y * y > (0.30f * 32767.0f) * (0.30f * 32767.0f))
+			{
+				n_have++;
+			}
+		}
+	}
+	*held = (gx->act_flags & REMAP_GA_ALL) ? n_have == n_want : n_have > 0;
+	return true;
 }
 
 uint32_t remap_raw_buttons(void)
@@ -2478,6 +2618,22 @@ void remap_process(struct controller_report *r, float dt)
 				stick_dead_zones(an, &jx, &jy);
 				pad_joy[t][0] = (float)jx / 32767.0f;
 				pad_joy[t][1] = (float)jy / 32767.0f;
+			}
+			else if(an->mode == REMAP_ANALOG_MOUSEJOY)
+			{
+				float o[2];
+
+				pad_mousejoy(j, an, analog_x(p, 2 + j), act, x, y, dt, o);
+				if(an->flags & REMAP_AF_MJ_XBOX)
+				{
+					xbox_stick[t][0] += o[0];
+					xbox_stick[t][1] += o[1];
+				}
+				else if(o[0] != 0.0f || o[1] != 0.0f)
+				{
+					pad_joy[t][0] = o[0];
+					pad_joy[t][1] = o[1];
+				}
 			}
 			else if(an->mode == REMAP_ANALOG_XBOX && act)
 			{

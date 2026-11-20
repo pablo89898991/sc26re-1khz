@@ -63,8 +63,9 @@ def button_pad_on_trackpads():
 
 @test
 def mouse_modes_move_the_mouse():
-    for i, mode in ((0, "joystick_mouse"), (1, "joystick_mouse"), (0, "joystick_camera"), (1, "flickstick")):
-        r, p = one(i, mode); s = fresh(p); h0 = s.host()["dx"]
+    for i, mode, st in ((0, "joystick_mouse", None), (1, "joystick_mouse", None), (0, "joystick_camera", {"output_joystick": "3"}),
+                        (1, "joystick_move", {"output_joystick": "3"}), (1, "flickstick", None)):
+        r, p = one(i, mode, settings=st); s = fresh(p); h0 = s.host()["dx"]
         s.run(200, **stick(i, 30000, 0)); s.run(100, **stick(i, 0, 0))
         assert s.host()["dx"] - h0 > 30, (i, mode, s.host()["dx"] - h0)
     for i in (2, 3):
@@ -77,7 +78,7 @@ def mouse_modes_move_the_mouse():
 
 @test
 def joystick_move_and_mouse_joystick_are_sticks():
-    for i, mode in ((0, "joystick_move"), (1, "joystick_move"), (2, "mouse_joystick"), (3, "mouse_joystick"), (2, "joystick_move")):
+    for i, mode in ((0, "joystick_move"), (1, "joystick_move"), (1, "joystick_camera"), (2, "joystick_move"), (3, "joystick_move")):
         r, p = one(i, mode); s = fresh(p)
         if i < 2: s.run(40, **stick(i, 30000, 0))
         else: touch(s, i - 2, 30000, 0, 40)
@@ -91,6 +92,30 @@ def joystick_move_and_mouse_joystick_are_sticks():
         if i < 2: s.run(40, **stick(i, 30000, 0))
         else: touch(s, i - 2, 30000, 0, 40)
         assert s.out["rsx" if side else "lsx"] > 20000, (i, mode, s.out)
+
+@test
+def mouse_joystick_on_a_trackpad_is_finger_speed():
+    """Steam's mouse joystick: the finger's movement deflects the stick, a resting finger leaves it centred
+    (v51 test 62; it was the finger position before)"""
+    for i in (2, 3):
+        r, p = one(i, "mouse_joystick", settings={"mousejoystick_deadzone_x": "6553"})
+        assert p.b[256 + 18 * i] == 14, p.b[256 + 18 * i]
+        s = fresh(p); side = i % 2
+        touch(s, i - 2, 30000, 0, 40)
+        assert abs(s.lib.sim_xbox_stick(side, 0)) < 2000, "finger at rest: centred"
+        xs = []
+        for k in range(30): touch(s, i - 2, 30000 - k * 1500, 0, 4); xs.append(s.lib.sim_xbox_stick(side, 0))
+        assert min(xs[5:]) < -15000, ("moving left: stick left", xs)
+        touch(s, i - 2, -15000, 0, 60)
+        assert abs(s.lib.sim_xbox_stick(side, 0)) < 2000, "stopped: centred again"
+        lift(s, i - 2, 40)
+        # Steam pad output (no Xbox pad)
+        s = Sim(); s.transport(2); s.use(p, 0); s.run(10)
+        for k in range(30): touch(s, i - 2, -20000 + k * 1500, 0, 4)
+        assert s.out["rsx" if side else "lsx"] > 15000, s.out
+    t = vdf(export=[p.b, None, None, None])["text"]
+    assert '"mouse_joystick"' in t and "mousejoystick_deadzone_x" in t
+    p2 = prof_of(vdf(t)["profiles"][0]); assert p2.b[256 + 18 * 3: 256 + 18 * 4] == p.b[256 + 18 * 3: 256 + 18 * 4], "round trip"
 
 @test
 def scroll_wheel():

@@ -90,6 +90,9 @@ enum
 #define REMAP_ANALOG_GRID 9     /* trackpads: 3 x 3 zones (8 directions + centre), each its own binding */
 #define REMAP_ANALOG_RADIAL 10  /* trackpads: radial menu, 2..10 slices (speed), fires on lift (or click) */
 #define REMAP_ANALOG_SINGLE 11  /* trackpads: the whole pad is one button (the centre source), touch / click / pressure */
+#define REMAP_ANALOG_MOUSEJOY 14 /* trackpads: Steam's mouse joystick - finger speed = stick deflection (camera
+                                 * for games without a mouse); .speed = sensitivity %, .anti_dz = minimum output,
+                                 * trackball + .dz_out friction keep it rolling; REMAP_AF_MJ_XBOX: the Xbox stick */
 #define REMAP_ANALOG_REGION 13  /* mouse region: the stick / finger position is the cursor position inside a screen area */
 #define REMAP_ANALOG_XBOX 12    /* sticks: to the Xbox pad's stick (dead zones applied); trackpads: finger position = Xbox stick.
                                  * REMAP_AF_OTHER_STICK: the other side's stick. The Steam pad does not get it. */
@@ -130,6 +133,9 @@ struct remap_anx
 	uint8_t flags;    /* REMAP_AX_* */
 	uint8_t region[4]; /* mouse region: centre x, centre y, width, height, % of the screen (0,0,0,0 = whole screen) */
 } __packed;
+#define REMAP_GA_ALL 0x01  /* every input of the activation mask held (else any one) */
+#define REMAP_GA_LS 0x02   /* left stick out of its dead zone counts as an activation input */
+#define REMAP_GA_RS 0x04   /* right stick out of its dead zone */
 #define REMAP_AX_REGION_RETURN 0x01 /* mouse region (trackpad): the cursor goes back to the centre when the finger leaves */
 
 /* gyro extras (v7): profile settings of their own, also without REMAP_PF_GYRO */
@@ -144,13 +150,18 @@ struct remap_gyx
 	uint8_t tilt_8way; /* tilt: 1 = diagonals hold two directions */
 	uint8_t region[4]; /* mouse region: centre x, y, width, height (%) */
 	uint8_t region_deg; /* degrees of turn across the region width (0 = 60) */
-	uint8_t reserved[7];
+	uint32_t act_mask;  /* gyro activation by several inputs (Steam's gyro_ratchet_button_mask): raw button
+	                     * bits 0..29, bit 30 / 31 = LT / RT soft pull; 0 with no REMAP_GA_* stick bits =
+	                     * the gm_act_button setting (v51 test 62) */
+	uint8_t act_flags;  /* REMAP_GA_* */
+	uint8_t reserved[2];
 } __packed;
 
 
 #define REMAP_AF_CLICK 0x01       /* trackpads: active while clicked (else while touched) */
 #define REMAP_AF_RING_INVERT 0x02 /* outer ring fires inside the radius instead */
 #define REMAP_AF_OTHER_STICK 0x04 /* trackpad joystick: drive the other side's stick */
+#define REMAP_AF_MJ_XBOX 0x08     /* mouse joystick: drive the Xbox pad's stick (else the Steam pad's) */
 #define REMAP_AF_SWIPE_REPEAT 0x08 /* directional swipe: a long swipe fires again */
 #define REMAP_AF_PRESSURE 0x10     /* trackpads: active while pressed harder than .press */
 #define REMAP_AF_INVERT_X 0x20
@@ -280,6 +291,8 @@ uint8_t remap_xbox_trigger(int t);
 void remap_xbox_stick(int i, int16_t *x, int16_t *y);
 /* the active profile's own gyro setting for this sc26re_cfg id, if it has one */
 bool remap_gyro_value(int id, int16_t *value);
+/* the profile's gyro activation inputs (several, any / all): false = none, use gm_act_button */
+bool remap_gyro_act(bool *held);
 /* output monitor for the editor page (30 bytes) */
 void remap_monitor(uint8_t *out);
 /* haptic feedbacks the remapper played (wraps; hardware test) */
