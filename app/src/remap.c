@@ -1231,6 +1231,36 @@ static void send_mouse_locked(void)
 		mon_dx += v[0];
 		mon_dy += v[1];
 		mon_wheel += v[2];
+		/* USB adds every mouse report to the one still waiting and sends 127 counts per
+		 * frame on its own: hand it the rest of a big move now (a flick stick turn,
+		 * a mouse region jump), not 127 per remapper pass. The loop makes about 600 to
+		 * 1000 passes a second, so a 180 degree flick took 2 or 3 times longer than
+		 * the reports allow (random hardware test, v51 test 65) */
+		for(int extra = 0; extra < 7 && transport_link_kind() == 0U &&
+		                   (fabsf(mouse_acc[0]) >= 127.0f || fabsf(mouse_acc[1]) >= 127.0f);
+		    ++extra)
+		{
+			int8_t w[2];
+
+			for(size_t i = 0; i < 2; ++i)
+			{
+				float t = CLAMP(mouse_acc[i] >= 0.0f ? floorf(mouse_acc[i]) : ceilf(mouse_acc[i]), -127.0f, 127.0f);
+
+				w[i] = (int8_t)t;
+			}
+			m[1] = (uint8_t)w[0];
+			m[2] = (uint8_t)w[1];
+			m[3] = 0U;
+			m[4] = 0U;
+			if(transport_send_input_report(0x40, m, sizeof(m)) != 0)
+			{
+				break;
+			}
+			mouse_acc[0] -= (float)w[0];
+			mouse_acc[1] -= (float)w[1];
+			mon_dx += w[0];
+			mon_dy += w[1];
+		}
 	}
 	else
 	{
