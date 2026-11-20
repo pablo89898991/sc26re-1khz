@@ -45,6 +45,20 @@ for lvl, nm in ((2, "click"), (3, "strong"), (0, "none")):
     c = case("diag_haptic_stall_" + nm, "A plays a %s haptic, B (a shift) 2 ms later: is the loop held up by the haptic?" % nm, p, st)
     c["snap"] = False; c["tol"] = 2
     c["sim"] = hwt.sim_run(c)["log"]; cs.append(c)
+import struct as _st
+for nm, actmode in (("always", 0), ("off", None)):
+    p = Profile(); p.shift(1, BTN["B"])
+    if actmode is not None:
+        p.flags(PF_GYRO | PF_GYRO_ON)
+        for k in range(30): _st.pack_into("<h", p.b, 44 + 2 * k, -1)
+        _st.pack_into("<h", p.b, 44 + 0, 0)        # gm_output: mouse
+        _st.pack_into("<h", p.b, 44 + 2 * 2, 0)    # gm_act_mode: always on
+    st = [(60, {})]
+    for i in range(12): st += [(7 + (i * 5) % 11, dict(B=1)), (9 + (i * 3) % 7, {})]
+    st.append((40, {}))
+    c = case("diag_gyro_load_" + nm, "gyro mouse %s: when B's shift reaches the remapper" % nm, p, st)
+    c["snap"] = False; c["tol"] = 2
+    c["sim"] = hwt.sim_run(c)["log"]; cs.append(c)
 for c in cs: print(c["name"], [(e["t"], e["dx"]) for e in c["sim"]])
 doc = dict(version=2, slot=hwt.SLOT, cfg=hwt.cfg_names(), cases=cs)
 json.dump(doc, open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "../../web/hwdiag.json"), "w"), separators=(",", ":"))
