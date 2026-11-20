@@ -2133,6 +2133,10 @@ static void region_output(const struct remap_profile *p)
 	}
 }
 
+#if defined(CONFIG_IBEX_HWTEST) || defined(SC26RE_SIM)
+static volatile bool hwtest_ended; /* remap_hwtest_ended(): let go of everything, report loop side */
+#endif
+
 void remap_process(struct controller_report *r, float dt)
 {
 	const struct remap_profile *p;
@@ -2141,6 +2145,13 @@ void remap_process(struct controller_report *r, float dt)
 	uint32_t newp = raw & ~raw_prev; /* inputs pressed this report (interruptible long press) */
 
 	raw_prev = raw;
+#if defined(CONFIG_IBEX_HWTEST) || defined(SC26RE_SIM)
+	if(hwtest_ended)
+	{
+		hwtest_ended = false;
+		release_all();
+	}
+#endif
 	uint8_t keys[6] = { 0 };
 	size_t nk = 0;
 	uint8_t mods = 0;
@@ -3470,6 +3481,11 @@ uint8_t *remap_hwtest_buffer(size_t *size)
 	staging_p = -2;
 	*size = sizeof(staging);
 	return (uint8_t *)&staging;
+}
+
+void remap_hwtest_ended(void)
+{
+	hwtest_ended = true;
 }
 
 void remap_hwtest_release(void)

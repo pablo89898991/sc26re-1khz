@@ -56,15 +56,27 @@ static void snap_step_end(void)
 	}
 }
 
+/* after a run the outputs stay muted a while (v51 test 66): the test profile's toggled keys,
+ * mouse buttons and the rest of a big mouse move used to reach the PC between two runs and the
+ * page's restore (a random profile's toggled Alt + F4 closed the browser, mouse button 4 went
+ * back a page); the next run or HWT_QUIET_MS ends it, the remapper lets go of everything */
+#define HWT_QUIET_MS 15000
+static int64_t quiet_until;
+
 static void stop(void)
 {
+	if(running || armed)
+	{
+		quiet_until = k_uptime_get() + HWT_QUIET_MS;
+		remap_hwtest_ended();
+	}
 	running = false;
 	armed = false;
 }
 
 bool hwtest_running(void)
 {
-	return running;
+	return running || (quiet_until != 0 && k_uptime_get() < quiet_until);
 }
 
 bool hwtest_pad_quiet(void)
