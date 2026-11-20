@@ -440,6 +440,63 @@ static void perf5_read(uint8_t *buf)
 	}
 }
 
+static uint32_t p6_loop(void)
+{
+	volatile uint32_t x = 0;
+	uint32_t t = hwtest_dwt();
+
+	for(int i = 0; i < 1000000; ++i)
+	{
+		x++;
+	}
+	return hwtest_dwt() - t;
+}
+
+/* which interrupt costs what: a fixed loop (~7 M cycles undisturbed) runs with each enabled
+ * interrupt held off in turn (radio, TIMER0 and the watchdog are left alone); the cycles
+ * it saves are that interrupt's share. 12 u32: the loop's cycles with nothing held off / 1000,
+ * then the 11 biggest savers as irq << 24 | saved cycles / 100 */
+static void perf6_read(uint8_t *buf)
+{
+	uint32_t v[12] = { 0 };
+	uint32_t base = (p6_loop() + p6_loop()) / 2U;
+	uint32_t best[11] = { 0 };
+
+	v[0] = base / 1000U;
+	for(int n = 0; n < 48; ++n)
+	{
+		if(n == 1 || n == 8 || n == 16 || !NVIC_GetEnableIRQ((IRQn_Type)n))
+		{
+			continue;
+		}
+		NVIC_DisableIRQ((IRQn_Type)n);
+		uint32_t c = p6_loop();
+		NVIC_EnableIRQ((IRQn_Type)n);
+		uint32_t saved = c < base ? base - c : 0U;
+		uint32_t e = ((uint32_t)n << 24) | MIN(saved / 100U, 0xFFFFFFU);
+
+		for(int k = 0; k < 11; ++k)
+		{
+			if((e & 0xFFFFFFU) >= (best[k] & 0xFFFFFFU) || best[k] == 0U)
+			{
+				uint32_t tmp = best[k];
+
+				best[k] = e;
+				e = tmp;
+				if(e == 0U)
+				{
+					break;
+				}
+			}
+		}
+	}
+	memcpy(&v[1], best, sizeof(best));
+	for(int i = 0; i < 12; ++i)
+	{
+		sys_put_le32(v[i], &buf[4 * i]);
+	}
+}
+
 void hwtest_perf3(uint32_t wall_cyc, uint32_t own_cyc)
 {
 	p3_n++;
@@ -531,6 +588,12 @@ void hwtest_imu_mark(int m) { (void)m; }
 bool hwtest_read(const char *path, uint8_t *buf, size_t capacity, size_t *len)
 {
 #ifndef SC26RE_SIM
+	if(strcmp(path, "sc26re/perf6") == 0 && capacity >= 48)
+	{
+		perf6_read(buf);
+		*len = 48;
+		return true;
+	}
 	if(strcmp(path, "sc26re/perf5") == 0 && capacity >= 48)
 	{
 		perf5_read(buf);
