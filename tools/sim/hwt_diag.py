@@ -20,6 +20,9 @@ cs.append(case("diag_pass_rate_ls", "LS mouse far past 127 counts per pass: dx /
 p = Profile(); p.analog(0, MOUSE, speed=60000)
 cs.append(case("diag_pass_rate_ls_touch", "the same with the right pad touched and moving (pad scans wake the loop)",
                p, [(60, {})] + [(10, dict(lsx=32767, buttons=1 << 21, rpx=-20000 + 2000 * i)) for i in range(20)] + [(100, {})]))
+p = Profile(); p.analog(1, FLICK)
+cs.append(case("diag_flick_180", "RS flick stick, 180 degrees: the turn's counts per step", p,
+               [(60, {}), (20, dict(rsy=-32767)), (20, dict(rsy=-32767)), (20, dict(rsy=-32767)), (20, dict(rsy=-32767)), (200, dict(rsy=-32767)), (100, {})]))
 for c in cs: print(c["name"], [(e["t"], e["dx"]) for e in c["sim"]])
 doc = dict(version=2, slot=hwt.SLOT, cfg=hwt.cfg_names(), cases=cs)
 json.dump(doc, open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "../../web/hwdiag.json"), "w"), separators=(",", ":"))

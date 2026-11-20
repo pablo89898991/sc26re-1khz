@@ -3148,12 +3148,16 @@ void remap_process(struct controller_report *r, float dt)
 	}
 	flick_step(dt);
 	region_output(p);
-	/* region and flick counts: into the mouse a report's worth at a time */
+	/* region and flick counts: into the mouse a report's worth at a time; over USB as much as
+	 * this pass's mouse reports carry (8 x 127, see send_mouse_locked), so a flick turn keeps its
+	 * speed whatever the loop rate (it was 254 per pass: a 180 degree flick took 2x as long) */
 	for(int i = 0; i < 2; ++i)
 	{
+		const float cap = transport_link_kind() == 0U ? 1016.0f : 254.0f;
+
 		if(precise_pending[i] != 0.0f && fabsf(mouse_acc[i]) < 127.0f)
 		{
-			float t = CLAMP(precise_pending[i], -254.0f, 254.0f);
+			float t = CLAMP(precise_pending[i], -cap, cap);
 
 			mouse_acc[i] += t;
 			precise_pending[i] -= t;
