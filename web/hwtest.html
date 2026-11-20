@@ -19,7 +19,7 @@
 </head>
 <body>
 <main>
-  <h1>SC2 remapper hardware test <span class="note" id="ver">p.2026-11-20b</span></h1>
+  <h1>SC2 remapper hardware test <span class="note" id="ver">p.2026-11-20c</span></h1>
   <p class="note">Needs a <b>test build (v51 test 55 or newer)</b>. The page saves a copy of Profile 4 (and any profile a test needs as a layer) and of the active profile setting, runs every test on the controller and puts everything back. During the run the controller ignores its own buttons, sticks and pads; <b>leave it lying still</b>. Pressing the <b>Steam button</b> stops the test at once. Close the remapper and report meter tabs first.</p>
   <div class="bar">
     <button id="connect">Connect controller…</button>
@@ -94,6 +94,20 @@ function compare(c,hw){
   const L=hw[hw.length-1], S=sim[sim.length-1];
   if(L&&S) for(const k of ["dx","dy","wh","absx","absy"]) if(Math.abs(L[k]-S[k])>Math.max(3,0.12*Math.abs(S[k]))) P.push(`${k} total ${L[k]}, the simulator ${S[k]}`);
   return P; }
+/* what kind of difference: timing alone (step edges a pass or two apart) or a real one */
+function diffKind(c,hw){
+  const sim=c.sim; if(!c.snap||hw.length!==sim.length) return "";
+  let hapOnly=true, digOther=false, mouse=false;
+  hw.forEach((e,i)=>{ const s=sim[i];
+    if(JSON.stringify([e.mb,e.sh,e.keys,e.btn,e.xb,e.prof])!==JSON.stringify([s.mb,s.sh,s.keys,s.btn,s.xb,s.prof])) digOther=true;
+    if(Math.abs(e.hap-s.hap)>1) hapOnly=false;
+    for(const k of ["dx","dy","wh"]) if(e[k]!==s[k]) mouse=true; });
+  const L=hw[hw.length-1], S=sim[sim.length-1];
+  const endSame=["dx","dy","wh"].every(k=>Math.abs(L[k]-S[k])<=Math.max(3,0.01*Math.abs(S[k])));
+  const otherAn=hw.some((e,i)=>["xlt","xrt","lsx","lsy","rsx","rsy","tl","tr","absx","absy"].some(k=>Math.abs(e[k]-sim[i][k])>Math.max(400,0.06*Math.abs(sim[i][k]))));
+  if(digOther||otherAn||!hapOnly||!endSame) return "";
+  return " — timing only: "+[hw.some((e,i)=>e.hap!==sim[i].hap)?"haptic ticks ±1 at a step edge":"", mouse?"mouse on the way, end position the same":""].filter(Boolean).join(", ");
+}
 let stopReq=false; window.hwtResults=null;
 $("#stop").onclick=()=>{ stopReq=true; };
 async function runCase(c,slot0){
@@ -141,12 +155,12 @@ $("#run").onclick=async()=>{
     }
     window.hwtResults={version:doc.version, page:$("#ver").textContent, product:dev.productName, cfg, results};
     /* the comparison with the simulator, here at once (hwt.py check also checks each case's oracle) */
-    let nd=0; const diffs=[];
+    let nd=0, nt=0; const diffs=[];
     for(const r of results){ const c=doc.cases.find(x=>x.name===r.name); if(!c) continue;
       const P=r.error?[r.error]:compare(c,parseLog(r.log)); if(r.flags&8) P.unshift("log full"); if(r.flags&16) P.unshift("stopped early");
-      if(P.length){ nd++; diffs.push({name:r.name,P}); log(`DIFF ${r.name}: ${P.slice(0,3).join("; ")}`,"err"); } }
+      if(P.length){ nd++; diffs.push({name:r.name,P}); { const k=r.error?"":diffKind(c,parseLog(r.log)); if(k) nt++; log(`DIFF ${r.name}: ${P.slice(0,3).join("; ")}${k}`,k?"":"err"); } } }
     window.hwtResults.diffs=diffs;
-    log(`${results.length-nd} of ${results.length} as in the simulator`, nd?"warn":"ok");
+    log(`${results.length-nd} of ${results.length} as in the simulator`+(nt?`; ${nt} more differ in timing only (end the same)`:""), nd>nt?"warn":"ok");
     const a=document.createElement("button"); a.textContent="Download results"; a.onclick=()=>download(JSON.stringify(window.hwtResults),`sc26re-hwtest-results-${new Date().toISOString().slice(0,19).replace(/[:T]/g,"-")}.json`); $(".bar").appendChild(a);
   }catch(e){ log("error: "+e.message,"err"); }
   if(backup){

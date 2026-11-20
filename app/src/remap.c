@@ -3487,6 +3487,12 @@ uint8_t *remap_hwtest_buffer(size_t *size)
 	return (uint8_t *)&staging;
 }
 
+void remap_hwtest_started(void)
+{
+	tilt_ref_ok = false; /* gyro tilt / region centred on the script's first motion sample, not the desk */
+	gyro_reg[0] = gyro_reg[1] = 0.0f;
+}
+
 void remap_hwtest_ended(void)
 {
 	hwtest_ended = true;

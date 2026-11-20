@@ -51,6 +51,7 @@ uint8_t *remap_hwtest_buffer(size_t *size);
 void remap_hwtest_release(void);
 /* a run ended: the remapper lets go of everything it holds (keys, toggles, mouse) */
 void remap_hwtest_ended(void);
+void remap_hwtest_started(void);
 void hwtest_buffer_lost(void);
 
 #endif

@@ -124,6 +124,7 @@ void hwtest_apply(struct controller_report *r, int64_t now_ms)
 	{
 		armed = false;
 		running = true;
+		remap_hwtest_started();
 		step = 0;
 		t0 = now_ms;
 		step_end = now_ms + sys_get_le16(&hb[0]);
