@@ -63,4 +63,25 @@ s6 = Sim(); s6.use(p); s6.run(5)
 s6.run(10, buttons=1 << 21, rpx=16000, rpy=16000); v = xs(s6, 1)
 check("right trackpad (touched) -> Xbox right stick", v[0] > 5000 and v[1] > 5000, v)
 s6.run(10, buttons=0, rpx=0, rpy=0); check("finger lifted: centred", xs(s6, 1) == (0, 0), xs(s6, 1))
+
+# the Steam button to Steam (steam_button_hold_back): the controller's Steam chords never reach Steam
+h = s.lib.steam_button_hold_back; h.argtypes = [ctypes.c_uint32, ctypes.c_uint32, ctypes.c_int64]; h.restype = ctypes.c_uint32
+def hseq(steps, out_steam=True):
+    """steps: (physical buttons, ms) -> (ms Steam reached Steam, first ms it did)"""
+    t, on, first = T[0], 0, None
+    for b, ms in steps + [(0, 300)]:
+        for _ in range(ms):
+            t += 1; o = h(b if out_steam else b & ~STEAM, b, t)
+            if o & STEAM: on += 1; first = first if first is not None else t - T[0]
+    T[0] = t
+    return on, first
+v = hseq([(STEAM, 80)]); check("Steam tap: a 100 ms tap goes to Steam after it is let go", v == (100, 81), v)
+v = hseq([(STEAM, 30), (STEAM | 1 << 13, 40), (STEAM, 30)]); check("Steam + D-pad (profile): Steam never sees Steam", v[0] == 0, v)
+v = hseq([(STEAM, 200), (STEAM | 1 << 3, 600)]); check("Steam + Y (power off): Steam never sees Steam", v[0] == 0, v)
+v = hseq([(STEAM, 50), (STEAM | 1 << 2, 100), (STEAM, 50)]); check("Steam + X (Steam's keyboard): Steam gets it as X joins", v == (150, 51), v)
+v = hseq([(STEAM | 1 << 23, 100)]); check("RT held before Steam (screenshot chord): Steam at once", v == (100, 1), v)
+v = hseq([(STEAM, 1500)]); check("long hold: Steam gets it after 0.6 s, no tap afterwards", v == (900, 601), v)
+v = hseq([(STEAM | 1 << 20 | 1 << 28 | 1 << 24, 80)]); check("touches / grips are no chord", v == (100, 81), v)
+v = hseq([(STEAM, 700), (STEAM | 1 << 13, 40)]); check("D-pad after the 0.6 s: Steam already has it (known limit)", v == (140, 601), v)
+v = hseq([(STEAM, 80)], out_steam=False); check("remapper hides Steam: nothing", v[0] == 0, v)
 print("\n%d passed, %d failed" % (ok, fail))

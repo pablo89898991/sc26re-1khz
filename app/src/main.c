@@ -793,6 +793,9 @@ int main(void)
 			 * the report before the Xbox 360 output takes the pad from it: filtered further
 			 * down, the Xbox-only pad still showed them (LB + RB + View to the game) */
 			current.buttons = gyro_mouse_filter_buttons(current.buttons, remap_raw_buttons());
+			/* Steam + D-pad / Steam + Y are the controller's: Steam never sees that Steam press
+			 * (it opened the overlay on every profile change), a lone tap still goes through */
+			current.buttons = steam_button_hold_back(current.buttons, remap_raw_buttons(), remap_now);
 			/* in-game stick measurement (gyro as joystick calibration) */
 			stick_test_apply(&current, raw_buttons);
 #ifdef CONFIG_IBEX_HWTEST

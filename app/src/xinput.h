@@ -27,3 +27,5 @@ void xinput_neutral_pad(struct controller_report *r);
 #define XI_GUIDE_IGNORE (BIT(20) | BIT(21) | BIT(24) | BIT(25) | BIT(28) | BIT(29))
 /* option xi_guide: true while the Xbox Guide tap is on */
 bool xinput_guide_tap(uint32_t buttons, int64_t now);
+/* the Steam button to Steam, held back while it is held alone (see xinput_guide.c) */
+uint32_t steam_button_hold_back(uint32_t out, uint32_t phys, int64_t now);
