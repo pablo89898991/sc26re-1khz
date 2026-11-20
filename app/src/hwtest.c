@@ -300,8 +300,47 @@ int hwtest_set(const uint8_t *v, size_t len)
 	}
 }
 
+/* main loop timing, since the last read of sc26re/perf */
+static uint32_t pf_n, pf_read_sum, pf_remap_sum, pf_remap_max, pf_gap_max, pf_read_max;
+static uint32_t pf_gap_hist[6]; /* gaps < 1.2 ms, < 2, < 3, < 5, < 8, longer */
+
+void hwtest_perf(uint32_t read_us, uint32_t remap_us, uint32_t gap_us)
+{
+	static const uint32_t edge[5] = { 1200, 2000, 3000, 5000, 8000 };
+	int b = 0;
+
+	pf_n++;
+	pf_read_sum += read_us;
+	pf_remap_sum += remap_us;
+	pf_read_max = MAX(pf_read_max, read_us);
+	pf_remap_max = MAX(pf_remap_max, remap_us);
+	pf_gap_max = MAX(pf_gap_max, gap_us);
+	while(b < 5 && gap_us >= edge[b])
+	{
+		b++;
+	}
+	pf_gap_hist[b]++;
+}
+
 bool hwtest_read(const char *path, uint8_t *buf, size_t capacity, size_t *len)
 {
+	if(strcmp(path, "sc26re/perf") == 0 && capacity >= 48)
+	{
+		/* passes, mean / max of the scan (incl. its wait) and the remapper, the longest gap,
+		 * gap histogram; reading starts a new window */
+		uint32_t v[12] = { pf_n, pf_n ? pf_read_sum / pf_n : 0, pf_read_max, pf_n ? pf_remap_sum / pf_n : 0, pf_remap_max,
+		                   pf_gap_max, pf_gap_hist[0], pf_gap_hist[1], pf_gap_hist[2], pf_gap_hist[3], pf_gap_hist[4],
+		                   pf_gap_hist[5] };
+
+		for(int i = 0; i < 12; ++i)
+		{
+			sys_put_le32(v[i], &buf[4 * i]);
+		}
+		pf_n = pf_read_sum = pf_remap_sum = pf_remap_max = pf_gap_max = pf_read_max = 0;
+		memset(pf_gap_hist, 0, sizeof(pf_gap_hist));
+		*len = 48;
+		return true;
+	}
 	if(strcmp(path, "sc26re/hwt_st") == 0 && capacity >= 10)
 	{
 		buf[0] = (uint8_t)((hb ? 1U : 0U) | (armed ? 2U : 0U) | (running ? 4U : 0U) | (overflow ? 8U : 0U) |

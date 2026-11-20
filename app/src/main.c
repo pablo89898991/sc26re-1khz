@@ -644,8 +644,13 @@ int main(void)
 		int16_t timeout_seconds = inactivity_timeout_seconds;
 		int64_t now_ms;
 
+#ifdef CONFIG_IBEX_HWTEST
+		uint32_t perf_c0 = k_cycle_get_32();
+#endif
 		hardware_read_report(&current);
 #ifdef CONFIG_IBEX_HWTEST
+		uint32_t perf_c1 = k_cycle_get_32();
+
 		hwtest_apply(&current, k_uptime_get()); /* remapper hardware test: the script's inputs */
 #endif
 		remap_raw_capture(&current); /* physical state for the 3D overlay */
@@ -786,7 +791,15 @@ int main(void)
 			/* the time since the last pass in microseconds: the loop also wakes on input changes,
 			 * so in whole milliseconds dt was 0, 1 or 2 ms in turn and rate estimates (the
 			 * trackball's speed) came out up to twice too high (hardware test, v51 test 56) */
+#ifdef CONFIG_IBEX_HWTEST
+			uint32_t perf_c2 = k_cycle_get_32();
+#endif
 			remap_process(&current, remap_last_us ? (float)(remap_now_us - remap_last_us) * 1e-6f : 0.001f);
+#ifdef CONFIG_IBEX_HWTEST
+			/* loop timing for sc26re/perf: the wait + scan, the remapper pass */
+			hwtest_perf(k_cyc_to_us_floor32(perf_c1 - perf_c0), k_cyc_to_us_floor32(k_cycle_get_32() - perf_c2),
+			            (uint32_t)(remap_now_us - remap_last_us));
+#endif
 			remap_last_us = remap_now_us;
 			gyro_mouse_joystick(&current);
 			/* the gyro mouse's buttons (its chord, ratchet, quick turns, 360 calibration) leave

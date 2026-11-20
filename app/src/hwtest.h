@@ -52,6 +52,8 @@ void remap_hwtest_release(void);
 /* a run ended: the remapper lets go of everything it holds (keys, toggles, mouse) */
 void remap_hwtest_ended(void);
 void remap_hwtest_started(void);
+/* main loop timing (us): hardware_read_report incl. its wait, remap_process, the time since the last pass */
+void hwtest_perf(uint32_t read_us, uint32_t remap_us, uint32_t gap_us);
 void hwtest_buffer_lost(void);
 
 #endif
