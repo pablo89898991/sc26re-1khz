@@ -497,6 +497,50 @@ static void perf6_read(uint8_t *buf)
 	}
 }
 
+/* the system timer (RTC1) interrupt: its setup, how often it runs and what one run costs.
+ * 12 u32: INTENSET, EVTEN, CC0..3, COUNTER, runs in 10 ms, cycles per run (mean, max),
+ * runs seen, the CC0 target ticks ahead when read */
+static void perf7_read(uint8_t *buf)
+{
+	uint32_t v[12] = { 0 };
+	uint32_t n = 0, sum = 0, mx = 0, t0;
+
+	v[0] = NRF_RTC1->INTENSET;
+	v[1] = NRF_RTC1->EVTEN;
+	for(int i = 0; i < 4; ++i)
+	{
+		v[2 + i] = NRF_RTC1->CC[i];
+	}
+	v[6] = NRF_RTC1->COUNTER;
+	NVIC_DisableIRQ(RTC1_IRQn);
+	t0 = hwtest_dwt();
+	while(hwtest_dwt() - t0 < 640000U)
+	{
+		if(NVIC_GetPendingIRQ(RTC1_IRQn))
+		{
+			uint32_t c = hwtest_dwt();
+
+			NVIC_EnableIRQ(RTC1_IRQn);
+			__ISB();
+			NVIC_DisableIRQ(RTC1_IRQn);
+			c = hwtest_dwt() - c;
+			n++;
+			sum += c;
+			mx = MAX(mx, c);
+		}
+	}
+	NVIC_EnableIRQ(RTC1_IRQn);
+	v[7] = n;
+	v[8] = n ? sum / n : 0;
+	v[9] = mx;
+	v[10] = n;
+	v[11] = (NRF_RTC1->CC[0] - NRF_RTC1->COUNTER) & 0xFFFFFFU;
+	for(int i = 0; i < 12; ++i)
+	{
+		sys_put_le32(v[i], &buf[4 * i]);
+	}
+}
+
 void hwtest_perf3(uint32_t wall_cyc, uint32_t own_cyc)
 {
 	p3_n++;
@@ -588,6 +632,12 @@ void hwtest_imu_mark(int m) { (void)m; }
 bool hwtest_read(const char *path, uint8_t *buf, size_t capacity, size_t *len)
 {
 #ifndef SC26RE_SIM
+	if(strcmp(path, "sc26re/perf7") == 0 && capacity >= 48)
+	{
+		perf7_read(buf);
+		*len = 48;
+		return true;
+	}
 	if(strcmp(path, "sc26re/perf6") == 0 && capacity >= 48)
 	{
 		perf6_read(buf);
