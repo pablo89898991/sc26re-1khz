@@ -97,6 +97,18 @@ static const uint8_t sclick_group[REMAP_SCLICK_COUNT] = { REMAP_SHIFT_LS, REMAP_
 static int8_t src_group[REMAP_SRC_COUNT]; /* -1: not in a shift group */
 static int8_t src_sidx[REMAP_SRC_COUNT];
 static bool shifted[REMAP_SHIFT_GROUPS];
+/* which sources have a binding, for the profile / layer / shift state it was worked out for;
+ * prof_gen moves on every profile load or save, so an edit is never missed */
+static uint32_t prof_gen;
+static struct
+{
+	const struct remap_profile *p, *l;
+	uint32_t gen;
+	uint32_t m[3];
+	uint8_t sh;
+	bool ok;
+} bcache;
+_Static_assert(REMAP_SRC_COUNT <= 96 && REMAP_SHIFT_GROUPS <= 8, "bcache sizes");
 
 /* settings a profile can carry for the gyro (same order on the editor page) */
 const uint8_t remap_gyro_keys[REMAP_GYRO_KEYS] = {
@@ -288,17 +300,11 @@ void remap_perf_get(uint32_t out[12])
 
 static bool bound(const struct remap_binding *b)
 {
-	for(size_t g = 0; g < 3; ++g)
-	{
-		for(size_t i = 0; i < 4; ++i)
-		{
-			if(b->act[g][i] != 0U)
-			{
-				return true;
-			}
-		}
-	}
-	return false;
+	/* the 12 action bytes as three words: this runs for every source on every pass */
+	uint32_t w[3];
+
+	memcpy(w, b->act, sizeof(w));
+	return (w[0] | w[1] | w[2]) != 0U;
 }
 
 /* ---- derived inputs, computed once per report ---- */
@@ -1987,13 +1993,12 @@ static const struct remap_binding *bind_at(const struct remap_profile *p, int s)
 	return s < REMAP_BIND_COUNT ? &p->bind[s] : &p->ext.xbind[s - REMAP_BIND_COUNT];
 }
 
-static const struct remap_binding *binding(const struct remap_profile *p, int s)
+static const struct remap_binding *binding_l(const struct remap_profile *p, int s, const struct remap_profile *l)
 {
 	int g = src_group[s];
 	const struct remap_binding *b = !(g >= 0 && shifted[g]) ? bind_at(p, s)
 	                                : src_sidx[s] >= REMAP_SHIFT_SRC_COUNT ? &p->v8.sclick[src_sidx[s] - REMAP_SHIFT_SRC_COUNT]
 	                                                                       : &p->sbind[src_sidx[s]];
-	const struct remap_profile *l = layer_profile();
 
 	/* action layer: its bound inputs win; the input holding the layer keeps its own.
 	 * Layer actions inside a layer are ignored (no nesting): two layers calling
@@ -2003,6 +2008,11 @@ static const struct remap_binding *binding(const struct remap_profile *p, int s)
 		return bind_at(l, s);
 	}
 	return b;
+}
+
+static const struct remap_binding *binding(const struct remap_profile *p, int s)
+{
+	return binding_l(p, s, layer_profile());
 }
 
 /* the v7 extras of the stick / pad settings analog_cfg() picks */
@@ -2982,19 +2992,48 @@ void remap_process(struct controller_report *r, float dt)
 	xbox_trig[1] = xtrig_an[1];
 	move_dirs = 0U;
 	PERF_MARK(6);
+	const struct remap_profile *loop_l = layer_profile(); /* the same for every source */
+	{
+		/* unbound sources do nothing below: find the bound ones only when the profile,
+		 * the layer or the shift state changes (looking all 78 up took ~0.3 ms a pass) */
+		uint8_t sh = 0;
+
+		for(int g = 0; g < REMAP_SHIFT_GROUPS; ++g)
+		{
+			sh |= shifted[g] ? (uint8_t)BIT(g) : 0U;
+		}
+		if(!bcache.ok || bcache.p != p || bcache.l != loop_l || bcache.sh != sh || bcache.gen != prof_gen)
+		{
+			memset(bcache.m, 0, sizeof(bcache.m));
+			for(int s = 0; s < REMAP_SRC_COUNT; ++s)
+			{
+				if(bound(binding_l(p, s, loop_l)))
+				{
+					bcache.m[s >> 5] |= BIT(s & 31);
+				}
+			}
+			bcache.p = p;
+			bcache.l = loop_l;
+			bcache.sh = sh;
+			bcache.gen = prof_gen;
+			bcache.ok = true;
+		}
+	}
+
 	for(int s = 0; s < REMAP_SRC_COUNT; ++s)
 	{
 		PERF_LOOK0();
-		const struct remap_binding *b = binding(p, s);
-		struct src_state *ss = &st[s];
-		bool b_on = bound(b);
+		bool b_on = (bcache.m[s >> 5] & BIT(s & 31)) != 0U;
 
 		PERF_LOOK1(b_on);
-		out_src = (int8_t)s;
 		if(!b_on)
 		{
 			continue;
 		}
+		const struct remap_binding *b = binding_l(p, s, loop_l);
+		struct src_state *ss = &st[s];
+
+		out_src = (int8_t)s;
 		if(s < 30)
 		{
 			hide |= BIT(s);
@@ -3610,6 +3649,7 @@ int remap_commit(const char *path)
 	{
 		upgrade(&staging);
 		profiles[p] = staging;
+		prof_gen++;
 		staging_p = -1;
 		reload_pending = true;
 	}
@@ -3637,6 +3677,7 @@ static int load_cb(const char *key, size_t len, settings_read_cb read_cb, void *
 	memset(p, 0, sizeof(*p));
 	(void)read_cb(cb_arg, p, len);
 	upgrade(p);
+	prof_gen++;
 	return 0;
 }
 
