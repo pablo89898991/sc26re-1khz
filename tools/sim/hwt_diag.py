@@ -23,6 +23,13 @@ cs.append(case("diag_pass_rate_ls_touch", "the same with the right pad touched a
 p = Profile(); p.analog(1, FLICK)
 cs.append(case("diag_flick_180", "RS flick stick, 180 degrees: the turn's counts per step", p,
                [(60, {}), (20, dict(rsy=-32767)), (20, dict(rsy=-32767)), (20, dict(rsy=-32767)), (20, dict(rsy=-32767)), (200, dict(rsy=-32767)), (100, {})]))
+p = Profile(); p.shift(0, BTN["A"]); p.shift(1, BTN["B"])
+st = [(60, {})]
+for i in range(30): st.append((7 + (i * 5) % 11, dict(A=1) if i % 2 == 0 else dict(B=1)))
+st.append((50, {}))
+c = case("diag_pass_gaps", "shift by A / B in steps of 7..17 ms: each change shows up in the first pass after the step edge", p, st)
+c["snap"] = False; c["tol"] = 2
+c["sim"] = hwt.sim_run(c)["log"]; cs.append(c)
 for c in cs: print(c["name"], [(e["t"], e["dx"]) for e in c["sim"]])
 doc = dict(version=2, slot=hwt.SLOT, cfg=hwt.cfg_names(), cases=cs)
 json.dump(doc, open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "../../web/hwdiag.json"), "w"), separators=(",", ":"))
