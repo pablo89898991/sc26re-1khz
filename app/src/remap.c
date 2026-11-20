@@ -2197,6 +2197,15 @@ static void region_output(const struct remap_profile *p)
 static volatile bool hwtest_ended; /* remap_hwtest_ended(): let go of everything, report loop side */
 #endif
 
+/* past the soft pull point (the trigger section's own test, hysteresis from the last report) */
+static bool soft_past_now(const struct remap_profile *p, const struct controller_report *r, int t)
+{
+	int16_t v = t ? r->trigger_right : r->trigger_left;
+	int32_t th = (int32_t)CLAMP(p->trig_soft[t] ? p->trig_soft[t] : 5000, 100, 10000) * 32767 / 10000;
+
+	return soft_past[t] ? v >= th - MIN(1000, th / 2) : v >= th;
+}
+
 void remap_process(struct controller_report *r, float dt)
 {
 	const struct remap_profile *p;
@@ -2381,9 +2390,11 @@ void remap_process(struct controller_report *r, float dt)
 		uint8_t sb = p->shift[g].button;
 		/* 1..30: a button (bit + 1); 31 / 32: the left / right trigger's soft pull (Steam's
 		 * "left_trigger_threshold" switch: a mode shift held by a half pulled trigger) - v51 test 61.
-		 * The soft pull of the last report: the triggers are read further down */
+		 * The soft pull of this report (before v51 test 78 the last one: a pass late, 4-10 ms
+		 * on the controller with the gyro busy) */
 		bool on = (sb >= 1U && sb <= 30U && (raw & BIT(sb - 1U)) != 0U) ||
-		          (sb == REMAP_SHIFT_BY_SOFT_LT && soft_past[0]) || (sb == REMAP_SHIFT_BY_SOFT_RT && soft_past[1]);
+		          (sb == REMAP_SHIFT_BY_SOFT_LT && soft_past_now(p, r, 0)) ||
+		          (sb == REMAP_SHIFT_BY_SOFT_RT && soft_past_now(p, r, 1));
 
 		if(sb >= 1U && sb <= 30U)
 		{
@@ -2849,11 +2860,10 @@ void remap_process(struct controller_report *r, float dt)
 	for(int t = 0; t < 2; ++t)
 	{
 		int16_t v = t ? r->trigger_right : r->trigger_left;
-		int32_t th = (int32_t)CLAMP(p->trig_soft[t] ? p->trig_soft[t] : 5000, 100, 10000) * 32767 / 10000;
 		bool full = (raw & BIT(t ? CONTROLLER_BUTTON_RIGHT_TRIGGER_CLICK : CONTROLLER_BUTTON_LEFT_TRIGGER_CLICK)) != 0U;
 		/* past the soft pull point; it lets go 3 % lower, or half way down for a point below 6 %
 		 * (a fixed 3 % kept a soft pull at 1..3 % on forever: it never got back below 0) */
-		bool past = soft_past[t] ? v >= th - MIN(1000, th / 2) : v >= th;
+		bool past = soft_past_now(p, r, t);
 		uint8_t mode = p->trig_mode[t];
 
 		if(mode == REMAP_TRIG_HAIR)
