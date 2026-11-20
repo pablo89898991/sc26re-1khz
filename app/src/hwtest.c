@@ -335,7 +335,7 @@ static struct
 	uint64_t c0;
 	uint64_t d;
 	int prio;
-} p3_th[10];
+} p3_th[9];
 static int p3_nth;
 
 uint32_t hwtest_dwt(void)
@@ -541,6 +541,66 @@ static void perf7_read(uint8_t *buf)
 	}
 }
 
+/* sc26re/perf8: count the system timer (RTC1), USB and IMU I2C interrupts in normal running.
+ * The first read hooks their ISR table entries, the next one unhooks them and reports.
+ * 12 u32: 0 = just hooked, else 1; window cycles; then per IRQ (17, 39, 3): runs, cycles */
+#include <zephyr/sw_isr_table.h>
+static const uint8_t p8_irq[3] = { 17, 39, 3 };
+static void (*p8_orig[3])(const void *);
+static uint32_t p8_n[3], p8_c[3], p8_t0;
+
+static void p8_isr(const void *arg)
+{
+	int irq = (int)(__get_IPSR() & 0x1FFU) - 16;
+	uint32_t t = DWT->CYCCNT;
+
+	for(int i = 0; i < 3; ++i)
+	{
+		if(p8_irq[i] == irq)
+		{
+			p8_orig[i](arg);
+			p8_n[i]++;
+			p8_c[i] += DWT->CYCCNT - t;
+			return;
+		}
+	}
+}
+
+static void perf8_read(uint8_t *buf)
+{
+	uint32_t v[12] = { 0 };
+	unsigned int key = irq_lock();
+
+	if(p8_orig[0] == NULL)
+	{
+		(void)hwtest_dwt();
+		for(int i = 0; i < 3; ++i)
+		{
+			p8_orig[i] = _sw_isr_table[p8_irq[i]].isr;
+			_sw_isr_table[p8_irq[i]].isr = p8_isr;
+			p8_n[i] = p8_c[i] = 0;
+		}
+		p8_t0 = DWT->CYCCNT;
+	}
+	else
+	{
+		v[0] = 1;
+		v[1] = DWT->CYCCNT - p8_t0;
+		for(int i = 0; i < 3; ++i)
+		{
+			_sw_isr_table[p8_irq[i]].isr = p8_orig[i];
+			p8_orig[i] = NULL;
+			v[2 + 2 * i] = p8_n[i];
+			v[3 + 2 * i] = p8_c[i];
+		}
+	}
+	irq_unlock(key);
+	for(int i = 0; i < 12; ++i)
+	{
+		sys_put_le32(v[i], &buf[4 * i]);
+	}
+}
+
 void hwtest_perf3(uint32_t wall_cyc, uint32_t own_cyc)
 {
 	p3_n++;
@@ -632,6 +692,12 @@ void hwtest_imu_mark(int m) { (void)m; }
 bool hwtest_read(const char *path, uint8_t *buf, size_t capacity, size_t *len)
 {
 #ifndef SC26RE_SIM
+	if(strcmp(path, "sc26re/perf8") == 0 && capacity >= 48)
+	{
+		perf8_read(buf);
+		*len = 48;
+		return true;
+	}
 	if(strcmp(path, "sc26re/perf7") == 0 && capacity >= 48)
 	{
 		perf7_read(buf);
