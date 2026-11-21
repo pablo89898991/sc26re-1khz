@@ -101,7 +101,7 @@ def sim_run(case, cfg=None):
 DIG = lambda e: (e["mb"], e["sh"], tuple(e["keys"]), e["btn"], e["xb"], e["hap"], e["prof"])
 AN = ("dx", "dy", "wh", "xlt", "xrt", "lsx", "lsy", "rsx", "rsy", "tl", "tr", "absx", "absy")
 
-def same(a, b, tol_ms=6, snap=False, rel=0.06):
+def same(a, b, tol_ms=6, snap=False, rel=0.06, blip=3, end=None):
     """a: controller log, b: simulator log. Same digital outputs in the same order, close in time;
     analog outputs close (per snapshot, or the totals at the end)."""
     probs = []
@@ -116,12 +116,15 @@ def same(a, b, tol_ms=6, snap=False, rel=0.06):
                 if abs(x["xs"][j] - y["xs"][j]) > max(400, 0.06 * abs(y["xs"][j])):
                     probs.append("step %d Xbox stick %d: controller %d, simulator %d" % (i, j, x["xs"][j], y["xs"][j]))
         return probs[:8]
+    if end is not None:
+        # the script is over: the real sensors are back (a tilted desk, a drifting stick)
+        a = [e for e in a if e["t"] < end] or a[:1]
     da, db = [DIG(e) for e in a], [DIG(e) for e in b]
     def ch(l, d):
         out = [(e["t"], x) for e, x, prev in zip(l, d, [None] + d[:-1]) if x != prev]
         # a state lasting under 3 ms at a step boundary (an input let go in the same millisecond
         # a turbo pulse starts) is not an output difference
-        keep = [c for i, c in enumerate(out) if i + 1 >= len(out) or out[i + 1][0] - c[0] >= 3]
+        keep = [c for i, c in enumerate(out) if i + 1 >= len(out) or out[i + 1][0] - c[0] >= blip]
         merged = []
         for c in keep:
             if not merged or merged[-1][1] != c[1]: merged.append(c)
@@ -201,11 +204,11 @@ def need(cond, msg, probs):
 
 # ---------------- the cases
 CASES = []
-def case(name, what, tol_ms=6, snap=False, rel=0.06, slot=None):
+def case(name, what, tol_ms=6, snap=False, rel=0.06, slot=None, blip=3):
     """rel: how far apart analog totals may be (a trackball's speed depends on when the loop
     measures it against the 5 ms steps of the script)"""
     def deco(f):
-        CASES.append(dict(name=name, what=what, f=f, tol=tol_ms, snap=snap, rel=rel, slot=SLOT if slot is None else slot)); return f
+        CASES.append(dict(name=name, what=what, f=f, tol=tol_ms, snap=snap, rel=rel, slot=SLOT if slot is None else slot, blip=blip)); return f
     return deco
 
 def S(ms, **st): return (ms, st)
@@ -572,9 +575,9 @@ def _ring_first_case(side, mode):
         need(not l[-1]["keys"], "released", P)
     return p, st + [N(100)], o
 
-@case("stick_dpad8_ring_first", "LS 8-way + outer ring, ring key first: Shift before W")
+@case("stick_dpad8_ring_first", "LS 8-way + outer ring, ring key first: Shift before W", blip=1)
 def _(): return _ring_first_case(0, DPAD8)
-@case("stick_dpad4_ring_first", "LS 4-way + outer ring, ring key first")
+@case("stick_dpad4_ring_first", "LS 4-way + outer ring, ring key first", blip=1)
 def _(): return _ring_first_case(0, DPAD4)
 
 @case("stick_pass_shaping", "LS to Steam: dead zones, anti dead zone, invert; RS curve 2.0 + rotate 90", snap=True)
@@ -1312,7 +1315,7 @@ def build():
         _extra.clear()
         p, steps, _ = c["f"]()
         out.append(dict(name=c["name"], what=c["what"], profile=bytes(p.b).hex(), script=script_bytes(steps).hex(),
-                        ms=sum(ms for ms, _ in steps), snap=c["snap"], tol=c["tol"], rel=c["rel"], slot=c["slot"], extra={str(k): bytes(v.b).hex() for k, v in _extra.items()}))
+                        ms=sum(ms for ms, _ in steps), snap=c["snap"], tol=c["tol"], rel=c["rel"], slot=c["slot"], blip=c["blip"], extra={str(k): bytes(v.b).hex() for k, v in _extra.items()}))
     return out
 
 
@@ -1360,7 +1363,7 @@ def main():
             sim = sim_run(c, res.get("cfg"))["log"]
             hw = parse_log(bytes.fromhex(r["log"]))
             rels = {c["name"]: c["rel"] for c in CASES}
-            probs = ["controller vs simulator: " + x for x in same(hw, sim, tols[r["name"]], snaps[r["name"]], rels[r["name"]])]
+            probs = ["controller vs simulator: " + x for x in same(hw, sim, tols[r["name"]], snaps[r["name"]], rels[r["name"]], c["blip"], c["ms"])]
             probs += ["on the controller: " + x for x in oracle(r["name"], hw)]
             if r.get("flags", 0) & 16: probs.insert(0, "stopped early (Steam button or an upload)")
             if r.get("flags", 0) & 8: probs.insert(0, "log full")
