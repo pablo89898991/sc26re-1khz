@@ -136,7 +136,10 @@ app.whenReady().then(() => {
   });
   ses.on("select-hid-device", (e, details, cb) => {
     e.preventDefault();
-    const d = details.deviceList.find(x => x.vendorId === VALVE);
+    /* the controller on the cable (1302) first, else the Puck or Bluetooth; one of its interfaces
+     * that has the settings channel when Electron lists them apart */
+    const list = details.deviceList.filter(x => x.vendorId === VALVE);
+    const d = list.find(x => x.productId === 0x1302) || list[0];
     cb(d ? d.deviceId : "");
   });
   ipcMain.on("arrange", () => toggleArrange());

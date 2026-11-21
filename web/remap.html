@@ -110,7 +110,7 @@
 <body>
 <div class="top">
   <div class="topin">
-    <div class="brand">SC2 <span class="hz">Remapper</span> <span class="note" id="pagever" title="page version — if it is older than expected, press Ctrl+F5">p.2026-11-21i</span></div>
+    <div class="brand">SC2 <span class="hz">Remapper</span> <span class="note" id="pagever" title="page version — if it is older than expected, press Ctrl+F5">p.2026-11-21j</span></div>
     <button class="primary" id="connect">Connect controller</button>
     <span id="status" class="chip">not connected</span>
     <span class="grow"></span>
@@ -888,13 +888,15 @@ let chain=Promise.resolve();
 function serial(fn){ const run=()=>Promise.race([Promise.resolve().then(fn),new Promise((_,r)=>setTimeout(()=>r(new Error("no reply from the controller")),8000))]); const p=chain.then(run,run); chain=p.catch(()=>{}); return p; }
 const ctl=()=>ctlDev&&devs.includes(ctlDev)?ctlDev:devs[0];
 async function send(path,op,data){ const d=ctl(); if(!d) throw new Error("connect first");
-  return serial(async()=>{ for(let a=0;;a++){ try{ return await d.sendFeatureReport(1,pathCmd(op,path,data)); }catch(e){ if(a>=5) throw e; await new Promise(r=>setTimeout(r,40+a*30)); } } }); }
+  return serial(async()=>{ for(let a=0;;a++){ try{ return await Promise.race([d.sendFeatureReport(1,pathCmd(op,path,data)),new Promise((_,rej)=>setTimeout(()=>rej(new Error("send timeout")),1500))]); }catch(e){ if(a>=5) throw e; await new Promise(r=>setTimeout(r,40+a*30)); } } }); }
 async function read(path){ const d=ctl(); if(!d) throw new Error("connect first"); const tag=pathTag(path);
   return serial(async()=>{ let last=null, empty=0;
     for(let a=0;a<8;a++){ try{
-      await d.sendFeatureReport(1,pathCmd(0xED,path));
+      /* never wait for ever: a device that does not answer (another interface, a Puck with nothing
+       * behind it) must not stall every later request */
+      await Promise.race([d.sendFeatureReport(1,pathCmd(0xED,path)),new Promise((_,rej)=>setTimeout(()=>rej(new Error("send timeout")),1500))]);
       /* a reply comes within a few ms (USB, Puck, Bluetooth): after ~0.2 s ask again */
-      let r=null,o=-1; for(let k=0;k<6;k++){ try{ r=new Uint8Array((await d.receiveFeatureReport(1)).buffer); o=r[0]===0xED?0:(r[1]===0xED?1:-1); if(o>=0) break; }catch(e){} await new Promise(s=>setTimeout(s,10+k*10)); }
+      let r=null,o=-1; for(let k=0;k<6;k++){ try{ r=new Uint8Array((await Promise.race([d.receiveFeatureReport(1),new Promise((_,rej)=>setTimeout(()=>rej(new Error("receive timeout")),1000))])).buffer); o=r[0]===0xED?0:(r[1]===0xED?1:-1); if(o>=0) break; }catch(e){} await new Promise(s=>setTimeout(s,10+k*10)); }
       if(o<0) throw new Error("no reply");
       const data=r.slice(o+2,o+2+r[o+1]);
       /* an empty answer, three times: this firmware does not have the setting (an older one) */
@@ -915,7 +917,7 @@ $("#connect").onclick=async()=>{
   try{
     let sel=await navigator.hid.requestDevice({filters:[{vendorId:0x28de}]});
     /* the Windows overlay app picks one interface for the request: the others it allows too */
-    if(window.sc26reApp) sel=[...new Set([...sel,...(await navigator.hid.getDevices()).filter(d=>d.vendorId===0x28de)])];
+    if(window.sc26reApp&&sel.length) sel=[...new Set([...sel,...(await navigator.hid.getDevices()).filter(d=>d.vendorId===0x28de&&d.productId===sel[0].productId)])];
     for(const d of sel){ if(!d.collections.some(c=>c.featureReports&&c.featureReports.length)) continue; if(!d.opened) await d.open();
       if(!devs.includes(d)){ devs.push(d); d.addEventListener("inputreport",onReport); } }
     $("#status").textContent=devs.length?"connected — waiting for the controller…":"no device selected";
