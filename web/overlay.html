@@ -139,7 +139,7 @@ const DOWN = new THREE.Vector3(0, -1, 0), UP = new THREE.Vector3(0, 1, 0), BUMPE
 const PRESS_PARTS = [["a", 0, DOWN], ["b", 1, DOWN], ["x", 2, DOWN], ["y", 3, DOWN], ["view", 14, DOWN], ["menu", 6, DOWN], ["steam", 16, DOWN], ["qam", 4, DOWN],
   ["bumper_l", 19, BUMPER_IN], ["bumper_r", 9, BUMPER_IN], ["back_l4", 17, UP], ["back_l5", 18, UP], ["back_r4", 7, UP], ["back_r5", 8, UP]];
 const DPAD = [["up", 13], ["down", 10], ["left", 12], ["right", 11]];
-const TRIG_POP_TURN = 1.2;
+const TRIG_POP_TURN = 1.6;
 const PRESS_DEPTH = 0.1, STICK_TILT = 0.3, DPAD_TILT = 0.12, TRIGGER_SWING = 0.35, PAD_HALF = 1.45;
 
 function pivotFor(name, box) {
@@ -393,8 +393,8 @@ function glow(name, color, k) { const p = parts.get(name); if (!p) return; p.mat
  * top and back moved where a camera in front sees them, as overlays usually show them */
 function popOf(name) {
   const side = /_l\d?$/.test(name) ? -1 : 1;
-  if (name.startsWith("trigger_") && $("#popTrig").checked) return new THREE.Vector3(0, 0.2, -2.6);
-  if (name.startsWith("bumper_") && $("#popBump").checked) return new THREE.Vector3(0, 0.4, -1.3); /* right under its popped trigger, both at one height */
+  if (name.startsWith("trigger_") && $("#popTrig").checked) return new THREE.Vector3(0, 0.2, -3.8);
+  if (name.startsWith("bumper_") && $("#popBump").checked) return new THREE.Vector3(0, 0.2, -2.0); /* a column over each top corner: trigger on top, bumper under it, a gap to the body; both turned face-on */
   if (name.startsWith("back_") && $("#popBack").checked) return new THREE.Vector3(side * 3.4, 3, name.endsWith("5") ? 1.2 : -1.2);
   return null;
 }
@@ -405,7 +405,7 @@ function placePart(p, name, dir, depth) {
 }
 function pressPart(name, dir, depth) { const p = parts.get(name); if (!p) return; placePart(p, name, dir, depth);
   /* popped bumpers: their top (a strip along the top edge) turned to the camera */
-  if (name.startsWith("bumper_")) p.pivot.rotation.x = $("#popBump").checked ? 1.2 : 0;
+  if (name.startsWith("bumper_")) p.pivot.rotation.x = $("#popBump").checked ? 1.6 : 0;
   /* popped back buttons: turned so their outer face (with the L4 / R5 marks, which looks sideways and
    * back) faces the camera the right way round, not mirrored */
   if (name.startsWith("back_")) p.pivot.rotation.z = $("#popBack").checked ? (name.includes("_l") ? -1 : 1) * (p.popTurn ?? 0.9) + Math.PI : 0; }
@@ -460,7 +460,9 @@ function frame(now) {
   const tilt = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), -(+$("#tilt").value) * Math.PI / 180);
   model.quaternion.copy(drag).multiply(tilt).multiply(FRONT).multiply(relM);
   const dist = 40 / (+$("#zoom").value / 100); /* a little further than before v51 test 82: the popped-out triggers fit */
-  camera.position.set(0, 0, dist); camera.lookAt(0, 0, 0);
+  /* popped triggers stand above the top: aim a little higher so the whole set is in the frame */
+  const lift = $("#popTrig").checked ? 1.6 : 0;
+  camera.position.set(0, lift, dist); camera.lookAt(0, lift, 0);
   renderer.render(scene, camera);
 }
 requestAnimationFrame(frame);
