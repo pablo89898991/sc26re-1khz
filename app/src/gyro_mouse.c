@@ -269,6 +269,25 @@ static void quick_turn_start(int16_t deg)
 	(void)haptics_play_feedback((uint8_t)gm(SC26RE_CFG_GM_HAPTIC), HAPTICS_CHANNELS_PRIMARY);
 }
 
+/* the buttons that are the gyro mouse's right now: LB + RB + View (+ A, the 360 calibration) from
+ * the moment the chord is complete, and the calibration button while calibrating. The remapper
+ * leaves them alone, so their bindings (keys in a game) do not fire: before v51 test 85 only the
+ * pad report lost them, after the remapper had already sent their keys. */
+uint32_t gyro_mouse_owned(uint32_t physical)
+{
+	uint32_t m = cal_hide;
+
+	if((physical & CHORD_MASK) == CHORD_MASK || chord_down)
+	{
+		m |= CHORD_MASK | CHORD_CAL_EXTRA;
+	}
+	if(cal != CAL_IDLE)
+	{
+		m |= cal_button_mask;
+	}
+	return m;
+}
+
 uint32_t gyro_mouse_filter_buttons(uint32_t raw, uint32_t physical)
 {
 	/* the presses come from the physical buttons: with the remapper on, a bound button (or an

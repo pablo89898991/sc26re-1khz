@@ -28,6 +28,29 @@ def K(n): return key(str(n)) if isinstance(n, int) else key(n)
 def binds(names): return "".join(inp(n, act(binding=f"key_press {k.upper()}, , ")) for n, k in names)
 
 @test
+def dpad_layout_default_eight_way():
+    """Steam's D-pad layout: none or 0 = eight way (both keys on a diagonal), 1 = four way, 3 cross gate = four way"""
+    names = [("dpad_north", "w"), ("dpad_south", "s"), ("dpad_west", "a"), ("dpad_east", "d")]
+    for st, want in ((None, {K("w"), K("d")}), ({"layout": "0"}, {K("w"), K("d")}), ({"layout": "1"}, None), ({"layout": "3"}, None)):
+        r, p = one(0, "dpad", binds(names), st)
+        s = fresh(p); s.run(40, lsx=23000, lsy=23000)
+        if want: assert held(s) == want, (st, held(s))
+        else: assert len(held(s)) == 1, ("four way: one key", st, held(s))
+
+@test
+def stick_touch_mode_shift():
+    """"touch the right stick = mode shift" (a community layout): the shift button is the stick's touch sensor"""
+    sw = group(1, "switches", inp("right_stick_touch", act(binding="mode_shift right_joystick 2")))
+    g0 = group(0, "dpad", binds([("dpad_north", "1")]))
+    g2 = group(2, "dpad", binds([("dpad_north", "q")]))
+    txt = config([g0, sw, g2], [(0, "Default", [(0, "right_joystick active"), (1, "switch active"), (2, "right_joystick active modeshift")])])
+    r = vdf(txt, {}); roundtrip(txt, {})
+    p = prof_of(r["profiles"][0]); s = fresh(p)
+    s.run(40, rsx=0, rsy=30000); assert held(s) == {K(1)}, held(s)
+    s.run(40, rsx=0, rsy=0); s.run(20, RS_TOUCH=1); s.run(40, RS_TOUCH=1, rsx=0, rsy=30000)
+    assert held(s) == {K("q")}, ("touching: shifted", held(s))
+
+@test
 def dpad_on_sticks_and_pads():
     names = [("dpad_north", "w"), ("dpad_south", "s"), ("dpad_west", "a"), ("dpad_east", "d"), ("click", "c")]
     for i in range(4):
@@ -48,9 +71,9 @@ def dpad_on_sticks_and_pads():
 @test
 def eight_way_layout():
     names = [("dpad_north", "w"), ("dpad_east", "d")]
-    r, p = one(0, "dpad", binds(names), {"layout": "1"}); s = fresh(p)
+    r, p = one(0, "dpad", binds(names), {"layout": "0"}); s = fresh(p)   # Steam: 0 = 8 way (overlap)
     s.run(40, lsx=22000, lsy=22000); assert {K("w"), K("d")} <= held(s), held(s)
-    r, p = one(0, "dpad", binds(names), {"layout": "0"}); s = fresh(p)
+    r, p = one(0, "dpad", binds(names), {"layout": "1"}); s = fresh(p)   # 1 = 4 way (no overlap)
     s.run(40, lsx=22000, lsy=23000); assert len(held(s)) == 1, held(s)
 
 @test

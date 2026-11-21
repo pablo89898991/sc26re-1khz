@@ -241,6 +241,15 @@ static bool gm_on;
 #ifndef WITH_GM
 void gyro_mouse_set_enabled(bool on) { gm_on = on; (void)sc26re_cfg_set(SC26RE_CFG_GM_ENABLED, on ? 1 : 0, false); ev("G %d", on); } /* as gyro_mouse.c */
 int32_t gyro_mouse_counts_per_360(void) { return 16364; }
+/* as gyro_mouse.c: LB + RB + View (+ A) from the moment it is complete; no calibration without it */
+static bool sim_gm_chord;
+uint32_t gyro_mouse_owned(uint32_t physical)
+{
+	const uint32_t c = BIT(CONTROLLER_BUTTON_LEFT_SHOULDER) | BIT(CONTROLLER_BUTTON_RIGHT_SHOULDER) | BIT(CONTROLLER_BUTTON_VIEW);
+	if((physical & c) == c) sim_gm_chord = true;
+	else if(!(physical & (c | BIT(CONTROLLER_BUTTON_A)))) sim_gm_chord = false;
+	return sim_gm_chord ? c | BIT(CONTROLLER_BUTTON_A) : 0U;
+}
 #endif
 /* as imu.c: the gyro integrated since power-on (imu_raw.h, the firmware's code) and the last
  * accel, for the 3D overlay */

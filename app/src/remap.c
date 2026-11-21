@@ -2349,6 +2349,15 @@ void remap_process(struct controller_report *r, float dt)
 		r->buttons &= ~CHORD_MASK;
 		raw &= ~CHORD_MASK;
 	}
+	/* the gyro mouse's chord (LB + RB + View, + A for the 360 calibration) and its calibration
+	 * button while calibrating: theirs, not the bindings' (they leave the pad report later, in
+	 * gyro_mouse_filter_buttons) */
+	{
+		static uint32_t gm_hide;
+
+		gm_hide = (gm_hide & raw) | gyro_mouse_owned(raw);
+		raw &= ~gm_hide;
+	}
 	/*
 	 * Steam + D-pad: choose the profile (up 1, right 2, down 3, left 4),
 	 * whether the remapper is on or off. While Steam is held the D-pad is

@@ -20,6 +20,8 @@ void gyro_mouse_note_sent(int8_t dx, int8_t dy);
  * their buttons from the host. raw: the report's buttons (after the remapper), physical: the
  * buttons pressed (a profile's bindings or "unbound send nothing" must not take them away) */
 uint32_t gyro_mouse_filter_buttons(uint32_t raw, uint32_t physical);
+/* buttons the gyro mouse holds this moment (its chord, the 360 calibration button): not for the bindings */
+uint32_t gyro_mouse_owned(uint32_t physical);
 /* the accelerometer on the gyro_mouse_feed axes (pitch, yaw, roll axis), any unit */
 void gyro_mouse_gravity(const float acc[3]);
 void gyro_mouse_feed(const float dps[3], uint32_t buttons, float dt_s);

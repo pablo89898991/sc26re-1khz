@@ -102,7 +102,9 @@
   /* switches inputs -> button bits (the Steam Deck / Steam Controller 2026 names) */
   /* button_escape is the ☰ (Start) button of Steam's controllers, button_menu the ⧉ (View / Select) one */
   const SWITCH = { button_escape: 6, button_menu: 14, left_bumper: 19, right_bumper: 9, button_back_left_upper: 17, button_back_left: 18,
-    button_back_right_upper: 7, button_back_right: 8, button_capture: 4 };
+    button_back_right_upper: 7, button_back_right: 8, button_capture: 4,
+    /* the sticks' touch sensors (capsense), e.g. "touch the right stick = mode shift" */
+    left_stick_touch: 24, right_stick_touch: 20 };
   const SWITCHNAME = Object.fromEntries(Object.entries(SWITCH).map(([k, v]) => [v, k]));
   /* Steam's gyro activation mask bit -> button bit, and back */
   /* Steam's k_eGamepadButtonBitMask_* (read from the Steam client's own table): 0 RT, 1 LT, 2 RB, 3 LB,
@@ -313,8 +315,9 @@
       }
       if (sg.kind === "dpad") {
         const lay = S("layout");
-        /* layout 0 four way, 1 eight way; none: the physical D-pad's own (both directions of a diagonal) */
-        const four = lay === 0 ? 1 : 0;
+        /* Steam's D-pad layout, in the order of its menu (Steamworks "input source modes"): 0 eight way
+         * (overlap, also when not given), 1 four way (no overlap), 2 analog emulation, 3 cross gate */
+        const four = lay === 1 || lay === 3 ? 1 : 0;
         if (shiftG == null) b[16] = four; else b[SH_OFF(1) + 1] = four;
         const D = { dpad_north: 13, dpad_south: 10, dpad_west: 12, dpad_east: 11 };
         for (const [name, inp] of entries(inputs)) if (name in D) bindAt(D[name], inp);
@@ -396,7 +399,9 @@
         case "scrollwheel": case "scroll_wheel":
           setMode(4); if (pad) setU16(b, ao + 6, 30); else setU16(b, ao + 6, 800); break;
         case "dpad":
-          setMode(S("layout") === 1 ? 2 : 1); setU16(b, ao + 2, dzIn(pad ? 2000 : 3000));
+          /* layout: 0 eight way (Steam's default, also when not given), 1 four way, 2 analog emulation
+           * (here eight way), 3 cross gate (here four way) */
+          setMode(S("layout") === 1 || S("layout") === 3 ? 1 : 2); setU16(b, ao + 2, dzIn(pad ? 2000 : 3000));
           if (pad && S("requires_click") !== 0) b[ao + 1] |= 1; /* Steam's default on a trackpad: click to press */
           break;
         case "four_buttons": /* button pad: diamond regions */
@@ -408,7 +413,7 @@
           setMode(10); setU16(b, ao + 2, pad ? 2500 : 3000); b[ao + 8] = 1;
           if (pad) setU16(b, ao + 6, Math.max(2, Math.min(10, n || 8))); else b[xo + 6] = Math.max(2, Math.min(8, n || 8));
           if (n > (pad ? 10 : 8)) this.note(`${mode.replace(/_/g, " ")} on ${AN_SRC[i]}: ${n} entries, this controller has ${pad ? 10 : 8} slices there: entries ${pad ? 11 : 9}-${n} are left out`);
-          if (mode !== "radial_menu") this.note(`${mode.replace("_", " ")} on ${AN_SRC[i]}: used as a radial menu (no on-screen menu: find the slices by feel)`);
+          if (mode !== "radial_menu") this.note(`${mode.replace("_", " ")} on ${AN_SRC[i]}: used as a radial menu (the overlay shows it on screen)`);
           if (S("touchmenu_button_fire_type") === 1 || S("requires_click") === 1) b[ao + 1] |= 1;
           break; }
         case "2dscroll": case "directional_swipe":
@@ -676,7 +681,7 @@
       }
       if (m === 3) { mode = pad ? "absolute_mouse" : "joystick_mouse"; set.push(["sensitivity", String(Math.round(sp / (pad ? 12 : 15)))]); if (pad) { if (b[ao + 1] & 0x80) { set.push(["trackball", "1"]); set.push(["friction", String(Math.round((u16(b, ao + 4) || 200) / 100))]); } else set.push(["trackball", "0"]); } }
       if (m === 4) mode = "scrollwheel";
-      if (m === 1 || m === 2) { mode = "dpad"; set.push(["layout", m === 2 ? "1" : "0"]); }
+      if (m === 1 || m === 2) { mode = "dpad"; set.push(["layout", m === 2 ? "0" : "1"]); }
       if (m === 5 || m === 9) { mode = "dpad"; dropped.add(m === 5 ? "trackpad gates (as D-pad)" : "trackpad 9-zone grid (as D-pad)"); }
       if (m === 8) mode = pad ? "2dscroll" : "dpad"; /* Steam's directional swipe */
       if (m === 7) mode = "flickstick";
@@ -723,7 +728,7 @@
       const shiftGroups = [];
       const groupFor = (src, g) => {
         if (src === "button_diamond") { const inp = []; for (const [nm, bit] of Object.entries(DIAMOND)) { const n = bindSrc(b, bit, g != null ? SHIFT_SRC.indexOf(bit) : null); if (n) inp.push([nm, n]); } if (layer && !inp.length) return null; return addGroup("four_buttons", inp, []); }
-        if (src === "dpad") { const inp = []; for (const [nm, bit] of [["dpad_north", 13], ["dpad_south", 10], ["dpad_west", 12], ["dpad_east", 11]]) { const n = bindSrc(b, bit, g != null ? SHIFT_SRC.indexOf(bit) : null); if (n) inp.push([nm, n]); } if (layer && !inp.length) return null; return addGroup("dpad", inp, [["layout", (g != null ? b[SH_OFF(1) + 1] : b[16]) ? "0" : "1"]]); }
+        if (src === "dpad") { const inp = []; for (const [nm, bit] of [["dpad_north", 13], ["dpad_south", 10], ["dpad_west", 12], ["dpad_east", 11]]) { const n = bindSrc(b, bit, g != null ? SHIFT_SRC.indexOf(bit) : null); if (n) inp.push([nm, n]); } if (layer && !inp.length) return null; return addGroup("dpad", inp, [["layout", (g != null ? b[SH_OFF(1) + 1] : b[16]) ? "1" : "0"]]); }
         if (src.endsWith("trigger")) { const t = src === "left_trigger" ? 0 : 1, inp = []; const c = bindSrc(b, 58 + t, g != null ? SHIFT_SRC.indexOf(58 + t) : null); if (c) inp.push(["click", c]); const e = bindSrc(b, t ? 23 : 27, g != null ? SHIFT_SRC.indexOf(t ? 23 : 27) : null); if (e) inp.push(["edge", e]); const set = [], o2 = s2 => g != null ? (SHIFT_SRC.indexOf(s2) < 0 ? -1 : SB_OFF(SHIFT_SRC.indexOf(s2))) : B_OFF(s2);
           for (const s2 of [58 + t, t ? 23 : 27]) { const oo = o2(s2); if (oo < 0) continue; for (let k = 1; k < 13; k++) { if (b[oo + k] === 0xDA) set.push(["output_trigger", "1"]); if (b[oo + k] === 0xDB) set.push(["output_trigger", "2"]); } }
           const outs = set.slice(0, 1);
