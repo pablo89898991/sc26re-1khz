@@ -109,7 +109,7 @@
 <body>
 <div class="top">
   <div class="topin">
-    <div class="brand">SC2 <span class="hz">Remapper</span> <span class="note" id="pagever" title="page version — if it is older than expected, press Ctrl+F5">p.2026-11-21g</span></div>
+    <div class="brand">SC2 <span class="hz">Remapper</span> <span class="note" id="pagever" title="page version — if it is older than expected, press Ctrl+F5">p.2026-11-21h</span></div>
     <button class="primary" id="connect">Connect controller</button>
     <span id="status" class="chip">not connected</span>
     <span class="grow"></span>
@@ -239,6 +239,8 @@
 
   <section id="v_help" hidden>
     <div class="panel help">
+      <h3>Key combinations / shortcuts</h3>
+      <p><b>Steam + D-pad</b> ↑ → ↓ ← profile 1–4 · <b>Steam + Menu</b> remapper on/off · <b>Steam + View</b> gyro mouse on/off · <b>Steam + A</b> 360° calibration · <b>Steam + X</b> (3 s) gyro calibration · <b>Steam + Y</b> power off · <b>Steam</b> alone 7 s power off. While Steam is held these buttons never reach the game. At power-on (hold while pressing Steam): <b>RB + A</b> Puck mode · <b>RB + B</b> or <b>LB + B</b> Bluetooth + pairing · <b>Menu + View + LB + RB</b> (3 s) factory reset.</p>
       <h3>What it is</h3>
       <p>While this page is connected the controller keeps its gyro on, does not switch itself off and leaves lizard mode (desktop keyboard / mouse emulation) off, so the live highlights and the gyro work without Steam; everything goes back to normal about 10 s after the page is closed.</p>
       <p>Profiles stored <b>in the controller</b> turn its inputs into keyboard keys, mouse buttons / movement / scroll and Steam pad buttons. It works without Steam and without installing anything, over the USB cable and the Puck. Needs sc26re firmware v51+ and desktop Chrome, Edge or Brave.</p>
@@ -264,8 +266,6 @@
       <p>Per profile: when ticked, Steam and the game only get what the profile maps — every input without a binding (buttons, touch sensors, trackpads left “to Steam”) is dropped. Sticks set to Analog still work.</p>
       <h3>Steam button</h3>
       <p>While the remapper is on, Steam does not see the Steam button, so it never opens Steam’s menu in the middle of a game. Bind it to <b>Pad Steam</b> in a profile to give it back to Steam, or to anything else. Steam + D-pad (choose the profile), the other Steam combinations below and holding it alone for 7 s to power off always work.</p>
-      <h3>Controller combinations (all with the Steam button)</h3>
-      <p>While Steam is held these buttons reach neither the game nor your bindings, so a combination never does anything in the game (a button pressed with Steam stays hidden until you let it go): <b>Steam + D-pad</b> up / right / down / left = profile 1–4 · <b>Steam + Menu</b> = remapper on / off · <b>Steam + View</b> = gyro mouse on / off · <b>Steam + A</b> = 360° calibration of the gyro mouse · <b>Steam + X held 3 s</b> = gyro calibration · <b>Steam + Y held</b> = power off · <b>Steam held alone 7 s</b> = power off (Steam held together with another button never powers off). (Before v51 test 86 these were LB + RB + Menu / View / X + Y: LB and RB reached the game before the combination was complete.)</p>
       <h3>Outer ring</h3>
       <p>Sticks and trackpads have an outer ring: its binding fires while the stick / finger is beyond the radius you set (or inside it, with invert) — e.g. sprint when the stick is pushed all the way.</p>
       <h3>Triggers</h3>
