@@ -657,6 +657,12 @@ bool valve_settings_read(const char *path, uint8_t *buf, size_t capacity, size_t
 		*len = 32;
 		return true;
 	}
+	if(strcmp(path, "sc26re/osd") == 0 && capacity >= REMAP_MENU_SIZE)
+	{
+		remap_menu_state(buf);
+		*len = REMAP_MENU_SIZE;
+		return true;
+	}
 	if(strcmp(path, "sc26re/rmp_diag") == 0 && capacity >= 16)
 	{
 		remap_diag(buf);

@@ -233,6 +233,8 @@ static int8_t radial_of_src[REMAP_SRC_COUNT]; /* radial (0,1 pads, 2,3 sticks) o
 static int8_t radial_sel[4] = { -1, -1, -1, -1 };
 static int8_t radial_fire[4] = { -1, -1, -1, -1 };
 static bool radial_mode[4], radial_click[4], radial_touch[4];
+static uint8_t radial_n[4];                  /* slices of each radial menu this pass (for the on-screen menu) */
+static int8_t grid_now[2] = { -1, -1 };      /* 3 x 3 grid zone under the finger, -1 none */
 static uint8_t gyro_dirs;  /* gyro tilt this report: bit 0 up, 1 down, 2 left, 3 right */
 static float tilt_ref[3];  /* gravity when the tilt was centred */
 static bool tilt_ref_ok;
@@ -1389,6 +1391,70 @@ static int send_kbd(const uint8_t *r)
 	return e;
 }
 
+/* sc26re/osd, the on-screen menu (overlay page): REMAP_MENU_SIZE bytes
+ * [0] profile, [1] action layer (-1 none), [2] shift groups held (bit per group), [3] menus that follow (0..2)
+ * per menu, 24 bytes: [0] input (0 left pad, 1 right pad, 2 left stick, 3 right stick) | kind << 4
+ * (1 radial, 2 grid 3 x 3), [1] slices (grid: 9, row by row from the top left), [2] chosen slice (-1 none),
+ * [3] 0, [4..13] each slice's source, [14..23] its first action (as bound now: shift, layer) */
+static const uint8_t grid_src[2][9] = {
+	{ 46, 38, 47, 40, 64, 41, 48, 39, 49 },
+	{ 50, 42, 51, 44, 65, 45, 52, 43, 53 },
+};
+
+static const struct remap_binding *binding(const struct remap_profile *p, int s);
+
+void remap_menu_state(uint8_t *out)
+{
+	const struct remap_profile *p = cur_profile;
+	int m = 0;
+
+	memset(out, 0, REMAP_MENU_SIZE);
+	out[0] = (uint8_t)CLAMP(sc26re_cfg_get(SC26RE_CFG_REMAP_PROFILE), 0, REMAP_PROFILES - 1);
+	out[1] = (uint8_t)layer_now;
+	for(int g = 0; g < REMAP_SHIFT_GROUPS && g < 8; ++g)
+	{
+		out[2] |= shifted[g] ? (uint8_t)BIT(g) : 0U;
+	}
+	if(p == NULL || !remap_enabled())
+	{
+		return;
+	}
+	for(int k = 0; k < 4 && m < 2; ++k)
+	{
+		bool radial = radial_mode[k] && (radial_touch[k] || radial_sel[k] >= 0);
+		bool grid = k < 2 && grid_now[k] >= 0;
+		uint8_t *o = &out[4 + 24 * m];
+		int n;
+
+		if(!radial && !grid)
+		{
+			continue;
+		}
+		n = radial ? radial_n[k] : 9;
+		o[0] = (uint8_t)(k | (radial ? 0x10 : 0x20));
+		o[1] = (uint8_t)n;
+		o[2] = (uint8_t)(radial ? radial_sel[k] : grid_now[k]);
+		for(int i = 0; i < n && i < 10; ++i)
+		{
+			int s = !radial ? grid_src[k][i] : radial_src[k][k >= 2 && n == 4 ? radial_stick4[i] : i];
+			const struct remap_binding *b = binding(p, s);
+			const uint8_t *a = &b->act[0][0];
+
+			o[4 + i] = (uint8_t)s;
+			for(int q = 0; q < 12; ++q)
+			{
+				if(a[q] != 0U)
+				{
+					o[14 + i] = a[q];
+					break;
+				}
+			}
+		}
+		++m;
+	}
+	out[3] = (uint8_t)m;
+}
+
 void remap_diag(uint8_t *out)
 {
 	sys_put_le16(diag_kbd_ok, &out[0]);
@@ -2531,6 +2597,8 @@ void remap_process(struct controller_report *r, float dt)
 			const struct remap_anx *ax = analog_x(p, i);
 			int n = CLAMP(ax->slices ? ax->slices : 8, 2, 8);
 			bool click = (raw & BIT(i ? CONTROLLER_BUTTON_RIGHT_STICK : CONTROLLER_BUTTON_LEFT_STICK)) != 0U;
+
+			radial_n[2 + i] = (uint8_t)n;
 			bool fire_now;
 			int8_t prev;
 
@@ -2644,6 +2712,7 @@ void remap_process(struct controller_report *r, float dt)
 				center_on[j] = z == 4;
 			}
 		}
+		grid_now[j] = (int8_t)grid_zone;
 		if(an->mode == REMAP_ANALOG_SINGLE)
 		{
 			center_on[j] = act; /* the whole pad is one button */
@@ -2658,6 +2727,8 @@ void remap_process(struct controller_report *r, float dt)
 			int n = CLAMP(an->speed, 2, 10);
 			bool fire_now;
 			float rz = MAX(dz, 0.2f);
+
+			radial_n[j] = (uint8_t)n;
 
 			if(radial_sel[j] >= n)
 			{

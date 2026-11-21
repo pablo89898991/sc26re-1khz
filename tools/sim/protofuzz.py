@@ -3,7 +3,7 @@ The firmware must not crash (ASan) and the profiles must follow a simple model."
 import random, sys
 from simlib import *
 
-PATHS = ["sc26re/rmp/%d/%x", "sc26re/rmp/%d", "sc26re/rmp_out", "sc26re/raw", "sc26re/remap_on", "sc26re/remap_profile",
+PATHS = ["sc26re/rmp/%d/%x", "sc26re/rmp/%d", "sc26re/rmp_out", "sc26re/raw", "sc26re/osd", "sc26re/remap_on", "sc26re/remap_profile",
          "sc26re/gm_sens", "sc26re/rmp/", "sc26re/rmp/9/0", "sc26re/rmp/0/ffff", "sc26re/rmp/0x", "sc26re/", "", "sc26re/rmp/1/7f8", "sc26re/rmp/3/-1"]
 
 def run(seed):

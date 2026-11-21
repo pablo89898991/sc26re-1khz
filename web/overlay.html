@@ -18,18 +18,26 @@
   #ui.hidden{display:none}
   #loading{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);color:#0d1320;font-weight:600}
   a{color:#7fbfff}
+  #menu{position:fixed;inset:0;width:100%;height:100%;pointer-events:none}
+  #toast{position:fixed;left:50%;top:8%;transform:translateX(-50%);background:rgba(14,19,30,.9);border:1px solid #2f7fe0;border-radius:12px;padding:10px 18px;font-size:20px;font-weight:600;opacity:0;transition:opacity .25s;pointer-events:none;white-space:nowrap}
+  #toast.on{opacity:1}
 </style>
+<script src="actnames.js"></script>
 <script type="importmap">
 { "imports": { "three": "./vendor/three/build/three.module.min.js" } }
 </script>
 </head>
 <body>
 <div id="view"></div>
+<canvas id="menu"></canvas>
+<div id="toast"></div>
 <div id="loading">loading the 3D model…</div>
 <div id="ui">
   <h1>SC2 <span>3D Overlay</span></h1>
   <div class="row"><button class="primary" id="connect">Connect controller</button><span id="status" class="note">not connected</span></div>
   <div class="row"><label>Shows</label><select id="src"><option value="raw">the physical controller (native, also when remapped)</option><option value="steam">what Steam receives</option></select></div>
+  <div class="row"><label><input type="checkbox" id="modelOn" checked> 3D model</label><label title="radial menus and 3 x 3 grids drawn with what each slice does, while a pad is touched or a stick pushed (v51 test 84 or newer)"><input type="checkbox" id="menuOn" checked> on-screen menus</label><label title="the profile's name for a moment when it changes (or an action layer comes on)"><input type="checkbox" id="toastOn" checked> profile changes</label></div>
+  <div class="row"><label>Menu size</label><input type="range" id="menuSize" min="40" max="200" value="100"><label>at</label><select id="menuPos"><option value="side">the pad's / stick's side</option><option value="center">the centre</option></select></div>
   <div class="row"><label>Model</label><select id="mdl"><option value="valve">Valve’s official model (exact shape)</option><option value="detail">detailed, textured</option></select></div>
   <div class="row"><label>Background</label><select id="bg"><option value="#00ff00">green (chroma key)</option><option value="#ff00ff">magenta (chroma key)</option><option value="#0d1320">dark</option><option value="#ffffff">white</option></select></div>
   <div class="row"><label>Pressed</label><input type="color" id="hiCol" value="#1a9fff"><label>Touched</label><input type="color" id="touchCol" value="#5fe39a"></div>
@@ -56,9 +64,14 @@ import { MeshoptDecoder } from "./vendor/three/examples/jsm/libs/meshopt_decoder
 const $ = s => document.querySelector(s);
 /* ---------- settings ---------- */
 const SET_IDS = ["mdl", "src", "xray", "bg", "hiCol", "touchCol", "tilt", "zoom", "useGyro", "level", "imuOn", "invP", "invY", "invR",
-  "popTrig", "popBump", "popBack", "gripShow", "sens", "levelK", "yawFix", "yawK", "fps"];
-try { const o = JSON.parse(localStorage.getItem("sc26re_overlay2") || "{}"); for (const k of SET_IDS) if (k in o) { const e = $("#" + k); if (e.type === "checkbox") e.checked = o[k]; else e.value = o[k]; } } catch (e) {}
-function saveSet() { const o = {}; for (const k of SET_IDS) { const e = $("#" + k); o[k] = e.type === "checkbox" ? e.checked : e.value; } try { localStorage.setItem("sc26re_overlay2", JSON.stringify(o)); } catch (e) {} }
+  "popTrig", "popBump", "popBack", "gripShow", "sens", "levelK", "yawFix", "yawK", "fps", "modelOn", "menuOn", "toastOn", "menuSize", "menuPos"];
+/* inside the remapper (?embed) or its window on top (?pip): the settings panel starts hidden (H shows it) */
+const QS = new URLSearchParams(location.search);
+const SET_KEY = QS.has("pip") ? "sc26re_overlay_pip" : "sc26re_overlay2";
+if (QS.has("pip")) { $("#bg").value = "#0d1320"; $("#ui").classList.add("hidden"); }
+if (QS.has("embed")) $("#ui").classList.add("hidden");
+try { const o = JSON.parse(localStorage.getItem(SET_KEY) || "{}"); for (const k of SET_IDS) if (k in o) { const e = $("#" + k); if (e.type === "checkbox") e.checked = o[k]; else e.value = o[k]; } } catch (e) {}
+function saveSet() { const o = {}; for (const k of SET_IDS) { const e = $("#" + k); o[k] = e.type === "checkbox" ? e.checked : e.value; } try { localStorage.setItem(SET_KEY, JSON.stringify(o)); } catch (e) {} }
 SET_IDS.forEach(k => $("#" + k).addEventListener("input", saveSet));
 /* gravity pull: 1..100 -> 10 s .. 0.1 s to close most of the gap; heading pull: 1..100 -> 60 s .. 1 s */
 const levelTau = () => 10 * Math.pow(0.01, (+$("#levelK").value - 1) / 99);
@@ -307,7 +320,11 @@ const hasFeat = d => d.collections.some(c => c.featureReports && c.featureReport
 const featDev = () => (ctlDev && hasFeat(ctlDev) ? ctlDev : devs.find(hasFeat));
 /* The settings channel is shared: with the remapper page open at the same time (or Steam) a reply
  * can be another program's. Then step aside for a moment, they need their reply too, and ask again. */
-async function readPath(path) {
+/* this page's own reads one at a time (the 3D loop and the menu loop): two asks in flight take each
+ * other's replies */
+let readQ = Promise.resolve();
+function readPath(path) { const r = readQ.then(() => readPath1(path)); readQ = r.catch(() => {}); return r; }
+async function readPath1(path) {
   const d = featDev(); if (!d) throw new Error("no device"); const tag = pathTag(path);
   let empty = 0;
   for (let tries = 0; tries < 4; tries++) {
@@ -346,6 +363,7 @@ setInterval(() => { const n = rawN; rawN = 0; if (!devs.length) return;
       /* firmware without native reads answers nothing: ask once a second, not hundreds of times */
       if (++fails > 50) rawOk = false; await new Promise(r => setTimeout(r, fails > 50 ? 1000 : 10)); continue; }
     if (!b || b.length < 40) { rawOk = false; await new Promise(r => setTimeout(r, 1000)); continue; }
+    if (b.length !== 40 && b.length < 56) continue; /* another path's reply with the same tag */
     const dv = new DataView(b.buffer, b.byteOffset, b.length), g = i => dv.getInt16(i, true);
     const v2 = b.length >= 56; /* v51 test 43+: the controller's orientation and the reply time */
     let dt;
@@ -439,6 +457,85 @@ function poseParts() {
   for (const [g, list] of [[29, ["back_l4", "back_l5"]], [28, ["back_r4", "back_r5"]]]) if (bit(g)) for (const n of list) if (!bit({ back_l4: 17, back_l5: 18, back_r4: 7, back_r5: 8 }[n])) glow(n, TOUCH, 0.25);
 }
 
+/* ---------- on-screen menus (sc26re/osd, v51 test 84+) ----------
+ * The controller says which radial menu / 3 x 3 grid is open, which slice is chosen and what each slice
+ * does as bound right now (shift, layer); the remapper's own names for slices and profiles come from
+ * this browser's storage (the remapper's Overlay tab writes them). */
+const IN_NAME = ["Left trackpad", "Right trackpad", "Left stick", "Right stick"];
+let menuSt = null, menuOk = null, menuSeen = 0, profSeen = null, toastT = 0;
+const store = k => { try { return JSON.parse(localStorage.getItem(k) || "null"); } catch (e) { return null; } };
+let LABELS = store("sc26re_menu_labels") || {}, PNAMES = store("sc26re_prof_names") || [];
+window.addEventListener("storage", e => { if (e.key === "sc26re_menu_labels") LABELS = store(e.key) || {}; if (e.key === "sc26re_prof_names") PNAMES = store(e.key) || []; });
+const profName = p => "Profile " + (p + 1) + (PNAMES[p] ? ": " + PNAMES[p] : "");
+function sliceLabel(m, i) {
+  const s = m.src[i], own = (menuSt.layer >= 0 && LABELS[menuSt.layer + ":" + s]) || LABELS[menuSt.prof + ":" + s];
+  return own || (window.SCA ? SCA.short(m.act[i]) : m.act[i] ? "0x" + m.act[i].toString(16) : "");
+}
+function parseMenu(b) {
+  const o = { prof: b[0], layer: b[1] > 127 ? b[1] - 256 : b[1], shift: b[2], menus: [] };
+  for (let k = 0; k < b[3] && 28 + 24 * k <= b.length; k++) { const m = b.subarray(4 + 24 * k, 28 + 24 * k), n = Math.min(m[1], 10);
+    o.menus.push({ inp: m[0] & 15, kind: m[0] >> 4, n, sel: m[2] > 127 ? m[2] - 256 : m[2], src: [...m.subarray(4, 4 + n)], act: [...m.subarray(14, 14 + n)] }); }
+  return o;
+}
+function toast(text) { const t = $("#toast"); t.textContent = text; t.classList.add("on"); toastT = performance.now(); }
+(async function menuLoop() {
+  for (;;) {
+    if (!devs.length || (!$("#menuOn").checked && !$("#toastOn").checked) || menuOk === false) { await new Promise(r => setTimeout(r, menuOk === false ? 3000 : 250)); if (menuOk === false && devs.length) menuOk = null; continue; }
+    let b = null; try { b = await readPath("sc26re/osd"); } catch (e) { await new Promise(r => setTimeout(r, 100)); continue; }
+    if (!b || !b.length) { menuOk = false; menuSt = null; continue; } /* firmware before v51 test 84 */
+    if (b.length !== 52) { await new Promise(r => setTimeout(r, 20)); continue; } /* another page's reply that happens to carry the same tag */
+    menuOk = true; menuSt = parseMenu(b); menuSeen = performance.now();
+    const pk = menuSt.prof + "/" + menuSt.layer;
+    if (profSeen !== null && pk !== profSeen && $("#toastOn").checked)
+      toast(menuSt.layer >= 0 ? profName(menuSt.prof) + "  +  layer: " + profName(menuSt.layer) : profName(menuSt.prof));
+    profSeen = pk;
+    await new Promise(r => setTimeout(r, menuSt.menus.length ? 12 : 30));
+  }
+})();
+const ACC = () => $("#hiCol").value;
+function drawMenu(now) {
+  if (toastT && now - toastT > 1600) { $("#toast").classList.remove("on"); toastT = 0; }
+  const cv = $("#menu"), dpr = window.devicePixelRatio || 1, W = innerWidth, H = innerHeight;
+  if (cv.width !== Math.round(W * dpr) || cv.height !== Math.round(H * dpr)) { cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr); }
+  const c = cv.getContext("2d"); c.setTransform(dpr, 0, 0, dpr, 0, 0); c.clearRect(0, 0, W, H);
+  if (!menuSt || !$("#menuOn").checked || now - menuSeen > 500) return;
+  const ms = menuSt.menus, R = Math.min(W, H) * 0.27 * (+$("#menuSize").value / 100) / (ms.length > 1 && $("#menuPos").value === "center" ? 1.6 : 1);
+  ms.forEach((m, idx) => {
+    const left = m.inp === 0 || m.inp === 2;
+    let cx = W / 2, cy = H / 2;
+    if ($("#menuPos").value === "side") cx = left ? Math.max(R + 12, W * 0.25) : Math.min(W - R - 12, W * 0.75);
+    else if (ms.length > 1) cx = W / 2 + (left ? -1 : 1) * (R + 10);
+    if (ms.length === 1 && $("#menuPos").value === "side" && W < 4 * R + 40) cx = W / 2; /* a small window: the middle */
+    c.font = `600 ${Math.max(10, R * 0.11)}px system-ui,Segoe UI,sans-serif`; c.textAlign = "center"; c.textBaseline = "middle";
+    const fit = (t, w) => { if (c.measureText(t).width <= w) return t; while (t.length > 1 && c.measureText(t + "…").width > w) t = t.slice(0, -1); return t + "…"; };
+    if (m.kind === 1) {
+      const n = m.n, r0 = R * 0.34, step = 2 * Math.PI / n;
+      for (let i = 0; i < n; i++) {
+        const a = -Math.PI / 2 + i * step, a0 = a - step / 2, a1 = a + step / 2, on = i === m.sel;
+        c.beginPath(); c.arc(cx, cy, R, a0, a1); c.arc(cx, cy, r0, a1, a0, true); c.closePath();
+        c.fillStyle = on ? ACC() : "rgba(14,19,30,.94)"; c.fill(); c.lineWidth = 2; c.strokeStyle = "rgba(160,180,210,.45)"; c.stroke();
+        const t = sliceLabel(m, i), rr = (R + r0) / 2;
+        c.fillStyle = t ? (on ? "#fff" : "#dfe7f5") : "rgba(160,180,210,.4)";
+        c.fillText(fit(t || "—", Math.max(30, Math.min(rr * step * 0.95, R * 0.62))), cx + rr * Math.cos(a), cy + rr * Math.sin(a));
+      }
+      c.beginPath(); c.arc(cx, cy, r0 - 1, 0, 2 * Math.PI); c.fillStyle = m.sel < 0 ? "#1d3d66" : "#0e131e"; c.fill();
+    } else {
+      const g = 2 * R / 3;
+      for (let i = 0; i < 9; i++) {
+        const x = cx - R + (i % 3) * g, y = cy - R + Math.floor(i / 3) * g, on = i === m.sel;
+        c.fillStyle = on ? ACC() : "rgba(14,19,30,.94)"; c.fillRect(x + 2, y + 2, g - 4, g - 4);
+        c.lineWidth = 2; c.strokeStyle = "rgba(160,180,210,.45)"; c.strokeRect(x + 2, y + 2, g - 4, g - 4);
+        const t = sliceLabel(m, i); c.fillStyle = t ? (on ? "#fff" : "#dfe7f5") : "rgba(160,180,210,.4)";
+        c.fillText(fit(t || "—", g - 10), x + g / 2, y + g / 2);
+      }
+    }
+    c.font = `${Math.max(10, R * 0.09)}px system-ui,Segoe UI,sans-serif`; c.fillStyle = "rgba(223,231,245,.85)";
+    c.fillText(IN_NAME[m.inp] + (menuSt.layer >= 0 ? " · layer " + (menuSt.layer + 1) : ""), cx, cy + R + Math.max(12, R * 0.1));
+  });
+}
+window.__menu = { get st() { return menuSt; }, get ok() { return menuOk; } };
+if (location.hash === "#debug") window.__menu = { parseMenu, set(b) { menuSt = parseMenu(Uint8Array.from(b)); menuSeen = 1e12; }, get st() { return menuSt; }, toast };
+
 /* ---------- render ---------- */
 let lastFrame = 0, fpsN = 0, fpsT = performance.now();
 function frame(now) {
@@ -464,7 +561,9 @@ function frame(now) {
   /* popped triggers stand above the top: aim a little higher so the whole set is in the frame */
   const lift = $("#popTrig").checked ? 1.6 : 0;
   camera.position.set(0, lift, dist); camera.lookAt(0, lift, 0);
-  renderer.render(scene, camera);
+  $("#view").style.visibility = $("#modelOn").checked ? "" : "hidden";
+  if ($("#modelOn").checked) renderer.render(scene, camera);
+  drawMenu(now);
 }
 requestAnimationFrame(frame);
 /* test hook (#debug): turn the controller from the console / a test */

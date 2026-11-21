@@ -99,7 +99,7 @@
 <body>
 <div class="top">
   <div class="topin">
-    <div class="brand">SC2 <span class="hz">Remapper</span> <span class="note" id="pagever" title="page version — if it is older than expected, press Ctrl+F5">p.2026-11-19j</span></div>
+    <div class="brand">SC2 <span class="hz">Remapper</span> <span class="note" id="pagever" title="page version — if it is older than expected, press Ctrl+F5">p.2026-11-21a</span></div>
     <button class="primary" id="connect">Connect controller</button>
     <span id="status" class="chip">not connected</span>
     <span class="grow"></span>
@@ -110,7 +110,7 @@
   </div>
 </div>
 <div class="wrap">
-  <nav class="views"><button class="view on" data-v="map">Buttons &amp; profiles</button><button class="view" data-v="gyro">Gyro &amp; gyro mouse</button><button class="view" data-v="ctl">Controller settings</button><button class="view" data-v="cal">Calibration</button><button class="view" data-v="help">How it works</button></nav>
+  <nav class="views"><button class="view on" data-v="map">Buttons &amp; profiles</button><button class="view" data-v="gyro">Gyro &amp; gyro mouse</button><button class="view" data-v="ctl">Controller settings</button><button class="view" data-v="cal">Calibration</button><button class="view" data-v="ovl">Overlay</button><button class="view" data-v="help">How it works</button></nav>
 
   <section id="v_map">
     <div class="panel">
@@ -207,6 +207,24 @@
     </div>
   </section>
 
+  <section id="v_ovl" hidden>
+    <div class="panel">
+      <div class="bar">
+        <button class="primary" id="ovPip" title="A small Chrome window that stays on top of every other window, also over a game in a borderless window (not over exclusive full screen)">Open on top of the game</button>
+        <label class="note">size <input id="ovW" type="number" min="200" max="1600" step="10" value="520" style="width:78px"> × <input id="ovH" type="number" min="150" max="1200" step="10" value="420" style="width:78px"></label>
+        <a class="ghost btnlike" href="overlay.html" target="_blank" title="The full overlay page in its own tab (for OBS window capture)">Open as a page</a>
+        <span id="ovState" class="note"></span>
+      </div>
+      <p class="note">The overlay shows the radial menus and 3 × 3 grids while a pad is touched or a stick pushed (slice names, the chosen one lit), the profile’s name when it changes, and the 3D controller. Needs v51 test 84 or newer for the menus. Press <b>H</b> inside it for its settings (3D model on / off, menu size and place, colours). The window on top: drag it where you want it, Chrome keeps its place and size; it closes with the remapper tab.</p>
+      <div id="ovBox" style="height:440px;border:1px solid var(--line,#2c3850);border-radius:10px;overflow:hidden;background:#0d1320"></div>
+    </div>
+    <div class="panel">
+      <h3 style="margin:0 0 6px">Slice names</h3>
+      <p class="note">By default a slice shows what it does (its first action). Give it your own name here (“Grenade”, “Map”…): saved in this browser, for <b id="ovProf"></b>. A slice of a layer profile takes the layer’s name.</p>
+      <div id="ovLabels"></div>
+    </div>
+  </section>
+
   <section id="v_help" hidden>
     <div class="panel help">
       <h3>What it is</h3>
@@ -253,6 +271,7 @@
 
 <dialog id="vdlg" style="max-width:760px;width:94vw"><h3 style="margin:0 0 6px">Import a Steam Input configuration</h3><div id="vbody"></div>
 <div class="bar" style="margin-top:12px;justify-content:flex-end"><button class="ghost" id="vcancel">Cancel</button><button class="ghost" id="vload">Load into the editor</button><button class="primary" id="vsave">Load and save to the controller</button></div></dialog>
+<script src="actnames.js"></script>
 <script src="vdf.js"></script>
 <script src="stickcal.js"></script>
 <dialog id="dlg"><div id="editor"></div><div class="bar" style="margin-top:12px;justify-content:flex-end"><button id="dlgClear" class="ghost danger">Clear input</button><button class="primary" id="dlgDone">Done</button></div></dialog>
@@ -286,16 +305,7 @@ const SRC=[
  ["Right trackpad",[[42,"Right pad up"],[43,"Right pad down"],[44,"Right pad left"],[45,"Right pad right"],[50,"Right pad gate top-left"],[51,"Right pad gate top-right"],[52,"Right pad gate bottom-left"],[53,"Right pad gate bottom-right"],[56,"Right pad wheel clockwise"],[57,"Right pad wheel counter-clockwise"],[63,"Right pad outer ring"],[65,"Right pad centre"]],"rp"],
 ];
 /* ---- action list ---- */
-const KEYS={4:"A",5:"B",6:"C",7:"D",8:"E",9:"F",10:"G",11:"H",12:"I",13:"J",14:"K",15:"L",16:"M",17:"N",18:"O",19:"P",20:"Q",21:"R",22:"S",23:"T",24:"U",25:"V",26:"W",27:"X",28:"Y",29:"Z",
- 30:"1",31:"2",32:"3",33:"4",34:"5",35:"6",36:"7",37:"8",38:"9",39:"0",40:"Enter",41:"Esc",42:"Backspace",43:"Tab",44:"Space",45:"- _",46:"= +",47:"[ {",48:"] }",49:"\\ |",51:"; :",52:"' \"",53:"` ~",54:", <",55:". >",56:"/ ?",57:"Caps Lock",
- 58:"F1",59:"F2",60:"F3",61:"F4",62:"F5",63:"F6",64:"F7",65:"F8",66:"F9",67:"F10",68:"F11",69:"F12",70:"Print Screen",71:"Scroll Lock",72:"Pause",73:"Insert",74:"Home",75:"Page Up",76:"Delete",77:"End",78:"Page Down",79:"Right arrow",80:"Left arrow",81:"Down arrow",82:"Up arrow",
- 83:"Num Lock",84:"Num /",85:"Num *",86:"Num -",87:"Num +",88:"Num Enter",89:"Num 1",90:"Num 2",91:"Num 3",92:"Num 4",93:"Num 5",94:"Num 6",95:"Num 7",96:"Num 8",97:"Num 9",98:"Num 0",99:"Num .",101:"Menu key"};
-const MODS={0xE0:"Left Ctrl",0xE1:"Left Shift",0xE2:"Left Alt",0xE3:"Left Win",0xE4:"Right Ctrl",0xE5:"Right Shift",0xE6:"Right Alt",0xE7:"Right Win"};
-const MOUSE={0x70:"Mouse left",0x71:"Mouse right",0x7A:"Mouse middle",0x7B:"Mouse back (4)",0x7C:"Mouse forward (5)",0x76:"Mouse move up",0x77:"Mouse move down",0x78:"Mouse move left",0x79:"Mouse move right",0x72:"Wheel up",0x73:"Wheel down",0x74:"Wheel left",0x75:"Wheel right"};
-const PADB=[[0,"A"],[1,"B"],[2,"X"],[3,"Y"],[19,"LB"],[9,"RB"],[27,"LT click"],[23,"RT click"],[17,"L4"],[18,"L5"],[7,"R4"],[8,"R5"],[13,"D-pad up"],[10,"D-pad down"],[12,"D-pad left"],[11,"D-pad right"],[6,"Menu"],[14,"View"],[4,"QAM"],[15,"L3"],[5,"R3"],[26,"Left pad click"],[22,"Right pad click"]];
-const XBOXB=[[16,"Guide"],[0,"A"],[1,"B"],[2,"X"],[3,"Y"],[19,"LB"],[9,"RB"],[27,"LT (full)"],[23,"RT (full)"],[6,"Start"],[14,"Back"],[15,"L3"],[5,"R3"],[13,"D-pad up"],[10,"D-pad down"],[12,"D-pad left"],[11,"D-pad right"]];
-const XTRIG=["Xbox LT (whole trigger, analog)","Xbox RT (whole trigger, analog)"];
-const STICKOUT=["Left stick up (full)","Left stick down (full)","Left stick left (full)","Left stick right (full)","Right stick up (full)","Right stick down (full)","Right stick left (full)","Right stick right (full)","Left trigger (full, analog)","Right trigger (full, analog)"];
+const {KEYS,MODS,MOUSE,PADB,XBOXB,XTRIG,STICKOUT}=SCA;
 const OPTS=(()=>{
   let h='<option value="0">—</option><optgroup label="Mouse">'+Object.entries(MOUSE).map(([v,n])=>`<option value="${v}">${n}</option>`).join("")+'</optgroup>';
   h+='<optgroup label="Modifiers">'+Object.entries(MODS).map(([v,n])=>`<option value="${v}">${n}</option>`).join("")+'</optgroup>';
@@ -396,7 +406,9 @@ const PRESETS=[
    for(const [x] of PADB) B(x,0x80+x); }],
 ];
 let sel=null; /* number = source, string = analog group "ls"/"rs"/"lp"/"rp" */
-function buildTabs(){ if(typeof gyScopeShow==='function'&&document.getElementById('gyScope')&&$("#gyScope").value==="p") setTimeout(gyScopeShow,0); $("#tabs").innerHTML=[0,1,2,3].map(i=>`<button class="tab${i===cur?" on":""}" data-p="${i}">Profile ${i+1}${nameOf(prof[i])?": "+nameOf(prof[i]):""}</button>`).join(""); document.querySelectorAll("#tabs .tab").forEach(b=>b.onclick=()=>{ saveName(); cur=+b.dataset.p; render(); }); }
+function buildTabs(){ try{ localStorage.setItem("sc26re_prof_names",JSON.stringify(prof.map(nameOf))); }catch(e){}
+  if(typeof ovLabels==="function"&&!$("#v_ovl").hidden) ovLabels();
+  if(typeof gyScopeShow==='function'&&document.getElementById('gyScope')&&$("#gyScope").value==="p") setTimeout(gyScopeShow,0); $("#tabs").innerHTML=[0,1,2,3].map(i=>`<button class="tab${i===cur?" on":""}" data-p="${i}">Profile ${i+1}${nameOf(prof[i])?": "+nameOf(prof[i]):""}</button>`).join(""); document.querySelectorAll("#tabs .tab").forEach(b=>b.onclick=()=>{ saveName(); cur=+b.dataset.p; render(); }); }
 function nameOf(b){ return new TextDecoder().decode(b.slice(2,16)).replace(/\0.*$/,""); }
 function saveName(){ const b=prof[cur]; b[0]=0xA7; b[1]=PROF_VER; const nm=new TextEncoder().encode($("#pname").value.slice(0,13)); b.fill(0,2,16); b.set(nm.slice(0,13),2); }
 function grpTextO(b,o,g){ return [0,1,2,3].map(i=>ACTNAME(b[o+1+g*4+i])).filter(x=>x).join(" + "); }
@@ -481,7 +493,7 @@ function picture(){
 function gyroSummary(){ const e=document.getElementById("g_gm_output"), a=document.getElementById("g_gm_act_button");
   if(!e||!e.options.length||e.selectedIndex<0) return "gyro, gyro mouse / joystick →";
   return e.options[e.selectedIndex].text+(a&&a.selectedIndex>=0?" · "+a.options[a.selectedIndex].text:"")+" →"; }
-function showView(v){ document.querySelectorAll(".view").forEach(x=>x.classList.toggle("on",x.dataset.v===v)); for(const k of ["map","gyro","ctl","cal","help"]) $("#v_"+k).hidden=k!==v; window.scrollTo(0,0); }
+function showView(v){ document.querySelectorAll(".view").forEach(x=>x.classList.toggle("on",x.dataset.v===v)); for(const k of ["map","gyro","ctl","cal","ovl","help"]) $("#v_"+k).hidden=k!==v; window.scrollTo(0,0); ovShown(v==="ovl"); }
 function render(){
   buildTabs(); updXbWarn();
   $("#pname").value=nameOf(prof[cur]); $("#block").checked=(prof[cur][17]&1)!==0;
@@ -686,7 +698,7 @@ function editor(){
     if(pad&&m===10){
       h+=slider("asp",Math.max(2,Math.min(10,sp||8)),2,10,1,"Slices","","1 = top, then clockwise");
       h+=pct("dzi",P(2)||20,5,80,"Centre (cancel)","lift inside it = nothing");
-      h+=`<p class="note wrap">Touch and slide to a slice (zone haptics tick at each slice), lift to choose it — or with “Works while: clicked” choose it with the click. No overlay: find the slices by feel.</p>`;
+      h+=`<p class="note wrap">Touch and slide to a slice (zone haptics tick at each slice), lift to choose it — or with “Works while: clicked” choose it with the click. Shown on screen by the Overlay tab; also found by feel.</p>`;
     }
     if(pad&&m===3){
       h+=slider("tacc",U16(o+10),0,300,5,"Acceleration","%","extra speed on fast swipes; 0 = off");
@@ -699,7 +711,7 @@ function editor(){
       h+=pct("dzi",P(2)||30,10,90,"Centre (cancel)","inside it nothing is chosen");
       h+=`<div class="row2"><label>Chooses</label><select id="xact"><option value="0">when the stick comes back to the centre</option><option value="1">on the stick click</option></select></div>`;
       h+=`<div class="row2"><label>Zone haptics</label><select id="ahap">${HAPT.map(([v,n])=>`<option value="${v}">${n}</option>`).join("")}</select><small>a tick for every new slice</small></div>`;
-      h+=`<p class="note wrap">Point the stick at a slice and let it go back to the centre (or click) to choose it. No overlay: find the slices by feel.</p>`;
+      h+=`<p class="note wrap">Point the stick at a slice and let it go back to the centre (or click) to choose it. Shown on screen by the Overlay tab; also found by feel.</p>`;
     }
     if(!pad&&m===11){ h+=pct("dzi",P(2)||30,5,95,"Pushed past","how far before it counts as pressed"); h+=`<p class="note wrap">The whole stick is one button: bind “Whole stick” below — long / double / turbo and the rest work as on any button.</p>`; }
     if(m===13){
@@ -995,6 +1007,49 @@ $("#write").onclick=async()=>{
   }catch(e){ $("#pstatus").innerHTML=`<span class="err">${e.message}</span>`; }
   finally{ bulk--; }
 };
+
+/* ---- Overlay tab: the overlay page inside the remapper, a window on top (Document Picture-in-Picture), slice names ---- */
+const RADIAL_SRC=[[38,47,41,49,39,48,40,46,64,54],[42,51,45,53,43,52,44,50,65,56],[30,70,33,71,31,72,32,73],[34,74,37,75,35,76,36,77]];
+const GRID_SRC=[[46,38,47,40,64,41,48,39,49],[50,42,51,44,65,45,52,43,53]];
+const GRID_POS=["top-left","top","top-right","left","centre","right","bottom-left","bottom","bottom-right"];
+let ovPipWin=null, ovOn=false;
+const ovLab=()=>{ try{ return JSON.parse(localStorage.getItem("sc26re_menu_labels")||"{}"); }catch(e){ return {}; } };
+function ovFrame(where,q){ const f=where.ownerDocument.createElement("iframe"); f.src=new URL("overlay.html?"+q,location.href).href; f.allow="hid"; f.style.cssText="border:0;width:100%;height:100%;display:block"; where.replaceChildren(f); return f; }
+function ovShown(on){ ovOn=on; const box=$("#ovBox");
+  if(on&&!ovPipWin){ if(!box.firstChild||box.firstChild.tagName!=="IFRAME") ovFrame(box,"embed=1"); }
+  else box.replaceChildren(Object.assign(document.createElement("p"),{className:"note",style:"padding:14px",textContent:ovPipWin?"Shown in the window on top.":""}));
+  if(on) ovLabels();
+  $("#ovState").textContent=ovPipWin?"window on top open":""; }
+$("#ovPip").onclick=async()=>{
+  if(!("documentPictureInPicture" in window)){ $("#ovState").innerHTML='<span class="err">this browser cannot keep a window on top (needs Chrome / Edge 116+); use “Open as a page”</span>'; return; }
+  if(ovPipWin){ ovPipWin.close(); return; }
+  try{ const w=await documentPictureInPicture.requestWindow({width:+$("#ovW").value||520,height:+$("#ovH").value||420});
+    ovPipWin=w; w.document.title="SC2 overlay"; w.document.body.style.cssText="margin:0;height:100vh;overflow:hidden;background:#0d1320";
+    ovFrame(w.document.body,"pip=1"); $("#ovPip").textContent="Close the window on top";
+    w.addEventListener("pagehide",()=>{ ovPipWin=null; $("#ovPip").textContent="Open on top of the game"; ovShown(ovOn); });
+    ovShown(ovOn);
+  }catch(e){ $("#ovState").innerHTML=`<span class="err">${e.message}</span>`; } };
+function ovLabels(){
+  const b=prof[cur], lab=ovLab(), rows=[], seen=new Set();
+  $("#ovProf").textContent="Profile "+(cur+1)+(nameOf(b)?": "+nameOf(b):"");
+  const first=o=>{ for(let q=1;q<=12;q++) if(b[o+q]) return b[o+q]; return 0; };
+  for(const an of ["lp","rp","ls","rs"]) for(const L of [0,1]){
+    if(L&&!shBtn(GRP_OF_AN[an])) continue;
+    const o=aOffL(an,L), m=b[o], pad=isPad(an), j=AIDX[an]; /* AIDX: ls 0, rs 1, lp 2, rp 3 */
+    let src=null, kind="";
+    if(m===10){ kind="radial menu"; const n=pad?Math.max(2,Math.min(10,b[o+6]|b[o+7]<<8||8)):Math.max(2,Math.min(8,b[anxOffL(an,L)+6]||8));
+      const tab=RADIAL_SRC[pad?j-2:j+2]; src=[...Array(n).keys()].map(i=>tab[!pad&&n===4?[0,2,4,6][i]:i]); }
+    else if(pad&&m===9){ kind="3 × 3 grid"; src=GRID_SRC[j-2]; }
+    if(!src) continue;
+    rows.push(`<h4 style="margin:10px 0 4px">${ANAME[an]} — ${kind}${L?" (mode shift)":""}</h4>`);
+    src.forEach((s,i)=>{ const key=cur+":"+s, act=first(bOffL(s,L)), dup=seen.has(key); seen.add(key);
+      rows.push(`<div class="row2"><label>${kind==="3 × 3 grid"?GRID_POS[i]:"slice "+(i+1)}</label><span><input class="ovl" data-k="${key}" maxlength="24" placeholder="${act?SCA.short(act):"—"}" value="${(lab[key]||"").replace(/"/g,"&quot;")}"${dup?" disabled title=\"same input as above\"":""} style="width:180px"> <span class="note">${act?SCA.name(act):"not bound"}</span></span></div>`); });
+  }
+  $("#ovLabels").innerHTML=rows.length?rows.join(""):'<p class="note">This profile has no radial menu or 3 × 3 grid. Set a stick or trackpad to “Radial menu” (or a trackpad to “3 × 3 grid”) on Buttons &amp; profiles.</p>';
+  document.querySelectorAll("#ovLabels .ovl").forEach(e=>e.oninput=()=>{ const l=ovLab(); if(e.value.trim()) l[e.dataset.k]=e.value.trim(); else delete l[e.dataset.k];
+    try{ localStorage.setItem("sc26re_menu_labels",JSON.stringify(l)); }catch(err){}
+    document.querySelectorAll(`#ovLabels .ovl[data-k="${e.dataset.k}"]`).forEach(x=>{ if(x!==e) x.value=e.value; }); });
+}
 /* ---- Steam Input (.vdf) import / export: web/vdf.js ---- */
 const esc=t=>String(t).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 let vImp=null, vName="";

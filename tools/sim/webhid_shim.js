@@ -28,7 +28,8 @@
   const hidLs = {};
   const hid = {
     async requestDevice() { return [dev]; },
-    async getDevices() { return dev.opened ? [dev] : []; },
+    /* a frame inside the page (the remapper's overlay) is allowed what the page was, as in Chrome */
+    async getDevices() { return dev.opened || window !== window.top ? [dev] : []; },
     addEventListener(t, f) { const a = (hidLs[t] = hidLs[t] || []); if (!a.includes(f)) a.push(f); },
     removeEventListener(t, f) { hidLs[t] = (hidLs[t] || []).filter(x => x !== f); },
   };

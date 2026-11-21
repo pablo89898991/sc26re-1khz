@@ -304,6 +304,8 @@ void remap_abs_pos(uint16_t *x, uint16_t *y);
 /* 8 bytes: keyboard reports sent (le16), refused (le16), last error, link (0 USB, 1 Bluetooth, 2 Puck, 3 none), kbd state valid */
 /* 14 bytes: keyboard diagnostics (8) + Xbox pad diagnostics (6, see xinput_diag) */
 void remap_diag(uint8_t *out);
+#define REMAP_MENU_SIZE 52
+void remap_menu_state(uint8_t *out); /* the on-screen menu: see remap.c */
 /* physical controller state before any remapping (3D overlay) */
 void remap_raw_capture(const struct controller_report *r);
 /*
