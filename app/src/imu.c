@@ -1426,6 +1426,9 @@ static void imu_stream_thread_main(void *arg1, void *arg2, void *arg3)
  * poll gets a new sample (at most ~1 ms old). Without USB polls (Puck,
  * Bluetooth, nothing fetched for 1.5 ms) a 1 ms timer starts the reads.
  */
+#define IMU_REG_CTRL1 0x10U /* OP_MODE_XL [6:4], ODR_XL [3:0] */
+#define IMU_REG_CTRL2 0x11U /* OP_MODE_G [6:4], ODR_G [3:0] */
+#define IMU_REG_HAODR_CFG 0x62U /* HAODR_SEL [1:0] */
 #define IMU_REG_CTRL6 0x15U /* FS_G [3:0], LPF1_G_BW [6:4] */
 #define IMU_REG_CTRL7 0x16U /* LPF1_G_EN bit 0 */
 #define IMU_REG_CTRL8 0x17U /* FS_XL [1:0] */
@@ -1436,6 +1439,7 @@ static void imu_stream_thread_main(void *arg1, void *arg2, void *arg3)
 static const struct i2c_dt_spec imu_i2c = I2C_DT_SPEC_GET(DT_ALIAS(accel0));
 /* Zephyr LSM6DSV16X driver: sets the gyro ODR and remembers it across stream restarts */
 int lsm6dsv16x_gyro_set_odr_raw(const struct device *dev, uint8_t odr);
+int lsm6dsv16x_accel_set_odr_raw(const struct device *dev, uint8_t odr);
 K_SEM_DEFINE(imu_tick_sem, 0, 1);
 static atomic_t imu_last_usb_ticks;
 static atomic_t imu_last_usb_ms;
@@ -1705,26 +1709,39 @@ static void imu_fast_thread_main(void *arg1, void *arg2, void *arg3)
 			continue;
 		}
 		{
-			/* gyro ODR in the sensor (Live setting): 2000/4000/8000 Hz (HAODR set 1).
-			 * Still read once per frame; a higher rate gives the sensor's low-pass
-			 * more samples to average internally, at no extra bus cost. */
-			static int16_t applied_odr = 2000;
+			/* gyro rate and operating mode in the sensor (Live settings). Mode 0 high-accuracy
+			 * ODR (HAODR set 1: 2000 / 4000 / 8000 Hz, the default), 1 high-performance (1920 /
+			 * 3840 / 7680 Hz). Still read once per frame; a higher rate gives the sensor's
+			 * low-pass more samples to average internally, at no extra bus cost. The mode and
+			 * HAODR_SEL can only change with both sensors powered down, and both must be in the
+			 * same mode: accel and gyro go off, the table is chosen, both come back. */
+			static int16_t applied_odr = 2000, applied_mode;
 			int16_t odr = sc26re_cfg_get(SC26RE_CFG_GYRO_ODR);
-			uint8_t raw = odr >= 8000 ? LSM6DSVXXX_DT_ODR_HA01_AT_8000Hz
-			              : odr >= 4000 ? LSM6DSVXXX_DT_ODR_HA01_AT_4000Hz
-			                            : LSM6DSVXXX_DT_ODR_HA01_AT_2000Hz;
+			int16_t mode = sc26re_cfg_get(SC26RE_CFG_GYRO_MODE) ? 1 : 0;
 
-			if(odr != applied_odr)
+			if(odr != applied_odr || mode != applied_mode)
 			{
-				int err;
+				const uint8_t code = odr >= 8000 ? 0xCU : odr >= 4000 ? 0xBU : 0xAU; /* ODR field */
+				const uint8_t ha = mode ? 0U : 1U;                                    /* HAODR set and OP_MODE */
+				int err = 0;
 
 				k_mutex_lock(&imu_io_lock, K_FOREVER);
-				err = lsm6dsv16x_gyro_set_odr_raw(imu_dev, raw);
+				if(mode != applied_mode)
+				{
+					err |= i2c_reg_write_byte_dt(&imu_i2c, IMU_REG_CTRL1, 0U);
+					err |= i2c_reg_write_byte_dt(&imu_i2c, IMU_REG_CTRL2, 0U);
+					err |= i2c_reg_update_byte_dt(&imu_i2c, IMU_REG_HAODR_CFG, 0x03U, ha);
+					err |= i2c_reg_write_byte_dt(&imu_i2c, IMU_REG_CTRL1, (uint8_t)((ha << 4) | 0xAU));
+					err |= lsm6dsv16x_accel_set_odr_raw(imu_dev, (uint8_t)((ha << 4) | 0xAU));
+				}
+				err |= i2c_reg_write_byte_dt(&imu_i2c, IMU_REG_CTRL2, (uint8_t)((ha << 4) | code));
+				err |= lsm6dsv16x_gyro_set_odr_raw(imu_dev, (uint8_t)((ha << 4) | code));
 				k_mutex_unlock(&imu_io_lock);
 				if(err == 0)
 				{
 					applied_odr = odr;
-					LOG_INF("gyro ODR %d Hz", odr);
+					applied_mode = mode;
+					LOG_INF("gyro %s, code %x", mode ? "high-performance" : "high-accuracy ODR", code);
 				}
 			}
 		}

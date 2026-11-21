@@ -905,6 +905,7 @@ const LS=[
  ["gyro_filter","Gyro smoothing","0 = off, 1 light … 4 strong (adds a few ms)"],
  ["gyro_hw_lpf","Gyro hardware filter (in the sensor)","0 = off (rawest, most noise), 1 = lightest (default) … 8 = strongest. Filters inside the IMU before the data leaves it; less noise for a little delay (v47+)"],
  ["gyro_odr","Gyro sample rate (in the sensor)","Hz: 2000 (default), 4000 or 8000. Still read once per USB frame; a higher rate gives the hardware filter more samples to average inside the IMU. Compare noise with “Measure 5 s at rest” (v49+)"],
+ ["gyro_mode","IMU mode","0 = high-accuracy ODR (default: exactly 2000 / 4000 / 8000 Hz), 1 = high-performance (1920 / 3840 / 7680 Hz). Accel and gyro together; compare noise with “Measure 5 s at rest” (v51.1+)"],
  ["gyro_avg","Gyro averaging (in the controller)","1 = newest sample only (default), 2 = average of 2 samples 0.5 ms apart: less noise for ~0.25 ms more delay. Try it with the hardware filter at 0 (v48+)"],
  ["gyro_fsr","Gyro range (full scale)","°/s: 250, 500, 1000 or 2000 (default). Lower = finer steps from the sensor, but turns faster than this are cut off (500 is a common choice for gyro aiming) (v48+)"],
  ["imu_pace","IMU read timing (USB)","what starts each gyro/accel read: 0 = start of each USB frame (default), 1 = when the PC has fetched the previous report, 2 = 1 ms timer (v47+, for testing)"],
