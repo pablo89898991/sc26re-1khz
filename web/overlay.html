@@ -36,6 +36,7 @@
 <div id="ui">
   <h1>SC2 <span>3D Overlay</span></h1>
   <div class="row"><button class="primary" id="connect">Connect controller</button><span id="status" class="note">not connected</span></div>
+  <div class="row"><button id="arrange" title="sample menus and the 3D controller's area: drag them where you want them, mouse wheel = size">Arrange on screen</button></div>
   <div id="setRows"></div>
   <script>document.getElementById("setRows").innerHTML = OVS.groups.map(g => `<h2 class="ovh">${g.name}</h2>` + OVS.rows(g.g)).join("");</script>
   <p class="note">For recording: in OBS add a <b>Window Capture</b> of this browser window and a <b>Chroma Key</b> filter (green). OBS’s Browser Source cannot open the controller (no WebHID). <b>H</b> hides this panel, <b>R</b> recenters, drag with the mouse to turn the view (double-click resets it). “Native” (sc26re v51+) shows what your hands do even when the remapper is on; “what Steam receives” shows the pad after remapping.</p>
@@ -55,9 +56,14 @@ const SET_IDS = OVS.ids;
 const QS = new URLSearchParams(location.search), IN_TAB = QS.has("pip") || QS.has("embed");
 const SET_KEY = IN_TAB ? OVS.TAB_KEY : OVS.PAGE_KEY;
 if (IN_TAB) $("#ui").classList.add("hidden");
-OVS.apply(document, Object.assign({}, IN_TAB ? OVS.tabDefaults : {}, OVS.read(SET_KEY)));
+/* ?app: the Windows overlay app's see-through window over the whole screen (always transparent; the
+ * 3D controller starts small in the bottom-right corner) */
+const APP = QS.has("app");
+const stored = OVS.read(SET_KEY);
+OVS.apply(document, Object.assign({}, IN_TAB ? OVS.tabDefaults : {}, APP ? OVS.appDefaults : {}, stored));
 function saveSet() { OVS.showVals(document); try { localStorage.setItem(SET_KEY, JSON.stringify(OVS.collect(document))); } catch (e) {} }
 /* changed in the remapper's tab (or another copy of this page): take it over */
+if (APP && !Object.keys(stored).length) saveSet(); /* the remapper's Overlay tab in the app shows these */
 window.addEventListener("storage", e => { if (e.key !== SET_KEY) return;
   for (const el of OVS.apply(document, OVS.read(SET_KEY))) { el.dispatchEvent(new Event("input")); el.dispatchEvent(new Event("change")); } });
 window.addEventListener("message", e => { if (e.origin === location.origin && e.data === "sc26re:recenter") recenter(); });
@@ -481,46 +487,100 @@ function toast(text) { const t = $("#toast"); t.style.top = $("#toastY").value +
     await new Promise(r => setTimeout(r, menuSt.menus.length ? 12 : 30));
   }
 })();
+/* where a menu goes: centre and radius (pos: the input's side, the centre, or X / Y; two of a kind side by side) */
+function menuGeom(m, twin, W, H) {
+  const left = m.inp === 0 || m.inp === 2, k = m.kind === 1 ? "rad" : "grid", pos = $("#" + k + "Pos").value;
+  const R = Math.min(W, H) * 0.27 * (+$("#" + k + "Size").value / 100) / (twin && pos !== "auto" ? 1.6 : 1);
+  let cx = W / 2, cy = H / 2;
+  if (pos === "auto") { cx = left ? Math.max(R + 12, W * 0.25) : Math.min(W - R - 12, W * 0.75); if (!twin && W < 4 * R + 40) cx = W / 2; /* a small window: the middle */ }
+  else { if (pos === "custom") { cx = W * $("#" + k + "X").value / 100; cy = H * $("#" + k + "Y").value / 100; } if (twin) cx += (left ? -1 : 1) * (R + 10); }
+  return { cx, cy, R };
+}
+/* arrange mode: sample menus and the 3D controller's area, dragged into place, mouse wheel = size */
+let editOn = false, editDrag = null;
+const DEMO = [{ inp: 1, kind: 1, n: 8, sel: 2, src: [], act: [], demo: ["Slice 1", "2", "3", "4", "5", "6", "7", "8"] },
+  { inp: 0, kind: 2, n: 9, sel: 4, src: [], act: [], demo: ["1", "2", "3", "4", "5", "6", "7", "8", "9"] }];
+function setEdit(on) {
+  editOn = !!on; $("#menu").style.pointerEvents = editOn ? "auto" : "none"; $("#menu").style.cursor = editOn ? "move" : "";
+  if (editOn) $("#ui").classList.remove("hidden"); else if (IN_TAB) $("#ui").classList.add("hidden");
+  $("#arrange").textContent = editOn ? "Done arranging (Esc)" : "Arrange on screen";
+  if (window.sc26reApp) sc26reApp.edit(editOn); /* the Windows app: clicks reach this window only while arranging */
+}
+window.__ovEdit = setEdit;
+function setVal(id, v) { const e = $("#" + id); e.value = v; e.dispatchEvent(new Event("input")); }
+function editHit(x, y) {
+  const W = innerWidth, H = innerHeight;
+  for (const m of DEMO) { const g = menuGeom(m, false, W, H); if (m.kind === 1 ? Math.hypot(x - g.cx, y - g.cy) <= g.R : Math.abs(x - g.cx) <= g.R && Math.abs(y - g.cy) <= g.R) return { k: m.kind === 1 ? "rad" : "grid", g }; }
+  const r = view.getBoundingClientRect(); if ($("#modelOn").checked && x >= r.left && x <= r.right && y >= r.top && y <= r.bottom) return { k: "model" };
+  return null;
+}
+{ const cv = $("#menu");
+  cv.addEventListener("pointerdown", e => { if (!editOn) return; const h = editHit(e.clientX, e.clientY); if (!h) return;
+    editDrag = { h, x: e.clientX, y: e.clientY }; cv.setPointerCapture(e.pointerId);
+    if (h.k !== "model" && $("#" + h.k + "Pos").value !== "custom") { setVal(h.k + "Pos", "custom"); setVal(h.k + "X", (100 * h.g.cx / innerWidth).toFixed(1)); setVal(h.k + "Y", (100 * h.g.cy / innerHeight).toFixed(1)); } });
+  cv.addEventListener("pointermove", e => { if (!editDrag) return; const dx = 100 * (e.clientX - editDrag.x) / innerWidth, dy = 100 * (e.clientY - editDrag.y) / innerHeight;
+    editDrag.x = e.clientX; editDrag.y = e.clientY; const k = editDrag.h.k;
+    setVal(k + "X", Math.max(0, Math.min(100, +$("#" + k + "X").value + dx)).toFixed(1)); setVal(k + "Y", Math.max(0, Math.min(100, +$("#" + k + "Y").value + dy)).toFixed(1)); });
+  const up = () => { editDrag = null; }; cv.addEventListener("pointerup", up); cv.addEventListener("pointercancel", up);
+  cv.addEventListener("wheel", e => { if (!editOn) return; const h = editHit(e.clientX, e.clientY); if (!h) return; e.preventDefault();
+    const id = h.k === "model" ? "modelSize" : h.k + "Size", el = $("#" + id), st = e.deltaY < 0 ? 5 : -5;
+    setVal(id, Math.max(+el.min, Math.min(+el.max, +el.value + st))); }, { passive: false });
+}
+$("#arrange").onclick = () => setEdit(!editOn);
+window.addEventListener("keydown", e => { if (e.key === "Escape" && editOn) setEdit(false); });
+window.addEventListener("message", e => { if (e.origin === location.origin && e.data === "sc26re:edit") setEdit(!editOn); });
+function drawOne(c, m, g, label, a, BG, ACC) {
+  const { cx, cy, R } = g;
+  c.font = `600 ${Math.max(10, R * 0.11)}px system-ui,Segoe UI,sans-serif`; c.textAlign = "center"; c.textBaseline = "middle";
+  const fit = (t, w) => { if (c.measureText(t).width <= w) return t; while (t.length > 1 && c.measureText(t + "…").width > w) t = t.slice(0, -1); return t + "…"; };
+  if (m.kind === 1) {
+    const n = m.n, r0 = R * 0.34, step = 2 * Math.PI / n;
+    for (let i = 0; i < n; i++) {
+      const an = -Math.PI / 2 + i * step, a0 = an - step / 2, a1 = an + step / 2, on = i === m.sel;
+      c.beginPath(); c.arc(cx, cy, R, a0, a1); c.arc(cx, cy, r0, a1, a0, true); c.closePath();
+      c.fillStyle = on ? ACC : BG; c.fill(); c.lineWidth = 2; c.strokeStyle = "rgba(160,180,210,.45)"; c.stroke();
+      const t = label(i), rr = (R + r0) / 2;
+      c.fillStyle = t ? (on ? "#fff" : "#dfe7f5") : "rgba(160,180,210,.4)";
+      c.fillText(fit(t || "—", Math.max(30, Math.min(rr * step * 0.95, R * 0.62))), cx + rr * Math.cos(an), cy + rr * Math.sin(an));
+    }
+    c.beginPath(); c.arc(cx, cy, r0 - 1, 0, 2 * Math.PI); c.fillStyle = m.sel < 0 ? `rgba(29,61,102,${a})` : BG; c.fill();
+  } else {
+    const gs = 2 * R / 3;
+    for (let i = 0; i < 9; i++) {
+      const x = cx - R + (i % 3) * gs, y = cy - R + Math.floor(i / 3) * gs, on = i === m.sel;
+      c.fillStyle = on ? ACC : BG; c.fillRect(x + 2, y + 2, gs - 4, gs - 4);
+      c.lineWidth = 2; c.strokeStyle = "rgba(160,180,210,.45)"; c.strokeRect(x + 2, y + 2, gs - 4, gs - 4);
+      const t = label(i); c.fillStyle = t ? (on ? "#fff" : "#dfe7f5") : "rgba(160,180,210,.4)";
+      c.fillText(fit(t || "—", gs - 10), x + gs / 2, y + gs / 2);
+    }
+  }
+}
+function caption(c, text, x, y, size) {
+  c.font = `${Math.max(11, size)}px system-ui,Segoe UI,sans-serif`; c.textAlign = "center"; c.textBaseline = "middle";
+  c.fillStyle = "rgba(223,231,245,.95)"; c.shadowColor = "#000"; c.shadowBlur = 4; c.fillText(text, x, y); c.shadowBlur = 0;
+}
 function drawMenu(now) {
   if (toastT && now - toastT > 1600) { $("#toast").classList.remove("on"); toastT = 0; }
   const cv = $("#menu"), dpr = window.devicePixelRatio || 1, W = innerWidth, H = innerHeight;
   if (cv.width !== Math.round(W * dpr) || cv.height !== Math.round(H * dpr)) { cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr); }
   const c = cv.getContext("2d"); c.setTransform(dpr, 0, 0, dpr, 0, 0); c.clearRect(0, 0, W, H);
+  const a = +$("#menuAlpha").value / 100, BG = `rgba(14,19,30,${a})`, ACC = $("#menuCol").value;
+  if (editOn) {
+    c.fillStyle = "rgba(0,0,0,.25)"; c.fillRect(0, 0, W, H);
+    const r = view.getBoundingClientRect();
+    if ($("#modelOn").checked) { c.setLineDash([8, 6]); c.lineWidth = 2; c.strokeStyle = "#ffd58a"; c.strokeRect(r.left + 1, r.top + 1, r.width - 2, r.height - 2); c.setLineDash([]);
+      caption(c, "3D controller: drag to move, mouse wheel = size", r.left + r.width / 2, r.top + 16, 13); }
+    for (const m of DEMO) { const g = menuGeom(m, false, W, H); drawOne(c, m, g, i => m.demo[i], a, BG, ACC);
+      caption(c, (m.kind === 1 ? "Radial menu" : "Touch menu") + ": drag to move, mouse wheel = size", g.cx, g.cy + g.R + 16, 13); }
+    caption(c, "Arranging: drag the menus and the 3D controller where you want them. Esc = done", W / 2, H - 24, 15);
+    return;
+  }
   if (!menuSt || !$("#menuOn").checked || now - menuSeen > 500) return;
-  const ms = menuSt.menus, a = +$("#menuAlpha").value / 100, BG = `rgba(14,19,30,${a})`, ACC = () => $("#menuCol").value;
+  const ms = menuSt.menus;
   ms.forEach((m, idx) => {
-    const left = m.inp === 0 || m.inp === 2, k = m.kind === 1 ? "rad" : "grid", pos = $("#" + k + "Pos").value;
-    /* two menus of the same kind at one place: side by side */
-    const twin = ms.some((o, j) => j !== idx && o.kind === m.kind);
-    const R = Math.min(W, H) * 0.27 * (+$("#" + k + "Size").value / 100) / (twin && pos !== "auto" ? 1.6 : 1);
-    let cx = W / 2, cy = H / 2;
-    if (pos === "auto") { cx = left ? Math.max(R + 12, W * 0.25) : Math.min(W - R - 12, W * 0.75); if (ms.length === 1 && W < 4 * R + 40) cx = W / 2; /* a small window: the middle */ }
-    else { if (pos === "custom") { cx = W * $("#" + k + "X").value / 100; cy = H * $("#" + k + "Y").value / 100; } if (twin) cx += (left ? -1 : 1) * (R + 10); }
-    c.font = `600 ${Math.max(10, R * 0.11)}px system-ui,Segoe UI,sans-serif`; c.textAlign = "center"; c.textBaseline = "middle";
-    const fit = (t, w) => { if (c.measureText(t).width <= w) return t; while (t.length > 1 && c.measureText(t + "…").width > w) t = t.slice(0, -1); return t + "…"; };
-    if (m.kind === 1) {
-      const n = m.n, r0 = R * 0.34, step = 2 * Math.PI / n;
-      for (let i = 0; i < n; i++) {
-        const a = -Math.PI / 2 + i * step, a0 = a - step / 2, a1 = a + step / 2, on = i === m.sel;
-        c.beginPath(); c.arc(cx, cy, R, a0, a1); c.arc(cx, cy, r0, a1, a0, true); c.closePath();
-        c.fillStyle = on ? ACC() : BG; c.fill(); c.lineWidth = 2; c.strokeStyle = "rgba(160,180,210,.45)"; c.stroke();
-        const t = sliceLabel(m, i), rr = (R + r0) / 2;
-        c.fillStyle = t ? (on ? "#fff" : "#dfe7f5") : "rgba(160,180,210,.4)";
-        c.fillText(fit(t || "—", Math.max(30, Math.min(rr * step * 0.95, R * 0.62))), cx + rr * Math.cos(a), cy + rr * Math.sin(a));
-      }
-      c.beginPath(); c.arc(cx, cy, r0 - 1, 0, 2 * Math.PI); c.fillStyle = m.sel < 0 ? `rgba(29,61,102,${a})` : BG; c.fill();
-    } else {
-      const g = 2 * R / 3;
-      for (let i = 0; i < 9; i++) {
-        const x = cx - R + (i % 3) * g, y = cy - R + Math.floor(i / 3) * g, on = i === m.sel;
-        c.fillStyle = on ? ACC() : BG; c.fillRect(x + 2, y + 2, g - 4, g - 4);
-        c.lineWidth = 2; c.strokeStyle = "rgba(160,180,210,.45)"; c.strokeRect(x + 2, y + 2, g - 4, g - 4);
-        const t = sliceLabel(m, i); c.fillStyle = t ? (on ? "#fff" : "#dfe7f5") : "rgba(160,180,210,.4)";
-        c.fillText(fit(t || "—", g - 10), x + g / 2, y + g / 2);
-      }
-    }
-    c.font = `${Math.max(10, R * 0.09)}px system-ui,Segoe UI,sans-serif`; c.fillStyle = "rgba(223,231,245,.9)"; c.shadowColor = "#000"; c.shadowBlur = 3;
-    c.fillText(IN_NAME[m.inp] + (menuSt.layer >= 0 ? " · layer " + (menuSt.layer + 1) : ""), cx, cy + R + Math.max(12, R * 0.1)); c.shadowBlur = 0;
+    const g = menuGeom(m, ms.some((o, j) => j !== idx && o.kind === m.kind), W, H);
+    drawOne(c, m, g, i => sliceLabel(m, i), a, BG, ACC);
+    caption(c, IN_NAME[m.inp] + (menuSt.layer >= 0 ? " · layer " + (menuSt.layer + 1) : ""), g.cx, g.cy + g.R + Math.max(12, g.R * 0.1), g.R * 0.09);
   });
 }
 window.__menu = { get st() { return menuSt; }, get ok() { return menuOk; } };
@@ -543,7 +603,7 @@ function frame(now) {
   if (fps > 0 && now - lastFrame < 1000 / fps - 1.5) return;
   lastFrame = now; fpsN++;
   if (now - fpsT >= 1000) { $("#fpsV").textContent = Math.round(fpsN * 1000 / (now - fpsT)) + " fps"; fpsN = 0; fpsT = now; }
-  const bgv = $("#bg").value, bgc = bgv === "custom" ? $("#bgCol").value : bgv;
+  const bgv = APP ? "transparent" : $("#bg").value, bgc = bgv === "custom" ? $("#bgCol").value : bgv;
   if (bgv === "transparent") { renderer.setClearColor(0x000000, 0); document.body.style.background = "transparent"; document.documentElement.style.background = "transparent"; }
   else { renderer.setClearColor(bgc, 1); document.body.style.background = bgc; document.documentElement.style.background = ""; }
   placeView();

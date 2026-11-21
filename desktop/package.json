@@ -1,0 +1,27 @@
+{
+  "name": "sc26re-overlay",
+  "productName": "SC2 Overlay",
+  "version": "1.0.0",
+  "description": "Steam Controller 2026 (sc26re): see-through on-screen menus and 3D controller over games",
+  "main": "main.js",
+  "author": "sc26re",
+  "license": "MIT",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --win portable --x64 --publish never"
+  },
+  "devDependencies": {
+    "electron": "^33.2.0",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "appId": "io.github.pablo89898991.sc26re-overlay",
+    "productName": "SC2 Overlay",
+    "files": ["main.js", "preload.js", "icon.png", "tray.png", "package.json"],
+    "extraResources": [{ "from": "../web", "to": "web", "filter": ["**/*", "!hwtests.json", "!hwrand.json", "!hwdiag.json"] }],
+    "win": { "target": "portable", "icon": "icon.png" },
+    "portable": { "artifactName": "SC2-Overlay-${version}.exe" },
+    "directories": { "output": "dist" }
+  }
+}

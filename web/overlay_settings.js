@@ -82,5 +82,7 @@
   function collect(root, p = "") { const o = {}; for (const it of all) { const e = root.querySelector("#" + p + it.id); if (e) o[it.id] = e.type === "checkbox" ? e.checked : e.value; } return o; }
   window.OVS = { groups: G, all, rows, apply, collect, read, showVals, ids: all.map(x => x.id), TAB_KEY: "sc26re_overlay_tab", PAGE_KEY: "sc26re_overlay2",
     /* defaults that differ inside the remapper: a dark background */
-    tabDefaults: { bg: "#0d1320" } };
+    tabDefaults: { bg: "#0d1320" },
+    /* the overlay app over the whole screen: the 3D controller small, bottom right */
+    appDefaults: { modelSize: 30, modelX: 85, modelY: 78 } };
 })();
