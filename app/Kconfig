@@ -140,7 +140,7 @@ config IBEX_IMU_DEBUG_IN_QUAT
 
 config IBEX_HWTEST
 	bool "Remapper hardware test (test builds only, off for releases)"
-	default y
+	default n
 	help
 	  The hardware test page plays a script of inputs (RAM only, at most
 	  10 s, stopped by the Steam button) and reads back the remapper's
