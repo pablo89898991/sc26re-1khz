@@ -29,9 +29,9 @@ def binds(names): return "".join(inp(n, act(binding=f"key_press {k.upper()}, , "
 
 @test
 def dpad_layout_default_eight_way():
-    """Steam's D-pad layout: none or 0 = eight way (both keys on a diagonal), 1 = four way, 3 cross gate = four way"""
+    """Steam's D-pad layout (checked in Steam with a real layout): none or 1 = eight way (both keys on a diagonal), 0 = four way, 3 cross gate = four way"""
     names = [("dpad_north", "w"), ("dpad_south", "s"), ("dpad_west", "a"), ("dpad_east", "d")]
-    for st, want in ((None, {K("w"), K("d")}), ({"layout": "0"}, {K("w"), K("d")}), ({"layout": "1"}, None), ({"layout": "3"}, None)):
+    for st, want in ((None, {K("w"), K("d")}), ({"layout": "1"}, {K("w"), K("d")}), ({"layout": "0"}, None), ({"layout": "3"}, None)):
         r, p = one(0, "dpad", binds(names), st)
         s = fresh(p); s.run(40, lsx=23000, lsy=23000)
         if want: assert held(s) == want, (st, held(s))
@@ -71,9 +71,9 @@ def dpad_on_sticks_and_pads():
 @test
 def eight_way_layout():
     names = [("dpad_north", "w"), ("dpad_east", "d")]
-    r, p = one(0, "dpad", binds(names), {"layout": "0"}); s = fresh(p)   # Steam: 0 = 8 way (overlap)
+    r, p = one(0, "dpad", binds(names), {"layout": "1"}); s = fresh(p)   # Steam: 1 = 8 way (overlap)
     s.run(40, lsx=22000, lsy=22000); assert {K("w"), K("d")} <= held(s), held(s)
-    r, p = one(0, "dpad", binds(names), {"layout": "1"}); s = fresh(p)   # 1 = 4 way (no overlap)
+    r, p = one(0, "dpad", binds(names), {"layout": "0"}); s = fresh(p)   # 0 = 4 way (no overlap)
     s.run(40, lsx=22000, lsy=23000); assert len(held(s)) == 1, held(s)
 
 @test
