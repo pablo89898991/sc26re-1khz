@@ -5,7 +5,7 @@ name: overlay app
 on:
   push:
     branches: [master]
-    paths: ['desktop/**', 'web/overlay.html', 'web/overlay_settings.js', 'web/actnames.js', 'web/remap.html', 'web/vdf.js', 'web/stickcal.js', 'web/models/**', 'web/vendor/**', '.github/workflows/desktop.yml']
+    paths: ['desktop/**', 'web/*.html', 'web/*.js', 'web/models/**', 'web/vendor/**', '.github/workflows/desktop.yml']
   workflow_dispatch:
 
 permissions:

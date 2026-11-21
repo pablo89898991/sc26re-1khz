@@ -1,7 +1,7 @@
 // SC2 overlay for Windows: the overlay page (web/overlay.html) in a see-through window over the
 // whole screen, always on top and letting every click through to the game. The tray icon
 // arranges it, opens the remapper (its Overlay tab sets the overlay up live), picks the screen.
-const { app, BrowserWindow, Tray, Menu, screen, session, protocol, net, globalShortcut, ipcMain, nativeImage } = require("electron");
+const { app, BrowserWindow, Tray, Menu, screen, session, protocol, net, globalShortcut, ipcMain, nativeImage, shell } = require("electron");
 const path = require("path");
 const fs = require("fs");
 const { pathToFileURL } = require("url");
@@ -25,7 +25,8 @@ protocol.registerSchemesAsPrivileged([{ scheme: "app", privileges: { standard: t
 if (!app.requestSingleInstanceLock()) { app.quit(); }
 app.commandLine.appendSwitch("disable-renderer-backgrounding");
 
-let overlay = null, remap = null, tray = null, editing = false;
+let overlay = null, tray = null, editing = false;
+const pages = {}; /* page file -> its window (remapper, report meter, ...) */
 
 function pickDisplay() {
   const all = screen.getAllDisplays();
@@ -74,18 +75,26 @@ function toggleShown() {
   buildTray();
 }
 
-function openRemap() {
-  if (remap) { remap.show(); remap.focus(); return; }
-  remap = new BrowserWindow({ width: 1320, height: 940, icon: ICON, title: "SC2 Remapper", autoHideMenuBar: true,
+/* the tools pages, all inside the app (they work without the internet) */
+const PAGES = [["remap.html", "Remapper and overlay settings…", 1320, 940], ["meter.html", "Report meter and flasher…", 1320, 940],
+  ["overlay.html", "3D overlay page (OBS)…", 1100, 760], ["patcher.html", "Puck patcher…", 1100, 860], ["index.html", "All tools…", 1000, 760]];
+function openPage(file) {
+  const w0 = pages[file];
+  if (w0) { w0.show(); w0.focus(); return; }
+  const [, title, width, height] = PAGES.find(p => p[0] === file) || [file, file, 1200, 900];
+  const w = new BrowserWindow({ width, height, icon: ICON, title: title.replace("…", ""), autoHideMenuBar: true,
     webPreferences: { preload: path.join(__dirname, "preload.js") } });
-  remap.loadURL(ORIGIN + "/remap.html");
-  /* links that leave the app (help, licences) open in the normal browser */
-  remap.webContents.setWindowOpenHandler(({ url }) => {
-    if (url.startsWith(ORIGIN)) return { action: "allow", overrideBrowserWindowOptions: { autoHideMenuBar: true, icon: ICON } };
-    require("electron").shell.openExternal(url); return { action: "deny" };
+  pages[file] = w;
+  w.loadURL(ORIGIN + "/" + file);
+  /* links between the tools stay in the app; others (help, licences) open in the normal browser */
+  w.webContents.setWindowOpenHandler(({ url }) => {
+    if (url.startsWith(ORIGIN)) return { action: "allow", overrideBrowserWindowOptions: { autoHideMenuBar: true, icon: ICON, webPreferences: { preload: path.join(__dirname, "preload.js") } } };
+    shell.openExternal(url); return { action: "deny" };
   });
-  remap.on("closed", () => { remap = null; });
+  w.webContents.on("will-navigate", (e, url) => { if (!url.startsWith(ORIGIN)) { e.preventDefault(); shell.openExternal(url); } });
+  w.on("closed", () => { delete pages[file]; });
 }
+const openRemap = () => openPage("remap.html");
 
 function buildTray() {
   if (!tray) return;
@@ -94,7 +103,7 @@ function buildTray() {
     { label: "SC2 overlay", enabled: false },
     { type: "separator" },
     { label: editing ? "Done arranging" : "Arrange the overlay…", accelerator: KEY_ARRANGE, click: toggleArrange },
-    { label: "Remapper and overlay settings…", click: openRemap },
+    ...PAGES.map(([f, label]) => ({ label, click: () => openPage(f) })),
     { label: "Recenter the 3D controller", click: () => overlay && overlay.webContents.executeJavaScript(`window.postMessage("sc26re:recenter", location.origin)`).catch(() => {}) },
     { label: "Show the overlay", type: "checkbox", checked: conf.shown, accelerator: KEY_SHOW, click: toggleShown },
     { label: "Screen", submenu: displays.map((d, i) => ({ label: `Screen ${i + 1} (${d.size.width} × ${d.size.height})${d.id === screen.getPrimaryDisplay().id ? ", main" : ""}`,
@@ -117,8 +126,14 @@ app.whenReady().then(() => {
   });
   /* WebHID: the Steam Controller (Valve's vendor id) is always allowed, without a chooser */
   const ses = session.defaultSession;
-  ses.setPermissionCheckHandler((wc, perm) => perm === "hid" || perm === "clipboard-sanitized-write");
-  ses.setDevicePermissionHandler(d => d.deviceType === "hid" && d.device.vendorId === VALVE);
+  ses.setPermissionCheckHandler((wc, perm) => perm === "hid" || perm === "serial" || perm === "clipboard-sanitized-write");
+  ses.setDevicePermissionHandler(d => (d.deviceType === "hid" || d.deviceType === "serial") && Number(d.device.vendorId) === VALVE);
+  /* Web Serial: the report meter's flasher talks to the controller's bootloader port (28DE:1005) */
+  ses.on("select-serial-port", (e, ports, wc, cb) => {
+    e.preventDefault();
+    const p = ports.find(x => Number(x.vendorId) === VALVE);
+    cb(p ? p.portId : "");
+  });
   ses.on("select-hid-device", (e, details, cb) => {
     e.preventDefault();
     const d = details.deviceList.find(x => x.vendorId === VALVE);
