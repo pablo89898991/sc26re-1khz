@@ -57,4 +57,9 @@ jobs:
           gh release view overlay-app >/dev/null 2>&1 || gh release create overlay-app --prerelease --title "SC2 Overlay (Windows app)" \
             --notes "See-through on-screen menus and 3D controller over games. Download SC2-Overlay.exe and run it (no install). Tray icon: Arrange, Remapper and overlay settings, Screen, Start with Windows. Ctrl+Shift+F10 arranges, Ctrl+Shift+F9 shows / hides. Works over games in a window or borderless full screen (not exclusive full screen)."
           gh release upload overlay-app SC2-Overlay.exe --clobber
+          # a new version in desktop/package.json: its own release (not marked latest, the firmware is)
+          ver=$(node -p "require('./desktop/package.json').version")
+          if ! gh release view "overlay-v$ver" >/dev/null 2>&1; then
+            gh release create "overlay-v$ver" SC2-Overlay.exe --target "$GITHUB_SHA" --title "SC2 Overlay $ver (Windows app)" --notes-file desktop/RELEASE.md --latest=false
+          fi
           git tag -f overlay-app "$GITHUB_SHA" && git push -f origin overlay-app || true
