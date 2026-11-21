@@ -53,7 +53,7 @@ const fmt = (st, s) => `overlay btn ${st.btn.toString(16)} ls ${st.ls.map(v => v
 /* what the model shows */
 async function visuals(pg) {
   await sleep(60); /* poseParts runs every frame */
-  return pg.evaluate(() => { const o = {}; for (const [n, p] of __ov.parts) o[n] = { d: p.pivot.position.distanceTo(p.rest), rx: p.pivot.rotation.x, rz: p.pivot.rotation.z, e: p.material.emissiveIntensity, op: p.material.opacity, tilt: p.tilt };
+  return pg.evaluate(() => { const o = {}; for (const [n, p] of __ov.parts) o[n] = { d: p.pivot.position.distanceTo(__ov.home(n)), rx: p.pivot.rotation.x - (n.startsWith('trigger_') ? __ov.trigPop() : 0), rz: p.pivot.rotation.z, e: p.material.emissiveIntensity, op: p.material.opacity, tilt: p.tilt };
     for (const s of ['l', 'r']) { const f = __ov.fingers[s]; o['finger_' + s] = f ? { v: f.visible, x: f.position.x, y: f.position.y, k: f.scale.x } : null; } return o; });
 }
 const PRESS = { 0: 'a', 1: 'b', 2: 'x', 3: 'y', 14: 'view', 6: 'menu', 16: 'steam', 4: 'qam', 19: 'bumper_l', 9: 'bumper_r', 17: 'back_l4', 18: 'back_l5', 7: 'back_r4', 8: 'back_r5' };
@@ -74,7 +74,7 @@ function wrongParts(b, V, valve) {
     want((b === click ? p.d > 1e-4 : p.d < 1e-6) && glowNear(p, b === click ? 0.6 : b === touch ? 0.35 : 0) && f.v === (b === touch), `pad_${s} d ${p.d.toFixed(4)} glow ${p.e.toFixed(2)} finger ${f.v}`); }
   for (const [s, click] of [['l', 27], ['r', 23]]) { const p = V['trigger_' + s]; if (!p) { e.push('no trigger_' + s); continue; }
     want(Math.abs(p.rx) < 1e-6 && glowNear(p, b === click ? 0.3 : 0), `trigger_${s} swing ${p.rx.toFixed(3)} glow ${p.e.toFixed(2)}`); }
-  if (valve) for (const [s, g] of [['l', 29], ['r', 28]]) { const p = V['grip_' + s]; if (!p) { e.push('no grip_' + s); continue; } want(Math.abs(p.op - (b === g ? 0.85 : 0)) < 1e-6, `grip_${s} ${p.op}`); }
+  if (valve) for (const [s, g] of [['l', 29], ['r', 28]]) { const p = V['grip_' + s]; if (!p) { e.push('no grip_' + s); continue; } want(Math.abs(p.op - (b === g ? 0.85 : 0.12)) < 1e-6, `grip_${s} ${p.op}`); }
   return e;
 }
 

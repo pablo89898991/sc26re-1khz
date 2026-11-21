@@ -35,8 +35,14 @@
   <div class="row"><label>Pressed</label><input type="color" id="hiCol" value="#1a9fff"><label>Touched</label><input type="color" id="touchCol" value="#5fe39a"></div>
   <div class="row"><label>View tilt</label><input type="range" id="tilt" min="-30" max="90" value="20"><label>Size</label><input type="range" id="zoom" min="40" max="160" value="100"></div>
   <div class="row"><label><input type="checkbox" id="xray"> see-through body (back buttons and triggers stay visible)</label></div>
+  <div class="row"><label>Pop out</label><label><input type="checkbox" id="popTrig" checked> triggers</label><label><input type="checkbox" id="popBump" checked> bumpers</label><label><input type="checkbox" id="popBack" checked> back buttons</label></div>
+  <div class="row"><label><input type="checkbox" id="gripShow" checked> grip sense shown through the body</label></div>
   <div class="row"><label><input type="checkbox" id="useGyro" checked> gyro moves it</label><button id="recenter">Recenter (R)</button></div>
-  <div class="row"><label><input type="checkbox" id="level"> keep level with gravity</label><label><input type="checkbox" id="imuOn"> turn gyro on without Steam</label></div>
+  <div class="row"><label title="how far the model turns for a turn of the controller (1.00x = the same)">Gyro speed</label><input type="range" id="sens" min="10" max="300" value="100"><span id="sensV" class="note"></span></div>
+  <div class="row"><label title="pulls the model level with gravity (the accelerometer); the time is how long it takes to close most of a tilt error"><input type="checkbox" id="level"> correct tilt (gravity)</label><input type="range" id="levelK" min="1" max="100" value="50"><span id="levelV" class="note"></span></div>
+  <div class="row"><label title="the heading drifts slowly (nothing measures it): pulls it back to where Recenter put it; the time is how long it takes"><input type="checkbox" id="yawFix"> correct heading drift</label><input type="range" id="yawK" min="1" max="100" value="30"><span id="yawV" class="note"></span></div>
+  <div class="row"><label><input type="checkbox" id="imuOn"> turn gyro on without Steam</label></div>
+  <div class="row"><label>Frame rate</label><select id="fps"><option value="0">as the screen</option><option value="30">30</option><option value="60">60</option><option value="120">120</option><option value="144">144</option><option value="240">240</option></select><span id="fpsV" class="note"></span></div>
   <div class="row"><label>Invert</label><label><input type="checkbox" id="invP"> pitch</label><label><input type="checkbox" id="invY"> yaw</label><label><input type="checkbox" id="invR"> roll</label></div>
   <p class="note">For recording: in OBS add a <b>Window Capture</b> of this browser window and a <b>Chroma Key</b> filter (green). OBS’s Browser Source cannot open the controller (no WebHID). <b>H</b> hides this panel, <b>R</b> recenters, drag with the mouse to turn the view (double-click resets it). “Native” (sc26re v51+) shows what your hands do even when the remapper is on; “what Steam receives” shows the pad after remapping.</p>
   <p class="note">Valve’s model: © 2026 Valve Corporation, <a href="https://gitlab.steamos.cloud/SteamHardware/SteamController" target="_blank">Steam Controller CAD files</a>, <a href="http://creativecommons.org/licenses/by-nc-sa/4.0/" target="_blank">CC BY-NC-SA 4.0</a> (low-poly version, converted to one file). Not affiliated with or endorsed by Valve.
@@ -49,10 +55,20 @@ import { MeshoptDecoder } from "./vendor/three/examples/jsm/libs/meshopt_decoder
 
 const $ = s => document.querySelector(s);
 /* ---------- settings ---------- */
-const SET_IDS = ["mdl", "src", "xray", "bg", "hiCol", "touchCol", "tilt", "zoom", "useGyro", "level", "imuOn", "invP", "invY", "invR"];
+const SET_IDS = ["mdl", "src", "xray", "bg", "hiCol", "touchCol", "tilt", "zoom", "useGyro", "level", "imuOn", "invP", "invY", "invR",
+  "popTrig", "popBump", "popBack", "gripShow", "sens", "levelK", "yawFix", "yawK", "fps"];
 try { const o = JSON.parse(localStorage.getItem("sc26re_overlay2") || "{}"); for (const k of SET_IDS) if (k in o) { const e = $("#" + k); if (e.type === "checkbox") e.checked = o[k]; else e.value = o[k]; } } catch (e) {}
 function saveSet() { const o = {}; for (const k of SET_IDS) { const e = $("#" + k); o[k] = e.type === "checkbox" ? e.checked : e.value; } try { localStorage.setItem("sc26re_overlay2", JSON.stringify(o)); } catch (e) {} }
 SET_IDS.forEach(k => $("#" + k).addEventListener("input", saveSet));
+/* gravity pull: 1..100 -> 10 s .. 0.1 s to close most of the gap; heading pull: 1..100 -> 60 s .. 1 s */
+const levelTau = () => 10 * Math.pow(0.01, (+$("#levelK").value - 1) / 99);
+const yawTau = () => 60 * Math.pow(1 / 60, (+$("#yawK").value - 1) / 99);
+function showSet() {
+  $("#sensV").textContent = (+$("#sens").value / 100).toFixed(2) + "×";
+  $("#levelV").textContent = levelTau().toFixed(levelTau() < 1 ? 2 : 1) + " s";
+  $("#yawV").textContent = yawTau().toFixed(yawTau() < 10 ? 1 : 0) + " s";
+}
+["sens", "levelK", "yawK"].forEach(k => $("#" + k).addEventListener("input", showSet)); showSet();
 window.addEventListener("keydown", e => { if (e.key === "h" || e.key === "H") $("#ui").classList.toggle("hidden"); if (e.key === "r" || e.key === "R") recenter(); });
 
 /* ---------- orientation (controller sensor frame: +X right, +Y towards the triggers, +Z out of the face) ---------- */
@@ -68,20 +84,29 @@ $("#useGyro").addEventListener("input", () => { rawAng = qNat = null; });
 /* gyro rates (deg/s) about the controller's own X (pitch), Y (roll) and Z (yaw) axes */
 function gyroStep(gx, gy, gz, dt) {
   if (!$("#useGyro").checked) return;
-  const k = Math.PI / 180, w = [gx * k * ($("#invP").checked ? -1 : 1), gy * k * ($("#invR").checked ? -1 : 1), gz * k * ($("#invY").checked ? -1 : 1)];
+  const k = Math.PI / 180 * (+$("#sens").value / 100), w = [gx * k * ($("#invP").checked ? -1 : 1), gy * k * ($("#invR").checked ? -1 : 1), gz * k * ($("#invY").checked ? -1 : 1)];
   const a = Math.hypot(...w) * dt;
   if (a > 0) q = qnorm(qmul(q, qaxis(w.map(v => v * dt / a), a)));
 }
 /* nudge towards gravity: lying face up is level. The same pull per second whatever the sample
  * rate (1 kHz pad reports, a few hundred native reads, fewer on a busy PC): half a second to
  * close most of the gap, only while the controller feels about 1 g (not while it is swung). */
-const LEVEL_TAU = 0.5;
 function levelStep(acc, dt) {
   if (!$("#level").checked) return;
   const al = Math.hypot(...acc); if (!(al > 12300 && al < 20500)) return;
   const up = qrot(q, acc.map(v => v / al));
   const c = [up[1], -up[0], 0], s = Math.hypot(...c); /* up x (0, 0, 1) */
-  if (s > 1e-6) q = qnorm(qmul(qaxis(c.map(v => v / s), Math.atan2(s, up[2]) * Math.min(1, Math.max(0, dt) / LEVEL_TAU)), q));
+  if (s > 1e-6) q = qnorm(qmul(qaxis(c.map(v => v / s), Math.atan2(s, up[2]) * Math.min(1, Math.max(0, dt) / levelTau())), q));
+}
+/* heading (yaw about the vertical) drifts with nothing to hold it (no compass): pull it back
+ * towards the recentred heading, slowly enough that turns still show */
+function yawStep(dt) {
+  if (!$("#yawFix").checked || !(dt > 0)) return;
+  const f = qrot(q, [0, 1, 0]), r = qrot(qRef, [0, 1, 0]);
+  if (Math.hypot(f[0], f[1]) < 0.3 || Math.hypot(r[0], r[1]) < 0.3) return; /* pointing up or down: no heading */
+  let a = Math.atan2(r[1], r[0]) - Math.atan2(f[1], f[0]);
+  a = Math.atan2(Math.sin(a), Math.cos(a));
+  q = qnorm(qmul(qaxis([0, 0, 1], a * Math.min(1, dt / yawTau())), q));
 }
 
 /* ---------- three.js scene (model space: cm, +x right, +y out of the face, +z towards the grips) ---------- */
@@ -114,6 +139,7 @@ const DOWN = new THREE.Vector3(0, -1, 0), UP = new THREE.Vector3(0, 1, 0), BUMPE
 const PRESS_PARTS = [["a", 0, DOWN], ["b", 1, DOWN], ["x", 2, DOWN], ["y", 3, DOWN], ["view", 14, DOWN], ["menu", 6, DOWN], ["steam", 16, DOWN], ["qam", 4, DOWN],
   ["bumper_l", 19, BUMPER_IN], ["bumper_r", 9, BUMPER_IN], ["back_l4", 17, UP], ["back_l5", 18, UP], ["back_r4", 7, UP], ["back_r5", 8, UP]];
 const DPAD = [["up", 13], ["down", 10], ["left", 12], ["right", 11]];
+const TRIG_POP_TURN = 1.2;
 const PRESS_DEPTH = 0.1, STICK_TILT = 0.3, DPAD_TILT = 0.12, TRIGGER_SWING = 0.35, PAD_HALF = 1.45;
 
 function pivotFor(name, box) {
@@ -148,10 +174,11 @@ function loadTextured(gen) {
     const dpadBox = new THREE.Box3(); for (const m of meshes) if (m.name.startsWith("part_dpad_")) dpadBox.expandByObject(m);
     for (const mesh of meshes) {
       const name = mesh.name.slice(5), material = mesh.material.clone(); mesh.material = material;
+      if (name.startsWith("back_") || name.startsWith("trigger_") || name.startsWith("bumper_")) material.side = THREE.DoubleSide;
       const box = new THREE.Box3().setFromObject(mesh), pivot = new THREE.Group();
       pivot.position.copy(name.startsWith("dpad_") ? dpadBox.getCenter(new THREE.Vector3()) : pivotFor(name, box));
       mesh.parent.add(pivot); pivot.updateMatrixWorld(true); pivot.attach(mesh);
-      parts.set(name, { pivot, material, rest: pivot.position.clone() });
+      parts.set(name, { pivot, material, rest: pivot.position.clone(), popTurn: 1.2 });
     }
     padHalf = 1.45;
     for (const s of ["l", "r"]) { const p = parts.get("pad_" + s); if (p) fingers[s] = addFinger(p.pivot); }
@@ -183,6 +210,8 @@ function loadValve(gen) {
     for (const [vn, name] of Object.entries(VALVE_PARTS)) {
       const mesh = byName[vn]; if (!mesh) continue;
       const material = mat(name.startsWith("pad_") ? VALVE_COL.pad : VALVE_COL.button, name.startsWith("pad_") ? 0.45 : 0.55); mesh.material = material;
+      /* the back buttons and triggers are open shells: popped out, the camera sees their inside */
+      if (name.startsWith("back_") || name.startsWith("trigger_") || name.startsWith("bumper_")) material.side = THREE.DoubleSide;
       const pivot = new THREE.Group(); root.add(pivot);
       if (name.startsWith("trigger_")) {
         const sx = name.endsWith("l") ? -1 : 1; pivot.position.set(0.63 * sx, 0.02, VALVE_TRIG_Z);
@@ -190,9 +219,11 @@ function loadValve(gen) {
       } else if (name.startsWith("grip_")) {
         material.transparent = true; material.opacity = 0; material.depthWrite = false; pivot.add(mesh);
       } else {
-        root.updateMatrixWorld(true);
+        /* the box is in the file's own units (the mesh is not under the scaled root yet): before
+         * v51 test 82 it was taken through root.worldToLocal as well, which put every pivot near the
+         * middle of the controller, so a pressed D-pad swung about that point and sank into the shell */
         const box = new THREE.Box3().setFromObject(mesh), c = name.startsWith("dpad_") ? dpadBox.getCenter(new THREE.Vector3()) : box.getCenter(new THREE.Vector3());
-        root.worldToLocal(c); pivot.position.copy(c); mesh.position.sub(c); pivot.add(mesh);
+        pivot.position.copy(c); mesh.position.sub(c); pivot.add(mesh);
       }
       parts.set(name, { pivot, material, rest: pivot.position.clone(), unit: 1 / VALVE_SCALE });
     }
@@ -249,6 +280,7 @@ function onReport(e) {
   st.lp = [g(17) / 32767, g(19) / 32767, d.getUint16(21, true) / 32767]; st.rp = [g(23) / 32767, g(25) / 32767, d.getUint16(27, true) / 32767];
   gyroStep(g(39) * 0.06103, g(41) * 0.06103, g(43) * 0.06103, dt);
   levelStep([g(33), g(35), g(37)], dt);
+  yawStep(dt);
 }
 function addDev(d) { if (!devs.includes(d)) { devs.push(d); d.addEventListener("inputreport", onReport); } }
 $("#connect").onclick = async () => {
@@ -337,6 +369,7 @@ setInterval(() => { const n = rawN; rawN = 0; if (!devs.length) return;
       rawAng = a;
     } else { if (qNat) q = qNat; gyroStep(g(28) * 0.01, g(30) * 0.01, g(32) * 0.01, 1); } /* older test builds: the turn since the last read */
     levelStep([g(34), g(36), g(38)], Math.min(dt, 0.1));
+    yawStep(Math.min(dt, 0.1));
     qNat = q;
   }
 })();
@@ -353,7 +386,23 @@ setInterval(() => { const n = rawN; rawN = 0; if (!devs.length) return;
 const BLACK = new THREE.Color(0);
 const bit = b => (st.btn & (1 << b)) !== 0;
 function glow(name, color, k) { const p = parts.get(name); if (!p) return; p.material.emissive.copy(color || BLACK); p.material.emissiveIntensity = color ? k : 0; }
-function pressPart(name, dir, depth) { const p = parts.get(name); if (p) p.pivot.position.copy(p.rest).addScaledVector(dir, depth * (p.unit || 1)); }
+/* pop out (cm, model space: +x right, +y out of the face, -z above the top edge): the parts on the
+ * top and back moved where a camera in front sees them, as overlays usually show them */
+function popOf(name) {
+  const side = /_l\d?$/.test(name) ? -1 : 1;
+  if (name.startsWith("trigger_") && $("#popTrig").checked) return new THREE.Vector3(0, 0.2, -3.2);
+  if (name.startsWith("bumper_") && $("#popBump").checked) return new THREE.Vector3(0, 0.6, -0.9);
+  if (name.startsWith("back_") && $("#popBack").checked) return new THREE.Vector3(side * 3.9, 3, name.endsWith("5") ? 1.2 : -1.2);
+  return null;
+}
+function placePart(p, name, dir, depth) {
+  p.pivot.position.copy(p.rest); const pop = popOf(name), u = p.unit || 1;
+  if (pop) p.pivot.position.addScaledVector(pop, u);
+  if (dir) p.pivot.position.addScaledVector(dir, depth * u);
+}
+function pressPart(name, dir, depth) { const p = parts.get(name); if (!p) return; placePart(p, name, dir, depth);
+  /* popped back buttons: turned so their face, which looks sideways and back, faces the camera */
+  if (name.startsWith("back_")) p.pivot.rotation.z = $("#popBack").checked ? (name.includes("_l") ? -1 : 1) * (p.popTurn ?? 0.9) : 0; }
 function poseParts() {
   const HI = new THREE.Color($("#hiCol").value), TOUCH = new THREE.Color($("#touchCol").value);
   for (const [name, b, dir] of PRESS_PARTS) { const on = bit(b); pressPart(name, dir, on ? PRESS_DEPTH : 0); glow(name, on ? HI : null, 0.8); }
@@ -372,16 +421,26 @@ function poseParts() {
     const f = fingers[s];
     if (f) { f.visible = touched; f.position.set(pd[0] * padHalf * (pp && pp.unit ? pp.unit : 1), pd[1] * padHalf * (pp && pp.unit ? pp.unit : 1), 0.08 * (pp && pp.unit ? pp.unit : 1)); f.scale.setScalar(1 + pd[2] * 2.7); }
     const tr = parts.get("trigger_" + s);
-    if (tr) { const pull = Math.max(0, L ? st.lt : st.rt), tc = bit(L ? 27 : 23); tr.pivot.rotation.x = -pull * TRIGGER_SWING; glow("trigger_" + s, tc ? HI : pull > 0.02 ? TOUCH : null, 0.3 + pull * 0.5); }
+    if (tr) { const pull = Math.max(0, L ? st.lt : st.rt), tc = bit(L ? 27 : 23); placePart(tr, "trigger_" + s, null, 0); tr.pivot.rotation.x = -pull * TRIGGER_SWING + ($("#popTrig").checked ? TRIG_POP_TURN : 0); /* popped: its face to the camera */ glow("trigger_" + s, tc ? HI : pull > 0.02 ? TOUCH : null, 0.3 + pull * 0.5); }
   }
-  for (const [g, n] of [[29, "grip_l"], [28, "grip_r"]]) { const p = parts.get(n); if (p) { p.material.opacity = bit(g) ? 0.85 : 0; p.material.color.set(TOUCH); } }
+  /* grip sense: drawn over the body (it sits on the back) so it shows from the front; a faint
+   * outline while not held */
+  const gs = $("#gripShow").checked;
+  for (const [g, n] of [[29, "grip_l"], [28, "grip_r"]]) { const p = parts.get(n); if (p) { p.material.opacity = bit(g) ? 0.85 : gs ? 0.12 : 0; p.material.color.set(TOUCH);
+    p.material.depthTest = !gs; p.pivot.children[0] && (p.pivot.children[0].renderOrder = gs ? 10 : 0); } }
   /* grips: the back buttons' side glows softly while the grip is held */
   for (const [g, list] of [[29, ["back_l4", "back_l5"]], [28, ["back_r4", "back_r5"]]]) if (bit(g)) for (const n of list) if (!bit({ back_l4: 17, back_l5: 18, back_r4: 7, back_r5: 8 }[n])) glow(n, TOUCH, 0.25);
 }
 
 /* ---------- render ---------- */
-function frame() {
+let lastFrame = 0, fpsN = 0, fpsT = performance.now();
+function frame(now) {
   requestAnimationFrame(frame);
+  /* frame rate limit: draw only once the next frame is due (a little early, so 60 on a 60 Hz screen stays 60) */
+  const fps = +$("#fps").value;
+  if (fps > 0 && now - lastFrame < 1000 / fps - 1.5) return;
+  lastFrame = now; fpsN++;
+  if (now - fpsT >= 1000) { $("#fpsV").textContent = Math.round(fpsN * 1000 / (now - fpsT)) + " fps"; fpsN = 0; fpsT = now; }
   renderer.setClearColor($("#bg").value, 1);
   document.body.style.background = $("#bg").value;
   if (ready) {
@@ -394,13 +453,14 @@ function frame() {
   const relM = new THREE.Quaternion(rel[1], rel[3], -rel[2], rel[0]);
   const tilt = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), -(+$("#tilt").value) * Math.PI / 180);
   model.quaternion.copy(drag).multiply(tilt).multiply(FRONT).multiply(relM);
-  const dist = 34 / (+$("#zoom").value / 100);
+  const dist = 40 / (+$("#zoom").value / 100); /* a little further than before v51 test 82: the popped-out triggers fit */
   camera.position.set(0, 0, dist); camera.lookAt(0, 0, 0);
   renderer.render(scene, camera);
 }
 requestAnimationFrame(frame);
 /* test hook (#debug): turn the controller from the console / a test */
-if (location.hash === "#debug") window.__ov = { st, setDrag(ax, ay, az, w) { drag.set(ax, ay, az, w); }, parts, gyroStep, recenter, fingers, model, get ready() { return ready; },
+if (location.hash === "#debug") window.__ov = { st, home(n) { const p = parts.get(n), pop = popOf(n), h = p.rest.clone(); if (pop) h.addScaledVector(pop, p.unit || 1); return h; },
+  trigPop: () => ($("#popTrig").checked ? TRIG_POP_TURN : 0), setDrag(ax, ay, az, w) { drag.set(ax, ay, az, w); }, parts, gyroStep, yawStep, levelStep, recenter, fingers, model, get ready() { return ready; },
   get raw() { return [rawOk, rawFresh, performance.now(), rawN, rawStale]; }, get natCount() { return natCount; }, get lastTs() { return lastTs; }, get src() { return $("#src").value; }, get q() { return q; }, set q(v) { q = v; }, get qRef() { return qRef; } };
 </script>
 </body>
