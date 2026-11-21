@@ -176,7 +176,8 @@
         <div class="card"><h3>Sticks</h3>
           <p class="note cardnote">Hands off both sticks, then press: their resting point becomes the centre (saved).</p>
           <div class="tools"><button class="primary" id="cStZero">Zero sticks</button></div>
-          <p class="note cardnote" id="cStStatus"></p></div>
+          <p class="note cardnote" id="cStStatus"></p>
+          <div id="cStCal"></div></div>
         <div class="card"><h3>Triggers</h3>
       <p><b>Soft pull</b> fires when the trigger passes the point you choose, <b>full pull</b> is the click at the end. <b>Trigger mode</b> (per trigger, per profile): <b>Simple threshold</b> — both independent; <b>Hair trigger</b> — soft fires on any further pull and stops on any release (fast semi-auto); <b>Hip fire</b> — a quick pull to the click fires only full (shoot from the hip), a slow pull fires soft (aim) and then full too; <b>Hip fire exclusive</b> — the same but soft and full never together. The hip fire window sets what counts as quick. <b>Analog start / end</b> trims the range Steam sees. Binding the soft pull takes the analog trigger away from Steam. <b>Xbox LT / RT (whole trigger, analog)</b> on the soft pull sends the whole trigger to the Xbox pad (every bit of travel, analog start / end applied, not only past the soft point); on any other input it is a full pull while held. Needs Pad output “Steam + Xbox” or “Xbox only” (cable).</p>
           <div class="tools"><button class="primary" id="cTrStart">Full range: start</button><button id="cTrNext" disabled>Next</button><button id="cTrZero" class="ghost">Zero (released)</button></div>
@@ -253,6 +254,7 @@
 <dialog id="vdlg" style="max-width:760px;width:94vw"><h3 style="margin:0 0 6px">Import a Steam Input configuration</h3><div id="vbody"></div>
 <div class="bar" style="margin-top:12px;justify-content:flex-end"><button class="ghost" id="vcancel">Cancel</button><button class="ghost" id="vload">Load into the editor</button><button class="primary" id="vsave">Load and save to the controller</button></div></dialog>
 <script src="vdf.js"></script>
+<script src="stickcal.js"></script>
 <dialog id="dlg"><div id="editor"></div><div class="bar" style="margin-top:12px;justify-content:flex-end"><button id="dlgClear" class="ghost danger">Clear input</button><button class="primary" id="dlgDone">Done</button></div></dialog>
 <script>
 const $=s=>document.querySelector(s);
@@ -1250,6 +1252,7 @@ $("#cGyFull").onclick=async()=>{
   }catch(e){ cSet("cGyStatus",`<span class="err">${e.message}</span>`); } };
 $("#cGyReset").onclick=async()=>{ if(!confirm("Reset the gyro calibration to factory (dead bands off)?")) return;
   try{ await send("sc26re/gyro_reset",0xF0); cSet("cGyStatus",'<span class="ok">reset to factory</span>'); }catch(e){ cSet("cGyStatus",`<span class="err">${e.message}</span>`); } };
+stickCalMount($("#cStCal"),{ read:p=>read(p), cmd:p=>send(p,0xF0) });
 $("#cStZero").onclick=async()=>{ try{ cSet("cStStatus","hands off the sticks…"); await send("sc26re/zero_sticks",0xF0); await sleep(800); cSet("cStStatus",'<span class="ok">sticks zeroed and saved</span>'); }catch(e){ cSet("cStStatus",`<span class="err">${e.message}</span>`); } };
 let trStep=0;
 const TR=["",

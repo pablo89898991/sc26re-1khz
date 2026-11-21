@@ -698,6 +698,10 @@ static int handle_feature_request(enum valve_feature_link link, const uint8_t *r
 				{
 					return olympus_pressure_cal((uint8_t)(path[15] - '0'));
 				}
+				if(strncmp(path, "sc26re/stick_cal/", 17) == 0)
+				{
+					return analog_stick_cal(path + 17);
+				}
 				if(strcmp(path, "sc26re/zero_sticks") == 0)
 				{
 					return analog_zero_sticks();

@@ -793,19 +793,9 @@ int main(void)
 			 * trackball's speed) came out up to twice too high (hardware test, v51 test 56) */
 #ifdef CONFIG_IBEX_HWTEST
 			uint32_t perf_c2 = k_cycle_get_32();
-			k_thread_runtime_stats_t perf_u0, perf_u1;
-
-			(void)k_thread_runtime_stats_get(k_current_get(), &perf_u0);
-			uint32_t perf_d0 = hwtest_dwt();
 #endif
 			remap_process(&current, remap_last_us ? (float)(remap_now_us - remap_last_us) * 1e-6f : 0.001f);
 #ifdef CONFIG_IBEX_HWTEST
-			{
-				uint32_t perf_d = hwtest_dwt() - perf_d0;
-
-				(void)k_thread_runtime_stats_get(k_current_get(), &perf_u1);
-				hwtest_perf3(perf_d, (uint32_t)(perf_u1.execution_cycles - perf_u0.execution_cycles));
-			}
 			/* loop timing for sc26re/perf: the wait + scan, the remapper pass */
 			hwtest_perf(k_cyc_to_us_floor32(perf_c1 - perf_c0), k_cyc_to_us_floor32(k_cycle_get_32() - perf_c2),
 			            (uint32_t)(remap_now_us - remap_last_us));

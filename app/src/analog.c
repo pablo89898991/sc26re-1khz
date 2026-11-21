@@ -11,6 +11,7 @@
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
 #include <zephyr/sys/util.h>
+#include <zephyr/sys/byteorder.h>
 
 #include "controller.h"
 
@@ -508,6 +509,134 @@ static void stick_zero_sample(const int32_t *averaged)
 	{
 		atomic_set(&stick_zero_active, 0);
 		k_work_submit(&stick_zero_work);
+	}
+}
+
+/*
+ * Full stick calibration (remapper / report meter): 1 = hands off, the centre and its noise
+ * are measured (STICK_ZERO_SAMPLES samples); 2 = the sticks are turned round their whole
+ * range while the lowest and highest reading of every axis is kept; "finish" writes, per stick,
+ * the range and a centre band (the noise plus a margin, at least the old band) and saves it.
+ * Values are the averaged millivolts the calibration itself uses.
+ */
+static atomic_t scal_stage;
+static int32_t scal_lo[4], scal_hi[4], scal_now[4], scal_nlo[4], scal_nhi[4];
+static int64_t scal_sum[4];
+static uint32_t scal_n;
+static int8_t scal_result = -1; /* -1 none yet, else bit s set = stick s saved, 0x40 = refused */
+
+int analog_stick_cal(const char *op)
+{
+	if(strcmp(op, "start") == 0)
+	{
+		memset(scal_sum, 0, sizeof(scal_sum));
+		scal_n = 0;
+		scal_result = -1;
+		for(int i = 0; i < 4; ++i)
+		{
+			scal_lo[i] = scal_nlo[i] = INT32_MAX;
+			scal_hi[i] = scal_nhi[i] = INT32_MIN;
+		}
+		atomic_set(&scal_stage, 1);
+		return 0;
+	}
+	if(strcmp(op, "cancel") == 0)
+	{
+		atomic_set(&scal_stage, 0);
+		return 0;
+	}
+	if(strcmp(op, "finish") != 0 || atomic_get(&scal_stage) != 2)
+	{
+		return -EINVAL;
+	}
+	atomic_set(&scal_stage, 0);
+	{
+		struct analog_calibration_snapshot snap;
+		uint8_t saved = 0;
+
+		calibration_analog_snapshot(&snap);
+		for(int s = 0; s < 2; ++s)
+		{
+			struct stick_calibration *old = s ? &snap.stick_right : &snap.stick_left, cal = *old;
+			bool had = calibration_stick_valid(old) && !(old->x_min == 0 && old->x_max == 0);
+			uint16_t v[2][4]; /* per axis: min, max, centre band low, high */
+			bool ok = true;
+
+			for(int a = 0; a < 2 && ok; ++a)
+			{
+				int i = s * 2 + a;
+				int32_t c = (int32_t)(scal_sum[i] / MAX(scal_n, 1U));
+				int32_t half = MAX((scal_nhi[i] - scal_nlo[i]) + 8, 12); /* twice the noise, at least 12 mV */
+
+				if(had)
+				{
+					half = MAX(half, ((int32_t)(a ? old->y_center_max - old->y_center_min : old->x_center_max - old->x_center_min)) / 2);
+				}
+				/* real travel both ways (about a third of a typical swing) */
+				ok = c - scal_lo[i] >= 250 && scal_hi[i] - c >= 250;
+				v[a][0] = (uint16_t)CLAMP(scal_lo[i], 0, UINT16_MAX);
+				v[a][1] = (uint16_t)CLAMP(scal_hi[i], 0, UINT16_MAX);
+				v[a][2] = (uint16_t)CLAMP(c - half, 0, UINT16_MAX);
+				v[a][3] = (uint16_t)CLAMP(c + half, 0, UINT16_MAX);
+			}
+			cal.x_min = v[0][0]; cal.x_max = v[0][1]; cal.x_center_min = v[0][2]; cal.x_center_max = v[0][3];
+			cal.y_min = v[1][0]; cal.y_max = v[1][1]; cal.y_center_min = v[1][2]; cal.y_center_max = v[1][3];
+			if(ok && calibration_stick_valid(&cal) && calibration_set_stick(s ? CALIBRATION_RIGHT : CALIBRATION_LEFT, &cal) == 0)
+			{
+				saved |= (uint8_t)BIT(s);
+			}
+			LOG_INF("stick cal %s: x %u [%u..%u] %u  y %u [%u..%u] %u ok=%d", s ? "right" : "left", cal.x_min,
+			        cal.x_center_min, cal.x_center_max, cal.x_max, cal.y_min, cal.y_center_min, cal.y_center_max,
+			        cal.y_max, ok);
+		}
+		scal_result = (int8_t)(saved ? saved : 0x40);
+		return saved ? 0 : -EINVAL;
+	}
+}
+
+/* 32 bytes: stage, result, samples (u16), then per axis (LX LY RX RY) now, low, high (u16 mV) */
+void analog_stick_cal_state(uint8_t *out)
+{
+	out[0] = (uint8_t)atomic_get(&scal_stage);
+	out[1] = (uint8_t)scal_result;
+	sys_put_le16((uint16_t)MIN(scal_n, UINT16_MAX), &out[2]);
+	for(int i = 0; i < 4; ++i)
+	{
+		bool seen = scal_hi[i] >= scal_lo[i];
+
+		sys_put_le16((uint16_t)CLAMP(scal_now[i], 0, UINT16_MAX), &out[4 + i * 2]);
+		sys_put_le16(seen ? (uint16_t)CLAMP(scal_lo[i], 0, UINT16_MAX) : 0U, &out[12 + i * 2]);
+		sys_put_le16(seen ? (uint16_t)CLAMP(scal_hi[i], 0, UINT16_MAX) : 0U, &out[20 + i * 2]);
+	}
+	memset(&out[28], 0, 4);
+}
+
+static void stick_cal_sample(const int32_t *averaged)
+{
+	static const uint8_t ch[4] = { ANALOG_STICK_LEFT_X, ANALOG_STICK_LEFT_Y, ANALOG_STICK_RIGHT_X,
+	                               ANALOG_STICK_RIGHT_Y };
+	int st = atomic_get(&scal_stage);
+
+	for(int i = 0; i < 4; ++i)
+	{
+		int32_t v = averaged[ch[i]];
+
+		scal_now[i] = v;
+		if(st == 1)
+		{
+			scal_sum[i] += v;
+			scal_nlo[i] = MIN(scal_nlo[i], v);
+			scal_nhi[i] = MAX(scal_nhi[i], v);
+		}
+		if(st >= 1)
+		{
+			scal_lo[i] = MIN(scal_lo[i], v);
+			scal_hi[i] = MAX(scal_hi[i], v);
+		}
+	}
+	if(st == 1 && ++scal_n >= STICK_ZERO_SAMPLES)
+	{
+		atomic_set(&scal_stage, 2);
 	}
 }
 
@@ -1141,6 +1270,7 @@ int analog_read_report(struct controller_report *report)
 #endif
 
 	stick_zero_sample(averaged);
+	stick_cal_sample(averaged);
 	report->stick_left_x = scale_stick_axis(
 	    averaged[ANALOG_STICK_LEFT_X], calibration.stick_left.x_min, calibration.stick_left.x_max,
 	    calibration.stick_left.x_center_min, calibration.stick_left.x_center_max);

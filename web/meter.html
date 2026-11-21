@@ -90,6 +90,8 @@
       <label>Power-on chime <select id="bootChime"><option value="0">off</option><option value="1">quiet</option><option value="2">normal</option></select></label>
       <span id="toolStatus" class="note"></span>
     </div>
+    <div class="lbl" style="margin-top:14px">Stick calibration (full range)</div>
+    <div id="stCal" style="max-width:520px"></div>
     <div class="lbl" style="margin-top:14px">Gyro at rest (for the dead bands)</div>
     <div class="bar" style="flex-wrap:wrap;gap:10px">
       <button id="grMeasure">Measure 5 s at rest</button>
@@ -291,6 +293,7 @@
   </div>
 </div>
 
+<script src="stickcal.js"></script>
 <script>
 "use strict";
 const $=s=>document.querySelector(s);
@@ -1098,6 +1101,7 @@ $("#gyCal").onclick=async()=>{
   }
   $("#toolStatus").innerHTML='<span class="err">no result — is the IMU on? (tick “Gyro on” at the top)</span>';
 };
+stickCalMount($("#stCal"),{ read:p=>{ const d=ctl(); if(!d) throw new Error("connect first"); return featRead(d,p); }, cmd:p=>{ const d=ctl(); if(!d) throw new Error("connect first"); return fsend(d,1,pathCmd(0xF0,p)); } });
 $("#stZero").onclick=()=>toolSend(pathCmd(0xF0,"sc26re/zero_sticks"),"measuring — keep hands off the sticks for a second; saved");
 $("#bootChime").onchange=async e=>{ const v=+e.target.value;
   for(const d of targets()){ try{ await fsend(d,1,pathCmd(0xEE,"user/haptic_boot_level",[v])); await fsend(d,1,pathCmd(0xEF,"user/haptic_boot_level")); }catch(err){} }

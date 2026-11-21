@@ -10,6 +10,7 @@
 #include <zephyr/sys/byteorder.h>
 #include <zephyr/sys/util.h>
 
+#include "analog.h"
 #include "calibration.h"
 #include "ibex_settings_registry.h"
 #include "imu.h"
@@ -648,6 +649,12 @@ bool valve_settings_read(const char *path, uint8_t *buf, size_t capacity, size_t
 	{
 		stick_test_state(buf);
 		*len = 24;
+		return true;
+	}
+	if(strcmp(path, "sc26re/stick_cal") == 0 && capacity >= 32)
+	{
+		analog_stick_cal_state(buf);
+		*len = 32;
 		return true;
 	}
 	if(strcmp(path, "sc26re/rmp_diag") == 0 && capacity >= 16)

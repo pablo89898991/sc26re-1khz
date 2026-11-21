@@ -16,6 +16,10 @@ int analog_read_report(struct controller_report *report);
 int analog_trigger_step_cal(uint8_t stage);
 /* report meter: re-centre both sticks from their current resting position */
 int analog_zero_sticks(void);
+/* full stick calibration: "start" (hands off, then turn both sticks round), "finish" (save), "cancel" */
+int analog_stick_cal(const char *op);
+/* its state, 32 bytes (sc26re/stick_cal) */
+void analog_stick_cal_state(uint8_t *out);
 /* a trigger is pressed beyond 5 % (processed value, any trigger_mode) */
 bool analog_triggers_active(void);
 struct controller_report;

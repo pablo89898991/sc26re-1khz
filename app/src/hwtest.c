@@ -323,20 +323,8 @@ void hwtest_perf(uint32_t read_us, uint32_t remap_us, uint32_t gap_us)
 }
 
 #ifndef SC26RE_SIM
-/* ---- sc26re/perf3: where the CPU time goes (test builds) ---- */
+/* ---- the cycle counter for the remapper's section timers (test builds) ---- */
 #include <cmsis_core.h>
-
-static uint32_t p3_n, p3_wall, p3_own;
-static int64_t p3_t0;
-static uint64_t p3_busy0;
-static struct
-{
-	const struct k_thread *t;
-	uint64_t c0;
-	uint64_t d;
-	int prio;
-} p3_th[7];
-static int p3_nth;
 
 uint32_t hwtest_dwt(void)
 {
@@ -351,174 +339,13 @@ uint32_t hwtest_dwt(void)
 	}
 	return DWT->CYCCNT;
 }
-
-static uint32_t im_n, im_ticks, im_t0, im_wall[5], im_own[5], im_pure[3], im_pmax[3];
-static uint64_t im_u0;
-
-void hwtest_imu_mark(int m)
-{
-	k_thread_runtime_stats_t st;
-	uint32_t t = hwtest_dwt();
-
-	(void)k_thread_runtime_stats_get(k_current_get(), &st);
-	if(m > 0)
-	{
-		im_wall[m - 1] += t - im_t0;
-		im_own[m - 1] += (uint32_t)(st.execution_cycles - im_u0);
-		im_ticks += m == 5 ? 1U : 0U;
-	}
-	else
-	{
-		im_n++;
-	}
-	im_t0 = t;
-	im_u0 = st.execution_cycles;
-}
-
-void hwtest_imu_pure(int i, uint32_t cyc)
-{
-	im_pure[i] += cyc;
-	im_pmax[i] = MAX(im_pmax[i], cyc);
-}
-
-/* 12 u32: wake-ups, full ticks, then CPU cycles with interrupts off per tick (mean) for
- * 0 = the report + gravity, 1 = gyro mouse feed, 2 = sending the pad report; their maxima;
- * then x10 us per tick: own run time of the I2C read, own run time of the whole tick,
- * wall time of the I2C read */
-static void perf4_read(uint8_t *buf)
-{
-	uint32_t v[12] = { im_n, im_ticks };
-	uint32_t t = MAX(im_ticks, 1U), own = 0;
-	uint32_t cpu_mhz = SystemCoreClock / 1000000U;
-
-	for(int i = 0; i < 3; ++i)
-	{
-		v[2 + i] = im_pure[i] / t;
-		v[5 + i] = im_pmax[i];
-		im_pure[i] = im_pmax[i] = 0;
-	}
-	for(int i = 0; i < 5; ++i)
-	{
-		own += im_own[i];
-	}
-	v[8] = (uint32_t)(k_cyc_to_ns_floor64(im_own[1]) / 100U / t);
-	v[9] = (uint32_t)(k_cyc_to_ns_floor64(own) / 100U / t);
-	v[10] = (uint32_t)((uint64_t)im_wall[1] * 10U / cpu_mhz / t);
-	for(int i = 0; i < 5; ++i)
-	{
-		im_wall[i] = im_own[i] = 0;
-	}
-	im_n = im_ticks = 0;
-	for(int i = 0; i < 12; ++i)
-	{
-		sys_put_le32(v[i], &buf[4 * i]);
-	}
-}
-
-void hwtest_perf3(uint32_t wall_cyc, uint32_t own_cyc)
-{
-	p3_n++;
-	p3_wall += wall_cyc;
-	p3_own += own_cyc;
-}
-
-static void p3_thread(const struct k_thread *t, void *arg)
-{
-	k_thread_runtime_stats_t st;
-	bool snap = arg != NULL;
-	int i;
-
-	if(k_thread_runtime_stats_get((k_tid_t)t, &st) != 0)
-	{
-		return;
-	}
-	for(i = 0; i < p3_nth && p3_th[i].t != t; ++i)
-	{
-	}
-	if(i == p3_nth)
-	{
-		if(p3_nth >= (int)ARRAY_SIZE(p3_th))
-		{
-			return;
-		}
-		p3_nth++;
-		p3_th[i].t = t;
-		p3_th[i].c0 = st.execution_cycles;
-	}
-	p3_th[i].prio = t->base.prio;
-	p3_th[i].d = snap ? 0 : st.execution_cycles - p3_th[i].c0;
-	p3_th[i].c0 = st.execution_cycles;
-}
-
-/* 12 u32: passes, remapper wall us / pass (x10), its own main-thread run time / pass (x10),
- * window ms, non-idle us in the window, then the 7 busiest threads as prio << 24 | us */
-static void perf3_read(uint8_t *buf)
-{
-	k_thread_runtime_stats_t all;
-	int64_t now = k_uptime_get();
-	uint32_t v[12] = { 0 };
-	uint32_t cpu_mhz = SystemCoreClock / 1000000U;
-
-	for(int i = 0; i < p3_nth; ++i)
-	{
-		p3_th[i].d = 0;
-	}
-	k_thread_foreach_unlocked(p3_thread, NULL);
-	(void)k_thread_runtime_stats_all_get(&all);
-	v[0] = p3_n;
-	v[1] = p3_n ? (uint32_t)((uint64_t)p3_wall * 10U / cpu_mhz / p3_n) : 0;
-	v[2] = p3_n ? (uint32_t)(k_cyc_to_ns_floor64(p3_own) / 100U / p3_n) : 0;
-	v[3] = (uint32_t)(now - p3_t0);
-	v[4] = (uint32_t)k_cyc_to_us_floor64(all.total_cycles - p3_busy0);
-	for(int k = 0; k < 7; ++k)
-	{
-		int best = -1;
-
-		for(int i = 0; i < p3_nth; ++i)
-		{
-			if(p3_th[i].d != 0 && (best < 0 || p3_th[i].d > p3_th[best].d))
-			{
-				best = i;
-			}
-		}
-		if(best < 0)
-		{
-			break;
-		}
-		v[5 + k] = ((uint32_t)(uint8_t)(p3_th[best].prio + 64) << 24) |
-		           MIN((uint32_t)k_cyc_to_us_floor64(p3_th[best].d), 0xFFFFFFU);
-		p3_th[best].d = 0;
-	}
-	for(int i = 0; i < 12; ++i)
-	{
-		sys_put_le32(v[i], &buf[4 * i]);
-	}
-	p3_n = p3_wall = p3_own = 0;
-	p3_t0 = now;
-	p3_busy0 = all.total_cycles;
-}
 #else
 uint32_t hwtest_dwt(void) { return 0; }
-void hwtest_perf3(uint32_t wall_cyc, uint32_t own_cyc) { (void)wall_cyc; (void)own_cyc; }
-void hwtest_imu_mark(int m) { (void)m; }
-void hwtest_imu_pure(int i, uint32_t cyc) { (void)i; (void)cyc; }
 #endif
 
 bool hwtest_read(const char *path, uint8_t *buf, size_t capacity, size_t *len)
 {
 #ifndef SC26RE_SIM
-	if(strcmp(path, "sc26re/perf4") == 0 && capacity >= 48)
-	{
-		perf4_read(buf);
-		*len = 48;
-		return true;
-	}
-	if(strcmp(path, "sc26re/perf3") == 0 && capacity >= 48)
-	{
-		perf3_read(buf);
-		*len = 48;
-		return true;
-	}
 #endif
 #ifndef SC26RE_SIM
 	if(strcmp(path, "sc26re/perf2") == 0 && capacity >= 48)
