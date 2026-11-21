@@ -109,7 +109,7 @@
 <body>
 <div class="top">
   <div class="topin">
-    <div class="brand">SC2 <span class="hz">Remapper</span> <span class="note" id="pagever" title="page version — if it is older than expected, press Ctrl+F5">p.2026-11-21f</span></div>
+    <div class="brand">SC2 <span class="hz">Remapper</span> <span class="note" id="pagever" title="page version — if it is older than expected, press Ctrl+F5">p.2026-11-21g</span></div>
     <button class="primary" id="connect">Connect controller</button>
     <span id="status" class="chip">not connected</span>
     <span class="grow"></span>
@@ -263,9 +263,9 @@
       <h3>Unbound inputs do nothing</h3>
       <p>Per profile: when ticked, Steam and the game only get what the profile maps — every input without a binding (buttons, touch sensors, trackpads left “to Steam”) is dropped. Sticks set to Analog still work.</p>
       <h3>Steam button</h3>
-      <p>While the remapper is on, Steam does not see the Steam button, so it never opens Steam’s menu in the middle of a game. Bind it to <b>Pad Steam</b> in a profile to give it back to Steam, or to anything else. Steam + D-pad (choose the profile) and holding it to power off always work.</p>
+      <p>While the remapper is on, Steam does not see the Steam button, so it never opens Steam’s menu in the middle of a game. Bind it to <b>Pad Steam</b> in a profile to give it back to Steam, or to anything else. Steam + D-pad (choose the profile), the other Steam combinations below and holding it alone for 7 s to power off always work.</p>
       <h3>Controller combinations (all with the Steam button)</h3>
-      <p>While Steam is held these buttons reach neither the game nor your bindings, so a combination never does anything in the game (a button pressed with Steam stays hidden until you let it go): <b>Steam + D-pad</b> up / right / down / left = profile 1–4 · <b>Steam + Menu</b> = remapper on / off · <b>Steam + View</b> = gyro mouse on / off · <b>Steam + A</b> = 360° calibration of the gyro mouse · <b>Steam + X held 3 s</b> = gyro calibration · <b>Steam + Y held</b> = power off. (Before v51 test 86 these were LB + RB + Menu / View / X + Y: LB and RB reached the game before the combination was complete.)</p>
+      <p>While Steam is held these buttons reach neither the game nor your bindings, so a combination never does anything in the game (a button pressed with Steam stays hidden until you let it go): <b>Steam + D-pad</b> up / right / down / left = profile 1–4 · <b>Steam + Menu</b> = remapper on / off · <b>Steam + View</b> = gyro mouse on / off · <b>Steam + A</b> = 360° calibration of the gyro mouse · <b>Steam + X held 3 s</b> = gyro calibration · <b>Steam + Y held</b> = power off · <b>Steam held alone 7 s</b> = power off (Steam held together with another button never powers off). (Before v51 test 86 these were LB + RB + Menu / View / X + Y: LB and RB reached the game before the combination was complete.)</p>
       <h3>Outer ring</h3>
       <p>Sticks and trackpads have an outer ring: its binding fires while the stick / finger is beyond the radius you set (or inside it, with invert) — e.g. sprint when the stick is pushed all the way.</p>
       <h3>Triggers</h3>
@@ -830,7 +830,7 @@ function editor(){
     ${m&3?`<div class="row2"><label></label><label class="note"><input type="checkbox" id="bkeep"${b[bt0+5]&2?" checked":""}> press acts at once — the press works as usual while held, the ${m&1?"long":"double"} press comes on top (Steam: regular press not “interruptible”); off: a short tap fires the press when let go</label></div>`:""}
     ${m&1?`<div class="row2"><label></label><label class="note"><input type="checkbox" id="bint"${b[bt0+5]&1?" checked":""}> another input cancels — pressing another input while holding cancels the long press (and the short one)</label></div>`:""}
     </details>
-    ${s===16?`<p class="note wrap">While the remapper is on, Steam does not see this button. Bind it to <b>Pad Steam</b> to give it back to Steam. Steam + D-pad (profiles) and holding it to power off work as always.</p>`:""}
+    ${s===16?`<p class="note wrap">While the remapper is on, Steam does not see this button. Bind it to <b>Pad Steam</b> to give it back to Steam. Steam + D-pad (profiles), the other Steam combinations and holding it alone for 7 s to power off work as always.</p>`:""}
     <div class="row2"><label>Chord</label><select id="bchord">${SHBTN.map(([v,n])=>`<option value="${v}">${v?"only while "+n+" is held":"— none (always) —"}</option>`).join("")}</select><small>chorded press: fires only together with that button</small></div>
     <div class="row2"><label>Haptics</label><select id="bhap">${HAPT.map(([v,n])=>`<option value="${v}">${n}</option>`).join("")}</select><small>when it fires (turbo: every repeat)</small></div>
     <div class="tools" style="margin-top:4px"><button class="ghost" id="bcopy">Copy binding</button><button class="ghost" id="bpaste"${bindClip?"":" disabled"}>Paste</button></div>
