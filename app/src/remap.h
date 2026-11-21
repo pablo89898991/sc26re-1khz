@@ -163,6 +163,8 @@ struct remap_gyx
 #define REMAP_AF_OTHER_STICK 0x04 /* trackpad joystick: drive the other side's stick */
 #define REMAP_AF_MJ_XBOX 0x08     /* mouse joystick: drive the Xbox pad's stick (else the Steam pad's) */
 #define REMAP_AF_SWIPE_REPEAT 0x08 /* directional swipe: a long swipe fires again */
+#define REMAP_AF_RING_FIRST 0x08 /* sticks in 4 / 8-way: reaching the outer ring lets the directions go for one pass, so the
+                                  * ring binding (e.g. Shift) is down before they come back (W after Shift) */
 #define REMAP_AF_PRESSURE 0x10     /* trackpads: active while pressed harder than .press */
 #define REMAP_AF_INVERT_X 0x20
 #define REMAP_AF_INVERT_Y 0x40

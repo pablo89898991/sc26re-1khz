@@ -5,7 +5,7 @@ A=$(gcc -print-file-name=libasan.so)
 U=${VDF_DIR:-/mnt/user-data/uploads}
 run() { name=$1; shift; out=$("$@" 2>&1 | grep -v "agent-proxy\|connect_rejected\|googleapis\|Allowed domains\|For details" | tail -1); echo "$name: $out"; }
 ( run test_imu_raw sh -c 'gcc -O2 -Wall -Wextra -Werror -I../../app/src -o /tmp/test_imu_raw test_imu_raw.c -lm && /tmp/test_imu_raw'
-  for t in test_remap test_remap2 test_xinput test_v7 test_vdf test_vdf_games test_vdf_modes test_user_profiles test_audit test_hwtest_end; do run $t timeout 1500 python3 $t.py; done
+  for t in test_remap test_remap2 test_xinput test_v7 test_vdf test_vdf_games test_vdf_modes test_user_profiles test_audit test_hwtest_end test_ring_first; do run $t timeout 1500 python3 $t.py; done
   run prop timeout 900 python3 prop.py $1 $(( $1 + 30 )); run prop2 timeout 900 python3 prop2.py $1 $(( $1 + 60 )) ) > /tmp/b_units.log 2>&1 &
 ( run test_gyro env SIMLIB=libsim_gm.so timeout 900 python3 test_gyro.py; run "asan test_v7" env LD_PRELOAD=$A ASAN_OPTIONS=detect_leaks=0 SIMLIB=libsim_asan.so timeout 1500 python3 test_v7.py; run "asan test_vdf_games" env LD_PRELOAD=$A ASAN_OPTIONS=detect_leaks=0 SIMLIB=libsim_asan.so timeout 1500 python3 test_vdf_games.py ) > /tmp/b_asan.log 2>&1 &
 ( for sd in $1 $(( $1 + 1 )); do run "fuzz asan $sd" env LD_PRELOAD=$A ASAN_OPTIONS=detect_leaks=0 SIMLIB=libsim_asan.so timeout 900 python3 fuzz.py $sd 20; done ) > /tmp/b_fuzz.log 2>&1 &

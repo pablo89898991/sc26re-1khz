@@ -2504,6 +2504,19 @@ void remap_process(struct controller_report *r, float dt)
 
 		ring_on[i] = ring_test(an, fx, fy);
 		dirs[i] = (an->mode == REMAP_ANALOG_DPAD4 || an->mode == REMAP_ANALOG_DPAD8) ? dir_mask(an->mode, fx, fy, dz) : 0U;
+		{
+			/* "ring first": some games take Shift + W for a sprint only when Shift came first;
+			 * the stick reaches the ring after the direction, so the direction lets go for one
+			 * pass when the ring comes on and is pressed again with it */
+			static bool ring_was[2];
+
+			if((an->flags & REMAP_AF_RING_FIRST) && dirs[i] != 0U && ring_on[i] && !ring_was[i] &&
+			   !(an->flags & REMAP_AF_RING_INVERT))
+			{
+				dirs[i] = 0U;
+			}
+			ring_was[i] = ring_on[i];
+		}
 		if(an->mode == REMAP_ANALOG_SINGLE)
 		{
 			/* the whole stick is one button (its "outer ring" source): pushed past the dead zone */

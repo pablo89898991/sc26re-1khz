@@ -720,7 +720,8 @@ function editor(){
     }
     if(!pad&&(m===0||m===3)) h+=`<div class="row2"><label>Curve presets</label><span>${[["Linear",1],["Wide",0.8],["Aggressive",0.6],["Relaxed",1.5],["Precise",2]].map(([n,v])=>`<button class="ghost cpre" data-v="${v}">${n}</button>`).join(" ")}</span></div>`;
     if(!(pad&&(m===0||m===11))&&m!==13&&!(!pad&&(m===11||m===10))) h+=pct("ring",P(12),0,100,"Outer ring",`its binding (“Outer ring” below) fires ${b[o+1]&2?"inside":"beyond"} this radius; 0 = off`)+
-      `<div class="row2"><label></label><label class="note"><input type="checkbox" id="rinv"${b[o+1]&2?" checked":""}> invert — fire inside the radius (inner ring, e.g. walk)</label></div>`;
+      `<div class="row2"><label></label><label class="note"><input type="checkbox" id="rinv"${b[o+1]&2?" checked":""}> invert — fire inside the radius (inner ring, e.g. walk)</label></div>`+
+      (!pad&&(m===1||m===2)?`<div class="row2"><label></label><label class="note" title="The stick reaches the ring after its direction key is already down. Some games sprint only when Shift comes before W: with this the direction is let go for one moment when the ring comes on and pressed again together with it."><input type="checkbox" id="rfirst"${b[o+1]&8?" checked":""}> ring key first — when the ring comes on, press the direction again after it (sprint in games that want Shift before W)</label></div>`:"");
     ed.innerHTML=`<h4>${ANAME[an]}${useShift(g)?" <em>⇧ shifted</em>":""}</h4>${shiftBar(g)}
       <div class="row2"><label>Mode</label><select id="amode">${(pad?MODES_PAD:MODES_STICK).map(([v,n])=>`<option value="${v}">${n}</option>`).join("")}</select></div>
       ${h}
@@ -765,6 +766,7 @@ function editor(){
     if($("#mjx")) $("#mjx").onchange=e=>{ b[o+1]=(b[o+1]&~8)|(e.target.checked?8:0); setDirty(); };
     if($("#srep")) $("#srep").onchange=e=>{ b[o+1]=(b[o+1]&~8)|(e.target.checked?8:0); setDirty(); };
     if($("#rinv")) $("#rinv").onchange=e=>{ b[o+1]=(b[o+1]&~2)|(e.target.checked?2:0); setDirty(); render(); };
+    if($("#rfirst")) $("#rfirst").onchange=e=>{ b[o+1]=(b[o+1]&~8)|(e.target.checked?8:0); setDirty(); };
     if($("#ahap")){ $("#ahap").value=String(b[o+8]); $("#ahap").onchange=e=>{ b[o+8]=+e.target.value; setDirty(); }; }
     wireShift(g); ed.querySelectorAll("[data-sub]").forEach(e=>e.onclick=()=>openSel(e.dataset.sub));
     return;
