@@ -27,6 +27,20 @@ const check = (name, ok, info = '') => { total++; if (!ok) bad++; if (!ok || pro
     const box = new (__ov.model.position.constructor)(); return { r4: P('back_r4').x, l4: P('back_l4').x, trig: P('trigger_l').y, bump: P('bumper_l').y, body: (() => { let mx = 0; __ov.model.traverse(o => { if (o.isMesh && /shell/.test(o.name)) { o.geometry.computeBoundingBox(); mx = Math.max(mx, o.geometry.boundingBox.max.x * o.getWorldScale(box).x); } }); return mx; })() }; });
   check('back buttons popped out beside the body', pop.r4 > pop.body * 0.95 && pop.l4 < -pop.body * 0.95, JSON.stringify(pop));
   check('triggers above the bumpers', pop.trig > pop.bump, JSON.stringify(pop));
+  for (const mdl of ['valve', 'detail']) {
+    const r = await ev(mdl => new Promise(res => { const sel = document.querySelector('#mdl'); if (sel.value !== mdl) { sel.value = mdl; sel.dispatchEvent(new Event('change')); }
+      const go = () => { if (!__ov.ready) return setTimeout(go, 100); setTimeout(() => { __ov.model.updateMatrixWorld(true);
+        const B = o => new (__ov.model.position.constructor === undefined ? Object : Object)() && (() => { const b = { min: [1e9, 1e9], max: [-1e9, -1e9] }; o.traverse(m => { if (!m.isMesh) return; const g = m.geometry; g.computeBoundingBox();
+          for (const x of [g.boundingBox.min.x, g.boundingBox.max.x]) for (const y of [g.boundingBox.min.y, g.boundingBox.max.y]) for (const z of [g.boundingBox.min.z, g.boundingBox.max.z]) { const v = m.localToWorld(__ov.model.position.clone().set(x, y, z)); b.min[0] = Math.min(b.min[0], v.x); b.max[0] = Math.max(b.max[0], v.x); b.min[1] = Math.min(b.min[1], v.y); b.max[1] = Math.max(b.max[1], v.y); } }); return b; })();
+        let body = null; __ov.model.traverse(o => { if (o.isMesh && (/shell|^body$/.test(o.name))) { const b = B(o); body = body ? { min: [Math.min(body.min[0], b.min[0]), Math.min(body.min[1], b.min[1])], max: [Math.max(body.max[0], b.max[0]), Math.max(body.max[1], b.max[1])] } : b; } });
+        const bl = B(__ov.parts.get('bumper_l').pivot), br = B(__ov.parts.get('bumper_r').pivot);
+        res({ body, bl, br, rz: __ov.parts.get('back_r4').pivot.rotation.z }); }, 300); }; go(); }), mdl);
+    const inside = b => b.max[1] <= r.body.max[1] + 0.05 && b.min[0] >= r.body.min[0] - 0.05 && b.max[0] <= r.body.max[0] + 0.05;
+    check(`${mdl}: popped bumpers stay inside the controller's outline`, inside(r.bl) && inside(r.br), JSON.stringify(r));
+    check(`${mdl}: back buttons turned their marked face to the camera`, Math.abs(r.rz) > 3, String(r.rz));
+  }
+  await ev(() => { const sel = document.querySelector('#mdl'); sel.value = 'valve'; sel.dispatchEvent(new Event('change')); });
+  await pg.waitForFunction(() => __ov.ready, null, { timeout: 60000 });
   const grip = await ev(() => new Promise(res => { __ov.st.btn = 1 << 29; setTimeout(() => { const p = __ov.parts.get('grip_l'); const r = [p.material.opacity, p.material.depthTest]; __ov.st.btn = 0; setTimeout(() => res([...r, __ov.parts.get('grip_l').material.opacity]), 100); }, 100); }));
   check('grip sense held: drawn over the body', grip[0] === 0.85 && grip[1] === false && grip[2] === 0.12, JSON.stringify(grip));
   const ang = q => 2 * Math.acos(Math.min(1, Math.abs(q[0]))) * 180 / Math.PI;

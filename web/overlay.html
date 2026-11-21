@@ -183,6 +183,9 @@ function loadTextured(gen) {
     padHalf = 1.45;
     for (const s of ["l", "r"]) { const p = parts.get("pad_" + s); if (p) fingers[s] = addFinger(p.pivot); }
     bodyMats = [...new Set(bodyMats)];
+    /* the shell is open around the sticks: its inside drawn too, so the background never shows through a gap */
+    for (const m of bodyMats) m.side = THREE.DoubleSide;
+    for (const p of parts.values()) p.material.side = THREE.DoubleSide;
     model.quaternion.copy(pose);
   });
 }
@@ -391,7 +394,7 @@ function glow(name, color, k) { const p = parts.get(name); if (!p) return; p.mat
 function popOf(name) {
   const side = /_l\d?$/.test(name) ? -1 : 1;
   if (name.startsWith("trigger_") && $("#popTrig").checked) return new THREE.Vector3(0, 0.2, -2.6);
-  if (name.startsWith("bumper_") && $("#popBump").checked) return new THREE.Vector3(0, 0.8, -0.4);
+  if (name.startsWith("bumper_") && $("#popBump").checked) return new THREE.Vector3(0, 1.0, 0.6); /* on the top edge, inside the outline */
   if (name.startsWith("back_") && $("#popBack").checked) return new THREE.Vector3(side * 3.4, 3, name.endsWith("5") ? 1.2 : -1.2);
   return null;
 }
@@ -403,8 +406,9 @@ function placePart(p, name, dir, depth) {
 function pressPart(name, dir, depth) { const p = parts.get(name); if (!p) return; placePart(p, name, dir, depth);
   /* popped bumpers: their top (a strip along the top edge) turned to the camera */
   if (name.startsWith("bumper_")) p.pivot.rotation.x = $("#popBump").checked ? 1.2 : 0;
-  /* popped back buttons: turned so their face, which looks sideways and back, faces the camera */
-  if (name.startsWith("back_")) p.pivot.rotation.z = $("#popBack").checked ? (name.includes("_l") ? -1 : 1) * (p.popTurn ?? 0.9) : 0; }
+  /* popped back buttons: turned so their outer face (with the L4 / R5 marks, which looks sideways and
+   * back) faces the camera the right way round, not mirrored */
+  if (name.startsWith("back_")) p.pivot.rotation.z = $("#popBack").checked ? (name.includes("_l") ? -1 : 1) * (p.popTurn ?? 0.9) + Math.PI : 0; }
 function poseParts() {
   const HI = new THREE.Color($("#hiCol").value), TOUCH = new THREE.Color($("#touchCol").value);
   for (const [name, b, dir] of PRESS_PARTS) { const on = bit(b); pressPart(name, dir, on ? PRESS_DEPTH : 0); glow(name, on ? HI : null, 0.8); }
