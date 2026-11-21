@@ -34,7 +34,7 @@
 
 #define BOOT_CHORD_SETTLE_MS 150
 #define PERSONALITY_PERSIST_DELAY_MS 60000
-#define STEAM_POWER_HOLD_MS 5000
+#define STEAM_POWER_HOLD_MS 7000
 #define INPUT_REFRESH_MS 15
 #define INACTIVITY_STICK_THRESHOLD 4000
 #define INACTIVITY_PHYSICAL_BUTTONS BIT_MASK(20)
@@ -709,7 +709,7 @@ int main(void)
 				power_off();
 			}
 		}
-		/* Steam held alone for 5 s: power off. Held with another button (a combination: Steam + X
+		/* Steam held alone for 7 s (5 s before v51 test 88): power off. Held with another button (a combination: Steam + X
 		 * held 3 s for the gyro calibration, Steam + D-pad...) it never powers off until it is let
 		 * go (before v51 test 87 Steam + X powered off when held a little long) */
 		static bool steam_combo;
