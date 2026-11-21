@@ -709,7 +709,20 @@ int main(void)
 				power_off();
 			}
 		}
-		if((current.buttons & BIT(CONTROLLER_BUTTON_STEAM)) != 0U)
+		/* Steam held alone for 5 s: power off. Held with another button (a combination: Steam + X
+		 * held 3 s for the gyro calibration, Steam + D-pad...) it never powers off until it is let
+		 * go (before v51 test 87 Steam + X powered off when held a little long) */
+		static bool steam_combo;
+
+		if((current.buttons & BIT(CONTROLLER_BUTTON_STEAM)) == 0U)
+		{
+			steam_combo = false;
+		}
+		else if((current.buttons & ~(BIT(CONTROLLER_BUTTON_STEAM) | XI_GUIDE_IGNORE)) != 0U)
+		{
+			steam_combo = true;
+		}
+		if((current.buttons & BIT(CONTROLLER_BUTTON_STEAM)) != 0U && !steam_combo)
 		{
 			if(steam_button_since == 0)
 			{
