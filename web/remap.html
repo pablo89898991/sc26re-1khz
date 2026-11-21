@@ -94,12 +94,22 @@
   dialog{background:var(--panel);color:var(--ink);border:1px solid var(--edge);border-radius:14px;padding:18px;min-width:min(620px,92vw)}
   dialog::backdrop{background:rgba(0,0,0,.55)}
   .help h3{font-size:15px;color:var(--accent2);margin:14px 0 4px} .help h3:first-child{margin-top:0} .help p{margin:0;color:#c9d4e6;font-size:14px}
+  #ovSet{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;align-items:start}
+  @media (max-width:1000px){#ovSet{grid-template-columns:1fr}}
+  .ovcol{border:1px solid #2c3850;border-radius:10px;padding:6px 10px;background:rgba(255,255,255,.02)}
+  .ovcol summary{cursor:pointer;font-weight:600;color:#cfe0ff;padding:4px 0}
+  .ovcol .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:6px 0;font-size:13px}
+  .ovcol .ovsub{display:block;margin-top:8px;color:#9fc4ff}
+  .ovcol input[type=range]{width:140px} .ovcol select{max-width:100%}
+  .ovcol .row>label:first-child:not(:has(input)){min-width:46px}
+  .ovcol input[type=color]{width:38px;height:24px;padding:0;border:1px solid #34476b;border-radius:6px;background:none;cursor:pointer}
+  #ovBox{background:repeating-conic-gradient(#1a2030 0% 25%,#121826 0% 50%) 0 0/24px 24px}
 </style>
 </head>
 <body>
 <div class="top">
   <div class="topin">
-    <div class="brand">SC2 <span class="hz">Remapper</span> <span class="note" id="pagever" title="page version — if it is older than expected, press Ctrl+F5">p.2026-11-21a</span></div>
+    <div class="brand">SC2 <span class="hz">Remapper</span> <span class="note" id="pagever" title="page version — if it is older than expected, press Ctrl+F5">p.2026-11-21b</span></div>
     <button class="primary" id="connect">Connect controller</button>
     <span id="status" class="chip">not connected</span>
     <span class="grow"></span>
@@ -215,9 +225,10 @@
         <a class="ghost btnlike" href="overlay.html" target="_blank" title="The full overlay page in its own tab (for OBS window capture)">Open as a page</a>
         <span id="ovState" class="note"></span>
       </div>
-      <p class="note">The overlay shows the radial menus and 3 × 3 grids while a pad is touched or a stick pushed (slice names, the chosen one lit), the profile’s name when it changes, and the 3D controller. Needs v51 test 84 or newer for the menus. Press <b>H</b> inside it for its settings (3D model on / off, menu size and place, colours). The window on top: drag it where you want it, Chrome keeps its place and size; it closes with the remapper tab.</p>
-      <div id="ovBox" style="height:440px;border:1px solid var(--line,#2c3850);border-radius:10px;overflow:hidden;background:#0d1320"></div>
+      <p class="note">The overlay shows the radial menus and touch menus (3 × 3 grids) while a pad is touched or a stick pushed (slice names, the chosen one lit), the profile’s name when it changes, and the 3D controller. Needs v51 test 84 or newer for the menus. Everything is set below: where each part is, its size, colours, background. The window on top: drag it where you want it, Chrome keeps its place and size; it closes with the remapper tab. Windows cannot make that window see-through: “transparent” is for OBS, other windows show it on the dark colour.</p>
+      <div id="ovBox" style="height:460px;border:1px solid var(--line,#2c3850);border-radius:10px;overflow:hidden" title="the checks show through where the background is transparent"></div>
     </div>
+    <div class="panel"><div id="ovSet"></div></div>
     <div class="panel">
       <h3 style="margin:0 0 6px">Slice names</h3>
       <p class="note">By default a slice shows what it does (its first action). Give it your own name here (“Grenade”, “Map”…): saved in this browser, for <b id="ovProf"></b>. A slice of a layer profile takes the layer’s name.</p>
@@ -272,6 +283,7 @@
 <dialog id="vdlg" style="max-width:760px;width:94vw"><h3 style="margin:0 0 6px">Import a Steam Input configuration</h3><div id="vbody"></div>
 <div class="bar" style="margin-top:12px;justify-content:flex-end"><button class="ghost" id="vcancel">Cancel</button><button class="ghost" id="vload">Load into the editor</button><button class="primary" id="vsave">Load and save to the controller</button></div></dialog>
 <script src="actnames.js"></script>
+<script src="overlay_settings.js"></script>
 <script src="vdf.js"></script>
 <script src="stickcal.js"></script>
 <dialog id="dlg"><div id="editor"></div><div class="bar" style="margin-top:12px;justify-content:flex-end"><button id="dlgClear" class="ghost danger">Clear input</button><button class="primary" id="dlgDone">Done</button></div></dialog>
@@ -1029,6 +1041,20 @@ $("#ovPip").onclick=async()=>{
     w.addEventListener("pagehide",()=>{ ovPipWin=null; $("#ovPip").textContent="Open on top of the game"; ovShown(ovOn); });
     ovShown(ovOn);
   }catch(e){ $("#ovState").innerHTML=`<span class="err">${e.message}</span>`; } };
+
+/* overlay settings in columns (overlay_settings.js): the overlay in the tab and in the window on top
+ * read the same storage and follow every change */
+const ovFrames=()=>[$("#ovBox iframe"),ovPipWin&&ovPipWin.document.querySelector("iframe")].filter(Boolean).map(f=>f.contentWindow);
+function ovSetSave(){ OVS.showVals($("#ovSet")); try{ localStorage.setItem(OVS.TAB_KEY,JSON.stringify(OVS.collect($("#ovSet"),"ov_"))); }catch(e){} }
+(function ovSetInit(){ const root=$("#ovSet");
+  let open={}; try{ open=JSON.parse(localStorage.getItem("sc26re_ovset_open")||"{}"); }catch(e){}
+  root.innerHTML=OVS.groups.map(g=>`<details class="ovcol" data-g="${g.g}"${open[g.g]===false?"":" open"}><summary>${g.name}</summary>${OVS.rows(g.g,"ov_")}</details>`).join("");
+  OVS.apply(root,Object.assign({},OVS.tabDefaults,OVS.read(OVS.TAB_KEY)),"ov_");
+  root.addEventListener("input",ovSetSave); root.addEventListener("change",ovSetSave);
+  root.querySelectorAll("details").forEach(d=>d.addEventListener("toggle",()=>{ open[d.dataset.g]=d.open; try{ localStorage.setItem("sc26re_ovset_open",JSON.stringify(open)); }catch(e){} }));
+  $("#ov_recenter").onclick=()=>ovFrames().forEach(w=>w.postMessage("sc26re:recenter",location.origin));
+  window.addEventListener("storage",e=>{ if(e.key===OVS.TAB_KEY) OVS.apply(root,OVS.read(OVS.TAB_KEY),"ov_"); });
+})();
 function ovLabels(){
   const b=prof[cur], lab=ovLab(), rows=[], seen=new Set();
   $("#ovProf").textContent="Profile "+(cur+1)+(nameOf(b)?": "+nameOf(b):"");

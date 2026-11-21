@@ -13,7 +13,7 @@ const check = (name, ok, info = '') => { total++; if (!ok) bad++; console.log((o
   const errs = []; pg.on('pageerror', e => errs.push(e.message));
   pg.on('dialog', d => d.accept());
   await pg.addInitScript({ path: __dirname + '/webhid_shim.js' });
-  await pg.addInitScript(() => { try { localStorage.removeItem('sc26re_menu_labels'); } catch (e) {} });
+  await pg.addInitScript(() => { try { if (window === window.top) for (const k of ['sc26re_menu_labels', 'sc26re_overlay_tab', 'sc26re_ovset_open']) localStorage.removeItem(k); } catch (e) {} });
   await pg.goto('http://127.0.0.1:8766/remap.html');
   await pg.click('#connect');
   await pg.waitForFunction(() => /loaded/.test(document.querySelector('#pstatus').textContent), null, { timeout: 30000 });
@@ -40,6 +40,19 @@ const check = (name, ok, info = '') => { total++; if (!ok) bad++; console.log((o
   const px = await fr.evaluate(() => { const c = document.querySelector('#menu'), d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data; let n = 0; for (let i = 3; i < d.length; i += 4 * 7) if (d[i]) n++; return n; });
   check('menu drawn on the overlay', px > 500, px + ' px');
   await pg.screenshot({ path: '/tmp/shots/ovtab.png' });
+  // settings in the tab's columns reach the overlay inside the tab
+  await pg.selectOption('#ov_radPos', 'custom'); await pg.fill('#ov_radX', '80'); await pg.selectOption('#ov_bg', 'transparent');
+  await pg.$eval('#ov_modelSize', e => { e.value = 40; e.dispatchEvent(new Event('input', { bubbles: true })); });
+  const fol = await fr.waitForFunction(() => document.querySelector('#radPos').value === 'custom' && document.querySelector('#radX').value === '80' && document.querySelector('#bg').value === 'transparent' && document.querySelector('#modelSize').value === '40', null, { timeout: 3000 }).then(() => true).catch(() => false);
+  check('tab settings reach the overlay (place, background, model area)', fol);
+  await sleep(300);
+  const vw = await fr.evaluate(() => document.querySelector('#view').getBoundingClientRect().width / innerWidth);
+  check('3D controller drawn in 40 % of the window', Math.abs(vw - 0.4) < 0.02, vw.toFixed(3));
+  const rx = await fr.evaluate(() => { const c = document.querySelector('#menu'), d = c.getContext('2d').getImageData(0, 0, c.width, c.height); let sx = 0, n = 0; for (let y = 0; y < d.height; y += 4) for (let x = 0; x < d.width; x += 4) if (d.data[(y * d.width + x) * 4 + 3] > 200) { sx += x; n++; } return n ? sx / n / d.width : -1; });
+  check('radial menu moved to X 80 %', Math.abs(rx - 0.8) < 0.05, rx.toFixed(3));
+  await pg.click('#ovSet details[data-g="model"] summary');
+  check('a column folds', await pg.$eval('#ovSet details[data-g="model"]', d => !d.open));
+  await pg.screenshot({ path: '/tmp/shots/ovtab2.png', fullPage: true });
   await post('/set', { RP_TOUCH: 0 });
   await fr.waitForFunction(() => window.__menu.st && !window.__menu.st.menus.length, null, { timeout: 5000 }).catch(() => {});
   check('lift: menu closed', await fr.evaluate(() => !window.__menu.st.menus.length));
