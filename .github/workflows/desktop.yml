@@ -4,6 +4,7 @@ name: overlay app
 # "overlay-app" pre-release (replaced on every build).
 on:
   push:
+    tags: ['overlay-v*']
     branches: [master]
     paths: ['desktop/**', 'web/*.html', 'web/*.js', 'web/models/**', 'web/vendor/**', '.github/workflows/desktop.yml']
   workflow_dispatch:
@@ -34,7 +35,19 @@ jobs:
         with:
           name: SC2-Overlay
           path: desktop/dist/*.exe
+      - name: Release (tag overlay-v*)
+        if: startsWith(github.ref, 'refs/tags/overlay-v')
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          exe=$(ls desktop/dist/*.exe | head -1)
+          cp "$exe" SC2-Overlay.exe
+          tag="${GITHUB_REF#refs/tags/}"
+          gh release view "$tag" >/dev/null 2>&1 || gh release create "$tag" --title "SC2 Overlay ${tag#overlay-v} (Windows app)" --notes-file desktop/RELEASE.md --latest=false
+          gh release upload "$tag" SC2-Overlay.exe --clobber
       - name: Pre-release
+        if: ${{ !startsWith(github.ref, 'refs/tags/') }}
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
