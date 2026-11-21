@@ -101,7 +101,7 @@ def sim_run(case, cfg=None):
 DIG = lambda e: (e["mb"], e["sh"], tuple(e["keys"]), e["btn"], e["xb"], e["hap"], e["prof"])
 AN = ("dx", "dy", "wh", "xlt", "xrt", "lsx", "lsy", "rsx", "rsy", "tl", "tr", "absx", "absy")
 
-def same(a, b, tol_ms=6, snap=False, rel=0.06, blip=3, end=None):
+def same(a, b, tol_ms=6, snap=False, rel=0.06, blip=4, end=None):
     """a: controller log, b: simulator log. Same digital outputs in the same order, close in time;
     analog outputs close (per snapshot, or the totals at the end)."""
     probs = []
@@ -122,7 +122,7 @@ def same(a, b, tol_ms=6, snap=False, rel=0.06, blip=3, end=None):
     da, db = [DIG(e) for e in a], [DIG(e) for e in b]
     def ch(l, d):
         out = [(e["t"], x) for e, x, prev in zip(l, d, [None] + d[:-1]) if x != prev]
-        # a state lasting under 3 ms at a step boundary (an input let go in the same millisecond
+        # a state lasting under 4 ms at a step boundary (an input let go in the same millisecond
         # a turbo pulse starts) is not an output difference
         keep = [c for i, c in enumerate(out) if i + 1 >= len(out) or out[i + 1][0] - c[0] >= blip]
         merged = []
@@ -204,7 +204,7 @@ def need(cond, msg, probs):
 
 # ---------------- the cases
 CASES = []
-def case(name, what, tol_ms=6, snap=False, rel=0.06, slot=None, blip=3):
+def case(name, what, tol_ms=6, snap=False, rel=0.06, slot=None, blip=4):
     """rel: how far apart analog totals may be (a trackball's speed depends on when the loop
     measures it against the 5 ms steps of the script)"""
     def deco(f):

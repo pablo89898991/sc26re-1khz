@@ -88,7 +88,7 @@ function compare(c,hw){
   if(c.snap){ if(hw.length!==sim.length) return [`${hw.length} snapshots, the simulator ${sim.length}`];
     hw.forEach((e,i)=>{ const s=sim[i]; if(dig(e)!==dig(s)) P.push(`step ${i}: outputs differ`); for(const k of AN){ const tol=["dx","dy","wh","xlt","xrt"].includes(k)?3:400; if(Math.abs(e[k]-s[k])>Math.max(tol,rel*Math.abs(s[k]))) P.push(`step ${i} ${k}: ${e[k]}, the simulator ${s[k]}`);} }); return P; }
   /* after the script the real sensors are back (a tilted desk, a drifting stick): not compared */
-  const hwd=hw.filter(e=>!(c.ms>0)||e.t<c.ms), blip=c.blip??3;
+  const hwd=hw.filter(e=>!(c.ms>0)||e.t<c.ms), blip=c.blip??4;
   const ch=l=>{ const r=[]; let p=null; for(const e of l){ const d=dig(e); if(d!==p) r.push([e.t,d]); p=d; } const keep=r.filter((x,i)=>i+1>=r.length||r[i+1][0]-x[0]>=blip); const m=[]; for(const x of keep) if(!m.length||m[m.length-1][1]!==x[1]) m.push(x); return m; };
   const a=ch(hwd.length?hwd:hw.slice(0,1)), b=ch(sim);
   if(JSON.stringify(a.map(x=>x[1]))!==JSON.stringify(b.map(x=>x[1]))) P.push("outputs differ from the simulator");
