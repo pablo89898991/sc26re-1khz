@@ -33,10 +33,12 @@ const check = (name, ok, info = '') => { total++; if (!ok) bad++; if (!ok || pro
         const B = o => new (__ov.model.position.constructor === undefined ? Object : Object)() && (() => { const b = { min: [1e9, 1e9], max: [-1e9, -1e9] }; o.traverse(m => { if (!m.isMesh) return; const g = m.geometry; g.computeBoundingBox();
           for (const x of [g.boundingBox.min.x, g.boundingBox.max.x]) for (const y of [g.boundingBox.min.y, g.boundingBox.max.y]) for (const z of [g.boundingBox.min.z, g.boundingBox.max.z]) { const v = m.localToWorld(__ov.model.position.clone().set(x, y, z)); b.min[0] = Math.min(b.min[0], v.x); b.max[0] = Math.max(b.max[0], v.x); b.min[1] = Math.min(b.min[1], v.y); b.max[1] = Math.max(b.max[1], v.y); } }); return b; })();
         let body = null; __ov.model.traverse(o => { if (o.isMesh && (/shell|^body$/.test(o.name))) { const b = B(o); body = body ? { min: [Math.min(body.min[0], b.min[0]), Math.min(body.min[1], b.min[1])], max: [Math.max(body.max[0], b.max[0]), Math.max(body.max[1], b.max[1])] } : b; } });
-        const bl = B(__ov.parts.get('bumper_l').pivot), br = B(__ov.parts.get('bumper_r').pivot);
-        res({ body, bl, br, rz: __ov.parts.get('back_r4').pivot.rotation.z }); }, 300); }; go(); }), mdl);
-    const inside = b => b.max[1] <= r.body.max[1] + 0.05 && b.min[0] >= r.body.min[0] - 0.05 && b.max[0] <= r.body.max[0] + 0.05;
-    check(`${mdl}: popped bumpers stay inside the controller's outline`, inside(r.bl) && inside(r.br), JSON.stringify(r));
+        const bl = B(__ov.parts.get('bumper_l').pivot), br = B(__ov.parts.get('bumper_r').pivot), tl = B(__ov.parts.get('trigger_l').pivot), tr = B(__ov.parts.get('trigger_r').pivot);
+        res({ body, bl, br, tl, tr, rz: __ov.parts.get('back_r4').pivot.rotation.z }); }, 300); }; go(); }), mdl);
+    const cx = b => (b.min[0] + b.max[0]) / 2, cy = b => (b.min[1] + b.max[1]) / 2;
+    const under = (b, t) => Math.abs(cx(b) - cx(t)) < 1.0 && cy(b) < cy(t) && b.max[1] > r.body.max[1] - 0.5;
+    check(`${mdl}: popped bumpers right under their triggers, above the body`, under(r.bl, r.tl) && under(r.br, r.tr), JSON.stringify(r));
+    check(`${mdl}: both bumpers at one height`, Math.abs(cy(r.bl) - cy(r.br)) < 0.01 && Math.abs(cy(r.tl) - cy(r.tr)) < 0.01);
     check(`${mdl}: back buttons turned their marked face to the camera`, Math.abs(r.rz) > 3, String(r.rz));
   }
   await ev(() => { const sel = document.querySelector('#mdl'); sel.value = 'valve'; sel.dispatchEvent(new Event('change')); });
