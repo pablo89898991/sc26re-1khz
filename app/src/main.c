@@ -169,7 +169,8 @@ static void boot_factory_reset_check(void)
 }
 
 /*
- * Full gyro calibration, from the chord (hold LB + RB + X + Y for 3 s) or the
+ * Full gyro calibration, from the chord (hold Steam + X for 3 s; LB + RB + X + Y before v51
+ * test 86) or the
  * report meter. The LED turns purple and a chime plays; put the controller
  * down and let go. With nothing touching it (grips, sticks, pads, buttons):
  *   1. measure the gyro at rest for 5 s and use it as the pitch/yaw/roll dead bands
@@ -247,9 +248,8 @@ static bool gyro_chord_poll(const struct controller_report *r)
 	static struct rgbw_color saved_led;
 	static int64_t last_beep;
 	static int64_t step_started;
-	const uint32_t chord = BIT(CONTROLLER_BUTTON_LEFT_SHOULDER) |
-	                       BIT(CONTROLLER_BUTTON_RIGHT_SHOULDER) | BIT(CONTROLLER_BUTTON_X) |
-	                       BIT(CONTROLLER_BUTTON_Y);
+	/* Steam + X: while Steam is held, X reaches neither the game nor the bindings (remap.c) */
+	const uint32_t chord = BIT(CONTROLLER_BUTTON_STEAM) | BIT(CONTROLLER_BUTTON_X);
 	int64_t now = k_uptime_get();
 	bool chord_held = (r->buttons & chord) == chord;
 	/* buttons also carry the grip / stick / trackpad touch bits */
@@ -755,31 +755,6 @@ int main(void)
 			}
 		}
 
-		{
-			/*
-			 * Gyro calibration chord LB + RB + X + Y: as soon as any 3 of its
-			 * buttons are held together, all 4 leave the pad report (the 4th
-			 * too when it joins) until every one of them is released, so the
-			 * game never sees the combination.
-			 */
-			static bool cal_chord_hide;
-			const uint32_t cal_chord = BIT(CONTROLLER_BUTTON_LEFT_SHOULDER) |
-			                           BIT(CONTROLLER_BUTTON_RIGHT_SHOULDER) |
-			                           BIT(CONTROLLER_BUTTON_X) | BIT(CONTROLLER_BUTTON_Y);
-
-			if(__builtin_popcount(current.buttons & cal_chord) >= 3)
-			{
-				cal_chord_hide = true;
-			}
-			else if((current.buttons & cal_chord) == 0U)
-			{
-				cal_chord_hide = false;
-			}
-			if(cal_chord_hide)
-			{
-				current.buttons &= ~cal_chord;
-			}
-		}
 		{
 			/* on-controller remapper: keyboard/mouse out, mapped inputs leave the pad report */
 			static int64_t remap_last_us;

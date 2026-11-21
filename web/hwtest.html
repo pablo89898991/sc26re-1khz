@@ -117,7 +117,7 @@ async function runCase(c,slot0){
   for(const [s,h] of Object.entries(c.extra||{})) await profWrite(+s,hex(h));
   await profWrite(slot,hex(c.profile));
   if(await cfgGet("remap_profile")!==slot) await cfgSet("remap_profile",slot); /* a case before may have switched */
-  if(await cfgGet("remap_on")!==1) await cfgSet("remap_on",1); /* or turned the remapper off (LB + RB + Menu) */
+  if(await cfgGet("remap_on")!==1) await cfgSet("remap_on",1); /* or turned the remapper off (Steam + Menu) */
   await read("sc26re/awake");
   await sleep(150);
   const sb=hex(c.script);

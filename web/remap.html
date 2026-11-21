@@ -109,12 +109,12 @@
 <body>
 <div class="top">
   <div class="topin">
-    <div class="brand">SC2 <span class="hz">Remapper</span> <span class="note" id="pagever" title="page version — if it is older than expected, press Ctrl+F5">p.2026-11-21e</span></div>
+    <div class="brand">SC2 <span class="hz">Remapper</span> <span class="note" id="pagever" title="page version — if it is older than expected, press Ctrl+F5">p.2026-11-21f</span></div>
     <button class="primary" id="connect">Connect controller</button>
     <span id="status" class="chip">not connected</span>
     <span class="grow"></span>
-    <button id="onoff" class="sw" title="On the controller: LB + RB + Menu">Remapper <b>?</b></button>
-    <button id="gmOn" class="sw" title="On the controller: LB + RB + View">Gyro mouse <b>?</b></button>
+    <button id="onoff" class="sw" title="On the controller: Steam + Menu">Remapper <b>?</b></button>
+    <button id="gmOn" class="sw" title="On the controller: Steam + View">Gyro mouse <b>?</b></button>
     <label class="note" id="padoutL" hidden title="Xbox 360 = the game sees an Xbox controller (XInput) over the USB cable. Takes effect after the controller is turned off and on. Steam does not take this pad for an Xbox controller (it carries the Steam Controller’s USB IDs): it lists it, if at all, as an unknown “Valve Corporation SC26RE-1kHz” pad that wants Begin Setup. Games that read XInput get it as an Xbox 360 pad.">Pad output <select id="padout"><option value="0">Steam Controller</option><option value="1">Xbox 360 only (USB)</option><option value="2">Steam + Xbox 360 (USB)</option></select></label>
     <label class="note" id="xiguideL" hidden title="Xbox 360 only: tapping the Steam button on its own presses the Xbox Guide button (Windows: Game Bar). Steam + another button (profiles, power) never does. Any input can also be bound to the action 'Xbox Guide'."><input type="checkbox" id="xiguide"> Steam = Xbox Guide</label>
   </div>
@@ -179,8 +179,8 @@
       <p class="note" style="margin:0 0 4px">Everything that can be calibrated, in one place. Results are saved in the controller. Connect it first; with the Puck everything works too (a bit slower).</p>
       <div class="cards">
         <div class="card"><h3>Gyro drift</h3>
-          <p class="note cardnote">Put the controller on a table and don’t touch it. <b>Calibrate drift</b> takes about 2 s (on the controller: LB + RB + X + Y). <b>Full calibration</b> also measures the gyro at rest and sets the pitch / yaw / roll dead bands (about 15 s). <b>Reset</b> goes back to the factory drift and turns the dead bands off.</p>
-          <div class="row2"><label>LB + RB + X + Y on the pad</label><select id="cChord"><option value="1">drift only (~2 s, default)</option><option value="0">full calibration (+ dead bands, ~15 s)</option></select><small>which calibration the button combination runs; saved at once</small></div>
+          <p class="note cardnote">Put the controller on a table and don’t touch it. <b>Calibrate drift</b> takes about 2 s (on the controller: Steam + X (3 s)). <b>Full calibration</b> also measures the gyro at rest and sets the pitch / yaw / roll dead bands (about 15 s). <b>Reset</b> goes back to the factory drift and turns the dead bands off.</p>
+          <div class="row2"><label>Steam + X (3 s) on the controller</label><select id="cChord"><option value="1">drift only (~2 s, default)</option><option value="0">full calibration (+ dead bands, ~15 s)</option></select><small>which calibration the button combination runs; saved at once</small></div>
           <div class="tools"><button class="primary" id="cGyCal">Calibrate drift</button><button id="cGyFull">Full calibration (+ dead bands)</button><button id="cGyReset" class="ghost">Reset to factory</button></div>
           <p class="note cardnote" id="cGyStatus"></p></div>
         <div class="card"><h3>Sticks</h3>
@@ -193,7 +193,7 @@
           <div class="tools"><button class="primary" id="cTrStart">Full range: start</button><button id="cTrNext" disabled>Next</button><button id="cTrZero" class="ghost">Zero (released)</button></div>
           <p class="note cardnote" id="cTrStatus"></p></div>
         <div class="card"><h3>Gyro mouse — 360° (real-world sensitivity)</h3>
-          <p class="note cardnote">In the game look at something you can find again → <b>Start</b> (or LB + RB + View + A) → press the calibration button (set on the gyro page, default A): the camera turns slowly → press it again exactly at 360°. Also used by flick stick and quick turns.</p>
+          <p class="note cardnote">In the game look at something you can find again → <b>Start</b> (or Steam + A) → press the calibration button (set on the gyro page, default A): the camera turns slowly → press it again exactly at 360°. Also used by flick stick and quick turns.</p>
           <div class="tools"><button class="primary" id="cCalStart">Start</button><button id="cCalTurn">Start turn</button><button id="cCalStop">Stop at 360° &amp; save</button><button id="cCalCancel" class="ghost">Cancel</button></div>
           <p class="note cardnote" id="cCalStatus"></p></div>
         <div class="card"><h3>Trackpad pressure</h3>
@@ -243,7 +243,7 @@
       <p>While this page is connected the controller keeps its gyro on, does not switch itself off and leaves lizard mode (desktop keyboard / mouse emulation) off, so the live highlights and the gyro work without Steam; everything goes back to normal about 10 s after the page is closed.</p>
       <p>Profiles stored <b>in the controller</b> turn its inputs into keyboard keys, mouse buttons / movement / scroll and Steam pad buttons. It works without Steam and without installing anything, over the USB cable and the Puck. Needs sc26re firmware v51+ and desktop Chrome, Edge or Brave.</p>
       <h3>Turning it on</h3>
-      <p><b>LB + RB + Menu</b> on the controller (high beep = on, low = off) or the <b>Remapper</b> switch at the top. While it is on, every input that has a binding belongs to the remapper: Steam and the game only see what it is mapped to. Inputs without a binding work as usual.</p>
+      <p><b>Steam + Menu</b> on the controller (high beep = on, low = off) or the <b>Remapper</b> switch at the top. While it is on, every input that has a binding belongs to the remapper: Steam and the game only see what it is mapped to. Inputs without a binding work as usual.</p>
       <h3>Binding an input</h3>
       <p>Click it on the picture or in the lists. <b>Press</b> = actions while held (up to 4 at once, e.g. Ctrl + C). <b>Hold</b> adds a second set for holding longer than 0.25 s (a short press then taps the first set). <b>Double</b> adds a set for a quick second press. <b>Start press</b> taps the first set the moment you press. <b>Release press</b> taps a set when you let go — on trackpads only when the finger leaves (or the click ends), so you can slide over the zones and pick one by lifting. <b>Toggle</b> switches the first set on/off with each press. Then press <b>Save to controller</b>.</p>
       <h3>D-pad, sticks and trackpads</h3>
@@ -264,6 +264,8 @@
       <p>Per profile: when ticked, Steam and the game only get what the profile maps — every input without a binding (buttons, touch sensors, trackpads left “to Steam”) is dropped. Sticks set to Analog still work.</p>
       <h3>Steam button</h3>
       <p>While the remapper is on, Steam does not see the Steam button, so it never opens Steam’s menu in the middle of a game. Bind it to <b>Pad Steam</b> in a profile to give it back to Steam, or to anything else. Steam + D-pad (choose the profile) and holding it to power off always work.</p>
+      <h3>Controller combinations (all with the Steam button)</h3>
+      <p>While Steam is held these buttons reach neither the game nor your bindings, so a combination never does anything in the game (a button pressed with Steam stays hidden until you let it go): <b>Steam + D-pad</b> up / right / down / left = profile 1–4 · <b>Steam + Menu</b> = remapper on / off · <b>Steam + View</b> = gyro mouse on / off · <b>Steam + A</b> = 360° calibration of the gyro mouse · <b>Steam + X held 3 s</b> = gyro calibration · <b>Steam + Y held</b> = power off. (Before v51 test 86 these were LB + RB + Menu / View / X + Y: LB and RB reached the game before the combination was complete.)</p>
       <h3>Outer ring</h3>
       <p>Sticks and trackpads have an outer ring: its binding fires while the stick / finger is beyond the radius you set (or inside it, with invert) — e.g. sprint when the stick is pushed all the way.</p>
       <h3>Triggers</h3>
@@ -276,7 +278,7 @@
       <p>4 profiles. Choose the active one with <b>Steam + D-pad</b> on the controller (up = 1, right = 2, down = 3, left = 4; the beep gets higher with the number), at the top of “Buttons &amp; profiles”, or with a “Switch to profile” action bound to any input. Export / Import saves a profile to a file.</p>
       <p><b>Steam Input layouts</b>: “Import Steam Input” reads a Steam controller configuration (<code>.vdf</code> — Steam keeps yours in <code>Steam\steamapps\common\Steam Controller Configs\&lt;id&gt;\config\&lt;app&gt;\</code>). Each action set or action layer can go into one of the 4 profiles; mode shifts, long / double / start / release presses, toggle, turbo, delays, haptics, stick and trackpad modes, radial menus, mouse regions, triggers, LED and gyro settings come along. Layouts made for a game’s own Steam Input API use “game actions”: pick the key each one has in the game’s settings (keys the game itself names are filled in). Steam commands (screenshot, overlay, on-screen keyboard) are listed and skipped. “Export Steam Input” writes all 4 profiles as one <code>.vdf</code> for Steam (profiles used as layers become action layers); macros, mouse-move actions, gyro tilt and gyro mouse region have no Steam equivalent and are named when left out.</p>
       <h3>Gyro</h3>
-      <p>Gyro settings, gyro as mouse (on/off: <b>LB + RB + View</b>) and gyro as a <b>joystick</b> (right or left stick, with dead zone, anti dead zone, full-deflection speed and response curve) are on the “Gyro &amp; gyro mouse” page, the same for every profile. The mouse also has a response curve and acceleration (off by default, so the real-world sensitivity stays 1:1).</p>
+      <p>Gyro settings, gyro as mouse (on/off: <b>Steam + View</b>) and gyro as a <b>joystick</b> (right or left stick, with dead zone, anti dead zone, full-deflection speed and response curve) are on the “Gyro &amp; gyro mouse” page, the same for every profile. The mouse also has a response curve and acceleration (off by default, so the real-world sensitivity stays 1:1).</p>
     </div>
   </section>
 </div>
@@ -1141,7 +1143,7 @@ const GY=[
  ["gyro_fsr","Range (full scale)","sel",[[250,"250 °/s"],[500,"500 °/s"],[1000,"1000 °/s"],[2000,"2000 °/s (default)"]],1,"lower = finer steps from the sensor, faster turns are cut off (500 is common for aiming); can be set per profile"],
  ["gyro_odr","Sample rate in the sensor","sel",[[2000,"2000 Hz (default)"],[4000,"4000 Hz"],[8000,"8000 Hz"]],1,""],
  ["gyro_auto_cal","Auto calibration","num",[0,30,1],1,"seconds lying untouched before it recalibrates; 0 off"],
- ["gyro_chord_mode","LB + RB + X + Y does","sel",[[1,"drift only (default)"],[0,"full calibration (+ dead bands)"]],1,""],
+ ["gyro_chord_mode","Steam + X (held 3 s) does","sel",[[1,"drift only (default)"],[0,"full calibration (+ dead bands)"]],1,""],
  ["gyro_band_soft","Dead bands","sel",[[0,"hard"],[1,"soft"]],1,""],
  ["band:x","Dead band pitch","band",null,0,"°/s from … to; 0 and 0 = off"],
  ["band:z","Dead band yaw","band",null,0,""],
@@ -1221,7 +1223,7 @@ const CARDS=()=>[
    ${row("Counts per 360°","= Steam Dots per 360°; set by the 360° calibration",ctlHtml("cal360"))}
    ${row("360° calibration","button and turn speed (counts/s)",ctlHtml("gm_cal_button")+ctlHtml("gm_cal_speed"))}
    <div class="tools"><button id="tCalStart">Start 360° calibration</button><button id="tCalTurn">Start turn</button><button id="tCalStop">Stop at 360° &amp; save</button><button id="tCalCancel">Cancel</button></div>
-   <p class="note" style="margin:6px 0 0">In the game look at something you can find again → Start (or LB + RB + View + A) → press the calibration button: the camera turns slowly → press it again at exactly 360°.</p></div>`,
+   <p class="note" style="margin:6px 0 0">In the game look at something you can find again → Start (or Steam + A) → press the calibration button: the camera turns slowly → press it again at exactly 360°.</p></div>`,
  `<div class="card"><h3>Quick turns (flick)</h3>
    ${[1,2,3,4].map(q=>row(`Turn ${q}`,"",ctlHtml(`gm_qt${q}_btn`)+ctlHtml(`gm_qt${q}_deg`))).join("")}
    ${one("gm_qt_ms")}</div>`,
@@ -1366,7 +1368,7 @@ $("#cCalTurn").onclick=calTool("sc26re/gm_cal_turn","turning… press the button
 $("#cCalStop").onclick=async()=>{ await calTool("sc26re/gm_cal_stop","saved")(); try{ const hi=await cfgGet("gm_cal_hi"), lo=await cfgGet("gm_cal_lo"); cSet("cCalStatus",`<span class="ok">saved — ${hi*32768+lo} counts per 360°</span>`); }catch(e){} };
 $("#cCalCancel").onclick=calTool("sc26re/gm_cal_cancel","cancelled");
 $("#cChord").onchange=async e=>{ try{ await cfgSet("gyro_chord_mode",+e.target.value); const g=document.getElementById("g_gyro_chord_mode"); if(g) g.value=e.target.value;
-    cSet("cGyStatus",`<span class="ok">saved — LB + RB + X + Y now runs ${+e.target.value?"drift only":"the full calibration"}</span>`); }catch(err){ cSet("cGyStatus",`<span class="err">${err.message}</span>`); } };
+    cSet("cGyStatus",`<span class="ok">saved — Steam + X (3 s) now runs ${+e.target.value?"drift only":"the full calibration"}</span>`); }catch(err){ cSet("cGyStatus",`<span class="err">${err.message}</span>`); } };
 async function calRead(){ try{ const v=await cfgGet("gyro_chord_mode"); if(v!==null) $("#cChord").value=String(v); }catch(e){} }
 let prStep=0;
 $("#cPrStart").onclick=async()=>{ try{ await send("sc26re/prs_cal/1",0xF0); prStep=1; $("#cPrNext").disabled=false;
@@ -1430,7 +1432,7 @@ setInterval(async()=>{
   const padb=PADB.filter(([x])=>dv.getUint32(12,true)&(1<<x)).map(([,n])=>"Pad "+n), xb=XBOXB.filter(([x])=>dv.getUint32(16,true)&(1<<x)).map(([,n])=>"Xbox "+n);
   const sh=SHIFT_NAME.filter((n,g)=>b[2]&(1<<g)).map(n=>"⇧ "+n);
   const all=[...sh,...keys,...mb,...padb,...xb].map(x=>`<span class="k">${x}</span>`).join("")+mv;
-  remapOn=b[1]!==0; /* also follows LB+RB+Menu on the controller */
+  remapOn=b[1]!==0; /* also follows Steam + Menu on the controller */
   /* diagnostics: keyboard reports handed to the link (newer firmware) */
   let diag=""; if(monDiagOk!==false){ try{ const g=await read("sc26re/rmp_diag"); if(g&&g.length>=6){ monDiagOk=true; const gv=new DataView(g.buffer,g.byteOffset); if(linkNow!==g[5]){ linkNow=g[5]; updXbWarn(); }
     diag=`<br><span class="note">keyboard reports sent ${gv.getUint16(0,true)}, refused ${gv.getUint16(2,true)}${gv.getUint16(2,true)?` (last error ${(g[4]<<24>>24)})`:""} · link ${["USB cable","Bluetooth","Puck","none"][g[5]]||"?"}</span>`;
@@ -1489,7 +1491,7 @@ $("#st50").onclick=()=>stRun("h5000",50,"50 % armed");
 $("#stReset").onclick=()=>{ ST.dz=[]; ST.laps={}; delete ST.result; stSave(); stCompute(); };
 $("#stApply").onclick=async()=>{ const r=ST.result; if(!r) return;
   try{ await put("gm_output",1,true); await put("gj_anti",Math.round(r.anti*10),true); await put("gj_curve",Math.round(r.curve*100),true); await put("gj_max",r.max,true); await put("gj_dz",0,true);
-    $("#stLive").innerHTML='<span class="ok">saved — gyro now drives the right stick; turn the gyro on (LB + RB + View) and try it. Fine-tune on the gyro page.</span>'; try{ await gyRead(); }catch(e){} }
+    $("#stLive").innerHTML='<span class="ok">saved — gyro now drives the right stick; turn the gyro on (Steam + View) and try it. Fine-tune on the gyro page.</span>'; try{ await gyRead(); }catch(e){} }
   catch(e){ $("#stLive").innerHTML=`<span class="err">${e.message}</span>`; } };
 stCompute();
 $("#lvRead").onclick=lvRead; $("#lvApply").onclick=()=>lvWrite(false); $("#lvSave").onclick=()=>lvWrite(true);

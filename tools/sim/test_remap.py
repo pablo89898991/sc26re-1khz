@@ -390,14 +390,18 @@ def stick_and_trigger_output_actions():
 
 @test
 def remap_chord_toggle():
-    p = Profile(); p.bind("A", key("a"))
+    """Steam + Menu (v51 test 86): the remapper on / off; Menu never reaches the game or its binding"""
+    p = Profile(); p.bind("A", key("a")); p.bind("MENU", key("tab"))
     s = fresh(p)
-    s.run(20, LB=1, RB=1, MENU=1); assert not s.out_btn("MENU")
-    s.run(20, LB=0, RB=0, MENU=0)
+    s.run(20, STEAM=1); e = s.run(20, STEAM=1, MENU=1); assert not s.out_btn("MENU") and not e.kbd(), e.kbd()
+    e = s.run(20, STEAM=0, MENU=1); assert not s.out_btn("MENU") and not e.kbd(), "Steam let go first: Menu stays hidden"
+    s.run(20, MENU=0)
     assert s.cfg_get("remap_on") == 0
     e = s.run(20, A=1); assert not e.kbd() and s.out_btn("A")
-    s.run(20, A=0); s.run(20, LB=1, RB=1, MENU=1); s.run(20, LB=0, RB=0, MENU=0)
+    s.run(20, A=0); s.run(20, STEAM=1, MENU=1); s.run(20, STEAM=0, MENU=0)
     assert s.cfg_get("remap_on") == 1
+    # the old LB + RB + Menu does nothing special any more: LB, RB and Menu are the game's
+    s.run(20, LB=1, RB=1, MENU=1); assert s.cfg_get("remap_on") == 1; s.run(20, LB=0, RB=0, MENU=0)
 
 @test
 def persistence_after_reboot():

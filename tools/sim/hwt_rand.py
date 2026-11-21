@@ -5,8 +5,8 @@ controller by hwtest.html?set=hwrand and compared with the simulator.
     python3 hwt_rand.py self   [n] [seed]   -> the simulator against itself (must be 0 bad)
 
 Kept off the controller: profile switches and layers (they would read the user's other profiles),
-the Steam button (stops the test), the calibration chord (any 3 of LB / RB / X / Y) and the gyro
-mouse chord (LB + RB + View), the remapper on / off chord (LB + RB + Menu); the profile's own gyro settings are cleared (the gyro mouse is off
+the Steam button (stops the test; also all the controller's Steam + ... combinations, v51 test 86), and the
+old LB + RB chords; the profile's own gyro settings are cleared (the gyro mouse is off
 for the run anyway)."""
 import json, os, random, struct, sys
 import fuzz, hwt

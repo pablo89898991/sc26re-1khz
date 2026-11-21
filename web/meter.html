@@ -82,7 +82,7 @@
     <table id="lsTable" style="width:100%;border-collapse:collapse;margin-top:8px"></table>
     <div class="lbl" style="margin-top:14px">Tools</div>
     <div class="bar" style="flex-wrap:wrap;gap:10px">
-      <label>LB + RB + X + Y does <select id="chordMode"><option value="1">drift only (no dead bands) — default from v47</option><option value="0">full calibration (drift + dead bands)</option></select></label>
+      <label>Steam + X (held 3 s) does <select id="chordMode"><option value="1">drift only (no dead bands) — default from v47</option><option value="0">full calibration (drift + dead bands)</option></select></label>
       <button class="primary" id="gyFull" title="drift + pitch/yaw/roll dead bands">Full gyro calibration (+ dead bands)</button>
       <button id="gyCal">Calibrate gyro</button>
       <button id="gyReset">Reset gyro calibration</button>
@@ -106,15 +106,15 @@
       <tr><td>Roll</td><td id="grLoY">—</td><td id="grHiY">—</td><td id="grAvY">—</td></tr>
     </table>
     <p class="note"><b>Gyro at rest:</b> put the controller on a table and press <i>Measure</i>. For 5 s the gyro dead zone and dead bands are switched off (only live, nothing is saved) so the real resting values are seen, then put back. The lowest/highest value per axis, in °/s, is what drift and noise look like on your unit. <i>Use as dead bands</i> copies them, plus the margin, into the X/Y/Z dead band rows above; then press Apply or Save. Keep “Gyro on (standalone)” ticked at the top (otherwise the IMU may be off: all zeros) — calibrate the gyro first for the smallest bands.</p>
-    <p class="note"><b>LB + RB + X + Y does</b> (v46+): <i>full calibration</i> = the 5-step routine below (drift + pitch/yaw/roll dead bands); <i>drift only</i> (default from v47) = just one drift calibration, same LED and sounds, about 2 s, dead bands left as they are. The meter's “Full gyro calibration (+ dead bands)” button always runs the full routine, so it <b>also sets the gyro dead bands</b>; for drift only use “Calibrate gyro”.</p>
-    <p class="note"><b>Full gyro calibration (+ dead bands)</b> (v43+; also LB + RB + X + Y held for 3 s when that is set to “full calibration” — purple LED + chime): <b>besides the drift it sets the pitch/yaw/roll dead bands</b> (small movements inside them read 0). Put the controller on a table and let go. It measures the gyro at rest for 5 s and sets the pitch/yaw/roll dead bands, calibrates the gyro, measures at rest again, calibrates again and saves — about 15 s. A second chime confirms; touching or moving it just repeats the current step.</p>
+    <p class="note"><b>Steam + X (held 3 s) does</b> (v46+): <i>full calibration</i> = the 5-step routine below (drift + pitch/yaw/roll dead bands); <i>drift only</i> (default from v47) = just one drift calibration, same LED and sounds, about 2 s, dead bands left as they are. The meter's “Full gyro calibration (+ dead bands)” button always runs the full routine, so it <b>also sets the gyro dead bands</b>; for drift only use “Calibrate gyro”.</p>
+    <p class="note"><b>Full gyro calibration (+ dead bands)</b> (v43+; also Steam + X held for 3 s when that is set to “full calibration” — purple LED + chime): <b>besides the drift it sets the pitch/yaw/roll dead bands</b> (small movements inside them read 0). Put the controller on a table and let go. It measures the gyro at rest for 5 s and sets the pitch/yaw/roll dead bands, calibrates the gyro, measures at rest again, calibrates again and saves — about 15 s. A second chime confirms; touching or moving it just repeats the current step.</p>
     <p class="note"><b>Reset gyro calibration:</b> removes your gyro calibration — the drift goes back to the factory value from Valve's storage and the pitch/yaw/roll dead bands are switched off (saved). Other settings are not touched.</p>
     <p class="note"><b>Calibrate gyro:</b> put the controller on a table, press, and don't touch it for 2 s (v43+: the gyro is measured while still; if it moved, nothing changes). <b>Zero sticks:</b> hands off both sticks, press; their resting point becomes the centre.</p>
   </div>
 
   <div class="panel" id="gmPanel">
     <h2>Gyro as mouse (SC26RE v49+)</h2>
-    <p class="note">The controller turns the gyro into mouse movement itself, like Alpakka, with no built-in dead zone and with fractions of a count carried over (sub-pixel accumulation). Everything else stays a normal Steam controller. Works over cable, Puck and Bluetooth. <b>On/off on the controller: press LB + RB + View together</b> (high beep = on, low = off). It is <b>off after every power-on</b>, and it pauses by itself while a gyro calibration runs. While it is on, no program (Steam included) gets the gyro: the pad report carries no motion data, so the camera is never moved twice (the IMU panel and “Measure at rest” read 0 until you turn it off).</p>
+    <p class="note">The controller turns the gyro into mouse movement itself, like Alpakka, with no built-in dead zone and with fractions of a count carried over (sub-pixel accumulation). Everything else stays a normal Steam controller. Works over cable, Puck and Bluetooth. <b>On/off on the controller: press Steam + View together</b> (high beep = on, low = off). It is <b>off after every power-on</b>, and it pauses by itself while a gyro calibration runs. While it is on, no program (Steam included) gets the gyro: the pad report carries no motion data, so the camera is never moved twice (the IMU panel and “Measure at rest” read 0 until you turn it off).</p>
     <div class="bar" style="flex-wrap:wrap;gap:10px">
       <button class="primary" id="gmToggle">Turn on</button>
       <span id="gmState" class="note">connect the controller</span>
@@ -148,7 +148,7 @@
       <button id="gmRead">Read</button><button class="primary" id="gmApply">Apply</button><button id="gmSave">Save</button><span class="note">(Save here and in Live settings stores everything: Live settings + gyro mouse)</span><span id="gmStatus" class="note"></span>
     </div>
     <h2 style="margin-top:16px;font-size:13px">Real world calibration (per game)</h2>
-    <p class="note">Teaches the controller how many mouse counts the game needs for a full 360° turn. In the game, look at something you can find again, then: <b>Start calibration</b> (or LB + RB + View + A on the controller) → press the <b>calibration button</b> to start a slow horizontal turn → press it again when the camera has done <b>exactly 360°</b>. The value is saved. Re-do it per game (or when you change the game's mouse sensitivity). If the turn is too slow or fast, change the speed.</p>
+    <p class="note">Teaches the controller how many mouse counts the game needs for a full 360° turn. In the game, look at something you can find again, then: <b>Start calibration</b> (or Steam + A on the controller) → press the <b>calibration button</b> to start a slow horizontal turn → press it again when the camera has done <b>exactly 360°</b>. The value is saved. Re-do it per game (or when you change the game's mouse sensitivity). If the turn is too slow or fast, change the speed.</p>
     <div class="bar" style="flex-wrap:wrap;gap:10px">
       <label class="note">calibration button <select id="gmCalBtn"></select></label>
       <label class="note">turn speed <input type="number" id="gmCalSpeed" min="100" max="20000" step="100" style="width:80px"> counts/s</label>
@@ -1075,7 +1075,7 @@ async function toolSend(buf,msg){
 $("#chordMode").onchange=async e=>{
   const v=+e.target.value; let last="";
   for(const d of targets()){ try{ await fsend(d,1,pathCmd(0xEE,"sc26re/gyro_chord_mode",[v,0])); await fsend(d,1,pathCmd(0xEF,"sc26re/gyro_chord_mode")); }catch(err){ last=err.message; } }
-  $("#toolStatus").innerHTML=last?`<span class="err">failed: ${last} (needs v46+)</span>`:`<span class="ok">LB + RB + X + Y now does: ${v?"drift only":"full calibration"} (saved)</span>`;
+  $("#toolStatus").innerHTML=last?`<span class="err">failed: ${last} (needs v46+)</span>`:`<span class="ok">Steam + X (3 s) now does: ${v?"drift only":"full calibration"} (saved)</span>`;
 };
 $("#gyReset").onclick=async()=>{
   if(!devs.length){ $("#toolStatus").innerHTML='<span class="err">connect first</span>'; return; }

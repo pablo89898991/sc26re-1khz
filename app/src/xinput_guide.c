@@ -72,7 +72,8 @@ uint32_t steam_button_hold_back(uint32_t out, uint32_t phys, int64_t now)
 	const uint32_t steam = BIT(CONTROLLER_BUTTON_STEAM);
 	const uint32_t fw_chord = BIT(CONTROLLER_BUTTON_DPAD_UP) | BIT(CONTROLLER_BUTTON_DPAD_DOWN) |
 	                          BIT(CONTROLLER_BUTTON_DPAD_LEFT) | BIT(CONTROLLER_BUTTON_DPAD_RIGHT) |
-	                          BIT(CONTROLLER_BUTTON_Y);
+	                          BIT(CONTROLLER_BUTTON_Y) | BIT(CONTROLLER_BUTTON_X) | BIT(CONTROLLER_BUTTON_A) |
+	                          BIT(CONTROLLER_BUTTON_MENU) | BIT(CONTROLLER_BUTTON_VIEW); /* remap.c's combinations */
 
 	if(out & steam)
 	{

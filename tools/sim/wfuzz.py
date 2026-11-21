@@ -54,8 +54,8 @@ def apply(s, ch):
     if "bit" in ch:
         b = 1 << ch["bit"]
         s.state["buttons"] = (s.state["buttons"] | b) if ch["v"] else (s.state["buttons"] & ~b)
-    if GYRO and (s.state["buttons"] & ((1 << 19) | (1 << 9))) == ((1 << 19) | (1 << 9)):
-        s.state["buttons"] &= ~(1 << 14)  # no LB+RB+View: the gyro's own chords (360 calibration turns on purpose)
+    if GYRO and s.state["buttons"] & (1 << 16):
+        s.state["buttons"] &= ~((1 << 14) | (1 << 0))  # no Steam + View / A: the gyro's own combinations (the 360 calibration turns on purpose)
 
 def edges(evs, prefix):
     """count presses per key / mouse button, from 'K'/'M' (device) or 'HK'/'HM' (host) lines"""

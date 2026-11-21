@@ -5,7 +5,7 @@
  * sticks, trackpads) into keyboard, mouse and Steam pad outputs. The report
  * meter's remapper page edits the profiles.
  *
- * While it is on (LB + RB + Menu toggles it, or the editor), every input that
+ * While it is on (Steam + Menu toggles it, or the editor), every input that
  * has a binding belongs to the remapper: it is removed from the Steam pad
  * report and the game only sees what it is mapped to.
  *
@@ -67,8 +67,6 @@ static bool release_ok_now(void)
 	}
 	return false;
 }
-#define CHORD_MASK (BIT(CONTROLLER_BUTTON_LEFT_SHOULDER) | BIT(CONTROLLER_BUTTON_RIGHT_SHOULDER) | \
-                    BIT(CONTROLLER_BUTTON_MENU))
 #define PATH_PREFIX "sc26re/rmp/"
 #define CHUNK 48
 
@@ -265,7 +263,6 @@ static const struct remap_profile *cur_profile;
 static float mouse_acc[4]; /* x, y, wheel, hwheel */
 static int16_t pad_prev[2][2];
 static bool pad_prev_valid[2];
-static bool chord_down;
 
 bool remap_enabled(void)
 {
@@ -2334,24 +2331,8 @@ void remap_process(struct controller_report *r, float dt)
 	uint32_t bound_mask = 0;
 	int64_t now = k_uptime_get();
 
-	/* LB + RB + Menu: on/off on release; hidden from the game while held */
-	if((raw & CHORD_MASK) == CHORD_MASK)
-	{
-		chord_down = true;
-	}
-	else if(chord_down && (raw & CHORD_MASK) == 0U)
-	{
-		chord_down = false;
-		remap_set_enabled(!remap_enabled());
-	}
-	if(chord_down)
-	{
-		r->buttons &= ~CHORD_MASK;
-		raw &= ~CHORD_MASK;
-	}
-	/* the gyro mouse's chord (LB + RB + View, + A for the 360 calibration) and its calibration
-	 * button while calibrating: theirs, not the bindings' (they leave the pad report later, in
-	 * gyro_mouse_filter_buttons) */
+	/* the gyro mouse's calibration button while calibrating: its, not the bindings' (it leaves the
+	 * pad report later, in gyro_mouse_filter_buttons) */
 	{
 		static uint32_t gm_hide;
 
@@ -2359,19 +2340,29 @@ void remap_process(struct controller_report *r, float dt)
 		raw &= ~gm_hide;
 	}
 	/*
-	 * Steam + D-pad: choose the profile (up 1, right 2, down 3, left 4),
-	 * whether the remapper is on or off. While Steam is held the D-pad is
-	 * hidden from the host and from the bindings.
+	 * The controller's own combinations, all with the Steam button held (v51 test 86; before, the
+	 * remapper and the gyro mouse were LB + RB + Menu / View and LB, RB went to the game before
+	 * the combination was complete):
+	 *   Steam + D-pad up / right / down / left: profile 1 / 2 / 3 / 4
+	 *   Steam + Menu: remapper on / off        Steam + View: gyro mouse on / off
+	 *   Steam + A: 360 calibration of the gyro mouse
+	 *   Steam + X (held 3 s): gyro calibration, Steam + Y (held): power off (main.c)
+	 * They work whether the remapper is on or off. While Steam is held these buttons reach
+	 * neither the bindings nor the host, and one pressed with Steam stays hidden until it is
+	 * released, also when Steam is let go first.
 	 */
 	{
-		static uint32_t dp_prev, dp_hide;
+		static uint32_t sc_prev, sc_hide;
 		static const uint8_t dp_bit[REMAP_PROFILES] = { CONTROLLER_BUTTON_DPAD_UP, CONTROLLER_BUTTON_DPAD_RIGHT,
 		                                                CONTROLLER_BUTTON_DPAD_DOWN, CONTROLLER_BUTTON_DPAD_LEFT };
-		uint32_t dp = (raw & BIT(CONTROLLER_BUTTON_STEAM)) ? (raw & DP_MASK) : 0U;
+		const uint32_t combo = DP_MASK | BIT(CONTROLLER_BUTTON_MENU) | BIT(CONTROLLER_BUTTON_VIEW) |
+		                       BIT(CONTROLLER_BUTTON_A) | BIT(CONTROLLER_BUTTON_X) | BIT(CONTROLLER_BUTTON_Y);
+		uint32_t sc = (raw & BIT(CONTROLLER_BUTTON_STEAM)) ? (raw & combo) : 0U;
+		uint32_t pressed = sc & ~sc_prev;
 
 		for(int i = 0; i < REMAP_PROFILES; ++i)
 		{
-			if((dp & ~dp_prev) & BIT(dp_bit[i]))
+			if(pressed & BIT(dp_bit[i]))
 			{
 				if(i != sc26re_cfg_get(SC26RE_CFG_REMAP_PROFILE))
 				{
@@ -2382,16 +2373,22 @@ void remap_process(struct controller_report *r, float dt)
 				(void)haptics_play_beep((uint16_t)(700 + 150 * i), 80);
 			}
 		}
-		dp_prev = dp;
-		/* a D-pad direction touched while Steam is held stays hidden until
-		 * it is released, even when Steam is let go first */
-		if(raw & BIT(CONTROLLER_BUTTON_STEAM))
+		if(pressed & BIT(CONTROLLER_BUTTON_MENU))
 		{
-			dp_hide |= raw & DP_MASK;
+			remap_set_enabled(!remap_enabled());
 		}
-		dp_hide &= raw & DP_MASK;
-		r->buttons &= ~dp_hide;
-		raw &= ~dp_hide;
+		if(pressed & BIT(CONTROLLER_BUTTON_VIEW))
+		{
+			gyro_mouse_set_enabled(sc26re_cfg_get(SC26RE_CFG_GM_ENABLED) != 1);
+		}
+		if(pressed & BIT(CONTROLLER_BUTTON_A))
+		{
+			gyro_mouse_cal_start();
+		}
+		sc_prev = sc;
+		sc_hide = (sc_hide | sc) & raw;
+		r->buttons &= ~sc_hide;
+		raw &= ~sc_hide;
 	}
 	/*
 	 * The Steam button: while the remapper is on, Steam never sees it (bind it

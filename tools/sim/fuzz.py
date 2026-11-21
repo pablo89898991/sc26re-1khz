@@ -87,7 +87,7 @@ def rnd_input(r, s):
         g = r.choice([(0, 0, 4096), (0, 4096, 0), (4096, 0, 0), (2896, 0, 2896), (0, -2896, 2896), (-4096, 0, 0), (0, 0, -4096)])
         kw["ax"], kw["ay"], kw["az"] = g
     if r.random() < .15: kw["gx"], kw["gy"], kw["gz"] = (r.choice([0, 0, 3000, -12000, 32767]) for _ in range(3))
-    if (b & 0x84200) == 0x84200: b &= ~(1 << 14)   # not LB + RB + View: the gyro mouse toggle / calibration chord
+    if b & (1 << 16): b &= ~((1 << 14) | (1 << 0))   # not Steam + View / A: the gyro mouse toggle / its 360 calibration
     st["buttons"] = b
     s.set(**kw)
 
@@ -120,21 +120,21 @@ def extra_checks(r, seed, found):
     s.use(p, 2); s.cfg("remap_on", 0); s.run(5)
     for _ in range(300):
         rnd_input(r, s)
-        if (s.state["buttons"] & 0x80240) == 0x80240: s.state["buttons"] &= ~0x40  # not the LB+RB+Menu chord
-        if s.state["buttons"] & (1 << 16): s.state["buttons"] &= ~((1 << 10) | (1 << 11) | (1 << 12) | (1 << 13))
+        # Steam + D-pad / Menu / View / A / X / Y are the controller's (v51 test 86): not with Steam held
+        if s.state["buttons"] & (1 << 16): s.state["buttons"] &= ~(STEAM_COMBO)
         e = s.run(r.choice([1, 5, 30]))
         if e.kbd() or e.mouse(): found.append((seed, "off", 0, "remapper off but output %s" % e[:2])); break
         if s.out != s.state: found.append((seed, "off", 0, "remapper off changes the pad report %s" % {k: (s.state[k], s.out[k]) for k in s.out if s.out[k] != s.state[k]})); break
     s = Sim(); s.use(Profile("empty"), 0); s.run(5)
     for _ in range(300):
         rnd_input(r, s)
-        if (s.state["buttons"] & 0x80240) == 0x80240: s.state["buttons"] &= ~0x40
-        if s.state["buttons"] & (1 << 16): s.state["buttons"] &= ~((1 << 10) | (1 << 11) | (1 << 12) | (1 << 13))
+        if s.state["buttons"] & (1 << 16): s.state["buttons"] &= ~(STEAM_COMBO)
         e = s.run(r.choice([1, 5, 30]))
         if e.kbd() or e.mouse(): found.append((seed, "empty", 0, "empty profile but output %s" % e[:2])); break
         want = dict(s.state); want["buttons"] &= ~(1 << 16)  # the Steam button is hidden while the remapper is on
         if s.out != want: found.append((seed, "empty", 0, "empty profile changes the pad report %s" % {k: (want[k], s.out[k]) for k in s.out if s.out[k] != want[k]})); break
 
+STEAM_COMBO = (1 << 10) | (1 << 11) | (1 << 12) | (1 << 13) | (1 << 6) | (1 << 14) | (1 << 0) | (1 << 2) | (1 << 3)
 SIMPLE_ACTS = [key(c) for c in "abcdw"] + [0xE1, MOUSE_L, MOUSE_R, WHEEL_UP, MOVE_UP]
 
 def hidden_checks(r, seed, found, n=20):

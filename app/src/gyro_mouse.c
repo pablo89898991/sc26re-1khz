@@ -10,9 +10,11 @@
  * - Sensitivity is "real world": with RWS 1.0 a 90 deg turn of the controller
  *   turns the game camera 90 deg. That needs the game's mouse counts per 360 deg,
  *   measured by the calibration turn.
- * - LB + RB + View toggles it (not QAM: with QAM Steam opens its magnifier);
- *   LB + RB + View + A starts the calibration: the calibration button starts a slow horizontal turn, and pressing it again
- *   when the game camera has done exactly 360 deg saves the count.
+ * - Steam + View toggles it, Steam + A starts the calibration (both in remap.c, with the other
+ *   Steam combinations: while Steam is held their buttons never reach the game): the calibration
+ *   button starts a slow horizontal turn, and pressing it again when the game camera has done
+ *   exactly 360 deg saves the count. (Before v51 test 86: LB + RB + View (+ A); LB and RB went
+ *   to the game before the combination was complete.)
  */
 #include <math.h>
 #include <stdlib.h>
@@ -42,9 +44,6 @@ static int16_t gm(enum sc26re_cfg_id id)
 	return sc26re_cfg_get(id);
 }
 
-#define CHORD_MASK (BIT(CONTROLLER_BUTTON_LEFT_SHOULDER) | BIT(CONTROLLER_BUTTON_RIGHT_SHOULDER) | \
-                    BIT(CONTROLLER_BUTTON_VIEW))
-#define CHORD_CAL_EXTRA BIT(CONTROLLER_BUTTON_A)
 
 enum cal_state
 {
@@ -56,7 +55,6 @@ enum cal_state
 static float acc_x, acc_y;
 static bool toggled_on;      /* activation mode "toggle" */
 static uint32_t prev_buttons;
-static bool chord_down, chord_saw_a;
 static enum cal_state cal;
 static float cal_counts;     /* counts sent during the calibration turn */
 static uint32_t cal_button_mask;
@@ -269,18 +267,14 @@ static void quick_turn_start(int16_t deg)
 	(void)haptics_play_feedback((uint8_t)gm(SC26RE_CFG_GM_HAPTIC), HAPTICS_CHANNELS_PRIMARY);
 }
 
-/* the buttons that are the gyro mouse's right now: LB + RB + View (+ A, the 360 calibration) from
- * the moment the chord is complete, and the calibration button while calibrating. The remapper
- * leaves them alone, so their bindings (keys in a game) do not fire: before v51 test 85 only the
- * pad report lost them, after the remapper had already sent their keys. */
+/* the buttons that are the gyro mouse's right now: the calibration button while calibrating (and
+ * until it is let go). The remapper leaves them alone, so their bindings (keys in a game) do not
+ * fire: before v51 test 85 only the pad report lost them, after the remapper had sent their keys. */
 uint32_t gyro_mouse_owned(uint32_t physical)
 {
 	uint32_t m = cal_hide;
 
-	if((physical & CHORD_MASK) == CHORD_MASK || chord_down)
-	{
-		m |= CHORD_MASK | CHORD_CAL_EXTRA;
-	}
+	ARG_UNUSED(physical);
 	if(cal != CAL_IDLE)
 	{
 		m |= cal_button_mask;
@@ -293,33 +287,6 @@ uint32_t gyro_mouse_filter_buttons(uint32_t raw, uint32_t physical)
 	/* the presses come from the physical buttons: with the remapper on, a bound button (or an
 	 * unbound one with "unbound send nothing") is gone from raw, and the chord, the quick turns
 	 * and the calibration button stopped working */
-	bool chord = (physical & CHORD_MASK) == CHORD_MASK;
-
-	/* LB + RB + View: toggle on release; with A as well: calibration */
-	if(chord)
-	{
-		if(!chord_down)
-		{
-			chord_down = true;
-			chord_saw_a = false;
-		}
-		if(physical & CHORD_CAL_EXTRA)
-		{
-			chord_saw_a = true;
-		}
-	}
-	else if(chord_down && (physical & (CHORD_MASK | CHORD_CAL_EXTRA)) == 0U)
-	{
-		chord_down = false;
-		if(chord_saw_a)
-		{
-			gyro_mouse_cal_start();
-		}
-		else
-		{
-			gyro_mouse_set_enabled(gm(SC26RE_CFG_GM_ENABLED) != 1);
-		}
-	}
 	/* quick turns: a press starts one; their buttons are the gyro mouse's
 	 * while it is on, so the game does not see them */
 	{
@@ -346,7 +313,7 @@ uint32_t gyro_mouse_filter_buttons(uint32_t raw, uint32_t physical)
 					continue;
 				}
 				own |= BIT(b);
-				if(!chord_down && (pressed & BIT(b)))
+				if(pressed & BIT(b))
 				{
 					quick_turn_start(deg);
 				}
@@ -360,7 +327,7 @@ uint32_t gyro_mouse_filter_buttons(uint32_t raw, uint32_t physical)
 		{
 			uint32_t m = cal_button_mask;
 
-			if(!chord_down && (pressed & m))
+			if(pressed & m)
 			{
 				k_mutex_lock(&lock, K_FOREVER);
 				if(cal == CAL_ARMED)
@@ -382,9 +349,7 @@ uint32_t gyro_mouse_filter_buttons(uint32_t raw, uint32_t physical)
 		}
 		raw &= ~cal_hide;
 	}
-	/* from the moment the chord is complete until all its buttons are up,
-	 * the game does not see them */
-	return chord_down ? raw & ~(CHORD_MASK | CHORD_CAL_EXTRA) : raw;
+	return raw;
 }
 
 static float grav[3];
@@ -468,11 +433,6 @@ void gyro_mouse_feed(const float dps[3], uint32_t buttons, float dt_s)
 		return;
 	}
 
-	if(chord_down)
-	{
-		pressed = 0U; /* the chord's own presses don't start anything */
-	}
-
 	k_mutex_lock(&lock, K_FOREVER);
 	if(cal != CAL_IDLE)
 	{
@@ -510,7 +470,7 @@ void gyro_mouse_feed(const float dps[3], uint32_t buttons, float dt_s)
 	int16_t ratchet_btn = gm(SC26RE_CFG_GM_RATCHET);
 	/* ratchet: holding it pauses the gyro output, e.g. to re-centre the hands */
 	bool ratchet = ratchet_btn >= 0 && ratchet_btn <= 29 && (buttons & BIT(ratchet_btn)) != 0U;
-	bool act_now = gm(SC26RE_CFG_GM_ENABLED) == 1 && !chord_down && active(buttons, pressed) && !ratchet;
+	bool act_now = gm(SC26RE_CFG_GM_ENABLED) == 1 && active(buttons, pressed) && !ratchet;
 
 	{
 		/* feedback when the activation button starts moving the cursor */
