@@ -180,6 +180,7 @@
       <button id="fwPort" style="display:none">Select bootloader port…</button>
     </div>
     <div class="bar" style="flex-wrap:wrap;gap:10px;margin-top:8px">
+      <button id="fwBackup" title="Saves the controller's sc26re storage (pairings, calibrations, Live settings, remapper profiles) to a .bin file. Nothing is flashed or changed.">Back up settings only</button>
       <span class="note">Restore saved settings:</span>
       <input type="file" id="fwBkFile" accept=".bin">
       <button id="fwRestore">Restore settings</button>
@@ -670,7 +671,7 @@ async function nvsBackup(d){
     const c=await featRead(d,"nvs/"+off.toString(16).padStart(4,"0"));
     const want=Math.min(chunk,size-off);
     if(c.length!==want) throw new Error("settings backup read failed at 0x"+off.toString(16));
-    img.set(c,off); fwBar(off/size*15); fwSay(`saving settings… ${Math.round(off/size*100)} %`);
+    img.set(c,off); fwBar(off/size*(nvsBackup.full?100:15)); fwSay(`saving settings… ${Math.round(off/size*100)} %`);
   }
   return {img,chunk};
 }
@@ -748,6 +749,23 @@ $("#fwRestore").onclick=async()=>{
     await restoreAndReboot(d,bk);
     fwBar(100); fwSay(devs.length?"done — settings restored":"done — settings restored (press “Connect controller…” to see the controller again)","ok");
   }catch(e){ fwSay("restore failed: "+e.message,"err"); }
+};
+/* a backup without flashing: the storage read out and downloaded, the controller left as it is */
+$("#fwBackup").onclick=async()=>{
+  try{
+    let d=ctl();
+    if(!d||!d.opened||!d.collections.some(c=>c.featureReports&&c.featureReports.length)){
+      const sel=await navigator.hid.requestDevice({filters:[{vendorId:0x28de}]});
+      const ok=sel.filter(x=>x.collections.some(c=>c.featureReports&&c.featureReports.length));
+      if(!ok.length) throw new Error("no controller selected");
+      d=ok[0]; if(!d.opened) await d.open(); d.__send=d.sendFeatureReport.bind(d); attach(d); devs=[d]; ctlDev=d;
+    }
+    fwBar(0); fwSay("saving settings…");
+    nvsBackup.full=true; let bk; try{ bk=await nvsBackup(d); } finally{ nvsBackup.full=false; }
+    if(!bk) throw new Error("this firmware has no sc26re settings to save (stock firmware or sc26re older than v15)");
+    downloadBlob(bk.img,`sc26re-settings-backup-${new Date().toISOString().slice(0,19).replace(/[:T]/g,"-")}.bin`);
+    fwBar(100); fwSay(`settings saved to a file (${(bk.img.length/1024).toFixed(0)} KB) — restore it with “Restore settings”`,"ok");
+  }catch(e){ fwSay("backup failed: "+e.message,"err"); }
 };
 let fwPending=null; /* {fw, bk} while waiting for the user to pick the bootloader port */
 async function fwRun(port){
