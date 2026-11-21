@@ -1,0 +1,122 @@
+From d75ab65e713167f2fca910946e7fd293a6a6a59d Mon Sep 17 00:00:00 2001
+From: sc26re <sc26re@localhost>
+Date: Sat, 21 Nov 2026 01:06:49 +0100
+Subject: [PATCH] drivers: i2c: nrfx_twim_rtio: direct register read past RTIO
+
+i2c_nrfx_twim_rtio_fast_txrx() runs a write + read straight on the TWIM
+when the bus is idle (-EBUSY otherwise). RTIO work queued meanwhile
+starts when it is done. For a sensor read every millisecond the RTIO
+steps cost more CPU than the transfer itself.
+---
+ drivers/i2c/i2c_nrfx_twim_rtio.c | 81 ++++++++++++++++++++++++++++++++
+ 1 file changed, 81 insertions(+)
+
+diff --git a/drivers/i2c/i2c_nrfx_twim_rtio.c b/drivers/i2c/i2c_nrfx_twim_rtio.c
+index 6418929f..163a60e7 100644
+--- a/drivers/i2c/i2c_nrfx_twim_rtio.c
++++ b/drivers/i2c/i2c_nrfx_twim_rtio.c
+@@ -33,6 +33,8 @@ struct i2c_nrfx_twim_rtio_data {
+ 	uint8_t *user_rx_buf;
+ 	uint16_t user_rx_buf_size;
+ 	bool merged; /* a write + read went out as one TXRX transfer */
++	struct k_sem *fast_done; /* a direct transfer (i2c_nrfx_twim_rtio_fast_txrx) is out */
++	int *fast_result;
+ };
+ 
+ static bool i2c_nrfx_twim_rtio_msg_start(const struct device *dev, uint8_t flags, uint8_t *buf,
+@@ -242,6 +244,75 @@ static void i2c_nrfx_twim_rtio_submit(const struct device *dev, struct rtio_iode
+ 	}
+ }
+ 
++/* The bus after a direct transfer: on to whatever RTIO queued meanwhile, else idle. */
++static void i2c_nrfx_twim_rtio_fast_release(const struct device *dev)
++{
++	const struct i2c_nrfx_twim_rtio_config *config = dev->config;
++	struct i2c_rtio *ctx = config->ctx;
++	k_spinlock_key_t key = k_spin_lock(&ctx->slock);
++	struct mpsc_node *next = mpsc_pop(&ctx->io_q);
++
++	if (next == NULL) {
++		ctx->txn_head = NULL;
++		ctx->txn_curr = NULL;
++		k_spin_unlock(&ctx->slock, key);
++		pm_device_runtime_put(dev);
++		return;
++	}
++	ctx->txn_head = CONTAINER_OF(next, struct rtio_iodev_sqe, q);
++	ctx->txn_curr = ctx->txn_head;
++	k_spin_unlock(&ctx->slock, key);
++	(void)i2c_nrfx_twim_rtio_start(dev);
++}
++
++/* marks the bus taken by a direct transfer: only compared with NULL while it is set */
++static uint32_t fast_owner_mark;
++#define FAST_OWNER ((struct rtio_iodev_sqe *)&fast_owner_mark)
++
++/*
++ * A write + read (register read) straight on the TWIM, past RTIO: for a sensor read every
++ * millisecond the RTIO steps cost more than the transfer. Only when the bus is idle
++ * (-EBUSY otherwise: use the normal API); RTIO work queued meanwhile waits and starts
++ * when this one is done. The result goes to *result and done is given (from the ISR).
++ */
++int i2c_nrfx_twim_rtio_fast_txrx(const struct device *dev, uint16_t addr, uint8_t *tx,
++				 size_t tx_len, uint8_t *rx, size_t rx_len, struct k_sem *done,
++				 int *result)
++{
++	const struct i2c_nrfx_twim_rtio_config *config = dev->config;
++	struct i2c_nrfx_twim_rtio_data *data = dev->data;
++	struct i2c_rtio *ctx = config->ctx;
++	nrfx_twim_xfer_desc_t xfer = NRFX_TWIM_XFER_DESC_TXRX(addr, tx, tx_len, rx, rx_len);
++	k_spinlock_key_t key;
++
++	if (!nrf_dma_accessible_check(&config->common.twim, tx) ||
++	    !nrf_dma_accessible_check(&config->common.twim, rx) ||
++	    tx_len > config->common.max_transfer_size || rx_len > config->common.max_transfer_size) {
++		return -EINVAL;
++	}
++	key = k_spin_lock(&ctx->slock);
++	if (ctx->txn_head != NULL) {
++		k_spin_unlock(&ctx->slock, key);
++		return -EBUSY;
++	}
++	ctx->txn_head = FAST_OWNER;
++	ctx->txn_curr = FAST_OWNER;
++	k_spin_unlock(&ctx->slock, key);
++	if (pm_device_runtime_get(dev) < 0) {
++		i2c_nrfx_twim_rtio_fast_release(dev);
++		return -EIO;
++	}
++	data->user_rx_buf = NULL;
++	data->fast_result = result;
++	data->fast_done = done;
++	if (nrfx_twim_xfer(config->common.twim, &xfer, 0) != 0) {
++		data->fast_done = NULL;
++		i2c_nrfx_twim_rtio_fast_release(dev);
++		return -EIO;
++	}
++	return 0;
++}
++
+ static void event_handler(nrfx_twim_event_t const *p_event, void *p_context)
+ {
+ 	const struct device *dev = p_context;
+@@ -249,6 +320,16 @@ static void event_handler(nrfx_twim_event_t const *p_event, void *p_context)
+ 	struct i2c_nrfx_twim_rtio_data *data = dev->data;
+ 	int status = p_event->type == NRFX_TWIM_EVT_DONE ? 0 : -EIO;
+ 
++	if (data->fast_done != NULL) {
++		struct k_sem *done = data->fast_done;
++
++		data->fast_done = NULL;
++		*data->fast_result = status;
++		i2c_nrfx_twim_rtio_fast_release(dev);
++		k_sem_give(done);
++		return;
++	}
++
+ 	if (data->user_rx_buf) {
+ 		memcpy(data->user_rx_buf, config->common.msg_buf, data->user_rx_buf_size);
+ 	}
+-- 
+2.43.0
+

@@ -1622,6 +1622,38 @@ static bool imu_send_mouse(void)
 	return true;
 }
 
+#if DT_NODE_HAS_COMPAT(DT_BUS(DT_ALIAS(accel0)), nordic_nrf_twim) && CONFIG_I2C_RTIO
+/* the sample read straight on the TWIM (zephyr patch 0011): the RTIO steps of a normal
+ * register read cost about as much CPU as the rest of the tick */
+extern int i2c_nrfx_twim_rtio_fast_txrx(const struct device *dev, uint16_t addr, uint8_t *tx,
+                                        size_t tx_len, uint8_t *rx, size_t rx_len, struct k_sem *done,
+                                        int *result);
+static K_SEM_DEFINE(imu_fast_rd_sem, 0, 1);
+
+static int imu_reg_read(uint8_t reg, uint8_t *buf, size_t len)
+{
+	static uint8_t tx;
+	int result = -EIO;
+
+	tx = reg;
+	k_sem_reset(&imu_fast_rd_sem);
+	if(i2c_nrfx_twim_rtio_fast_txrx(imu_i2c.bus, imu_i2c.addr, &tx, 1, buf, len, &imu_fast_rd_sem, &result) == 0)
+	{
+		/* no timeout: the transfer writes into buf (on this stack) until it ends, and the
+		 * normal RTIO path waits for it just the same */
+		(void)k_sem_take(&imu_fast_rd_sem, K_FOREVER);
+		return result;
+	}
+	/* bus busy (FIFO stream, charger) or not possible: the normal way */
+	return i2c_burst_read_dt(&imu_i2c, reg, buf, len);
+}
+#else
+static int imu_reg_read(uint8_t reg, uint8_t *buf, size_t len)
+{
+	return i2c_burst_read_dt(&imu_i2c, reg, buf, len);
+}
+#endif
+
 static void imu_fast_thread_main(void *arg1, void *arg2, void *arg3)
 {
 	/* LSM6DSV16X sensitivities: gyro 4.375 mdps/LSB at +-125 dps, doubling per step;
@@ -1667,7 +1699,7 @@ static void imu_fast_thread_main(void *arg1, void *arg2, void *arg3)
 			/* averaging: the gyro sample half a frame before the next report read */
 			uint8_t g[6];
 
-			if(i2c_burst_read_dt(&imu_i2c, IMU_REG_OUTX_L_G, g, sizeof(g)) == 0)
+			if(imu_reg_read(IMU_REG_OUTX_L_G, g, sizeof(g)) == 0)
 			{
 				for(size_t i = 0; i < 3; ++i)
 				{
@@ -1778,7 +1810,7 @@ static void imu_fast_thread_main(void *arg1, void *arg2, void *arg3)
 #endif
 		uint32_t c0 = k_cycle_get_32();
 
-		if(i2c_burst_read_dt(&imu_i2c, IMU_REG_OUTX_L_G, raw, sizeof(raw)) != 0)
+		if(imu_reg_read(IMU_REG_OUTX_L_G, raw, sizeof(raw)) != 0)
 		{
 			atomic_inc(&imu_fast_errors);
 			continue;

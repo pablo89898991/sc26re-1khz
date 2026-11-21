@@ -335,7 +335,7 @@ static struct
 	uint64_t c0;
 	uint64_t d;
 	int prio;
-} p3_th[9];
+} p3_th[7];
 static int p3_nth;
 
 uint32_t hwtest_dwt(void)
