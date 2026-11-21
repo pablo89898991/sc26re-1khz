@@ -389,6 +389,11 @@ const PRESETS=[
    /* buttons, D-pad, Steam = Guide, sticks and analog triggers all to the Xbox pad; nothing to Steam */
    for(const x of [0,1,2,3,19,9,6,14,15,5,13,10,12,11,16]) B(x,0xA0+x);
    b[256]=12; b[256+18]=12; B(58,0xDA); B(59,0xDB); b[17]|=1; }],
+ ["Steam Controller (whole pad)",b=>{ const B=(s,a)=>{ b[488+s*14+1]=a; };
+   /* every button, back button and pad click to the same button of the Steam Controller pad
+    * (as with the remapper off); sticks, pads, triggers and touch pass through as they are.
+    * A starting point: change only what a game needs. */
+   for(const [x] of PADB) B(x,0x80+x); }],
 ];
 let sel=null; /* number = source, string = analog group "ls"/"rs"/"lp"/"rp" */
 function buildTabs(){ if(typeof gyScopeShow==='function'&&document.getElementById('gyScope')&&$("#gyScope").value==="p") setTimeout(gyScopeShow,0); $("#tabs").innerHTML=[0,1,2,3].map(i=>`<button class="tab${i===cur?" on":""}" data-p="${i}">Profile ${i+1}${nameOf(prof[i])?": "+nameOf(prof[i]):""}</button>`).join(""); document.querySelectorAll("#tabs .tab").forEach(b=>b.onclick=()=>{ saveName(); cur=+b.dataset.p; render(); }); }
