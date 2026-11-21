@@ -390,9 +390,9 @@ function glow(name, color, k) { const p = parts.get(name); if (!p) return; p.mat
  * top and back moved where a camera in front sees them, as overlays usually show them */
 function popOf(name) {
   const side = /_l\d?$/.test(name) ? -1 : 1;
-  if (name.startsWith("trigger_") && $("#popTrig").checked) return new THREE.Vector3(0, 0.2, -3.2);
-  if (name.startsWith("bumper_") && $("#popBump").checked) return new THREE.Vector3(0, 0.6, -0.9);
-  if (name.startsWith("back_") && $("#popBack").checked) return new THREE.Vector3(side * 3.9, 3, name.endsWith("5") ? 1.2 : -1.2);
+  if (name.startsWith("trigger_") && $("#popTrig").checked) return new THREE.Vector3(0, 0.2, -2.6);
+  if (name.startsWith("bumper_") && $("#popBump").checked) return new THREE.Vector3(0, 0.8, -0.4);
+  if (name.startsWith("back_") && $("#popBack").checked) return new THREE.Vector3(side * 3.4, 3, name.endsWith("5") ? 1.2 : -1.2);
   return null;
 }
 function placePart(p, name, dir, depth) {
@@ -401,6 +401,8 @@ function placePart(p, name, dir, depth) {
   if (dir) p.pivot.position.addScaledVector(dir, depth * u);
 }
 function pressPart(name, dir, depth) { const p = parts.get(name); if (!p) return; placePart(p, name, dir, depth);
+  /* popped bumpers: their top (a strip along the top edge) turned to the camera */
+  if (name.startsWith("bumper_")) p.pivot.rotation.x = $("#popBump").checked ? 1.2 : 0;
   /* popped back buttons: turned so their face, which looks sideways and back, faces the camera */
   if (name.startsWith("back_")) p.pivot.rotation.z = $("#popBack").checked ? (name.includes("_l") ? -1 : 1) * (p.popTurn ?? 0.9) : 0; }
 function poseParts() {
