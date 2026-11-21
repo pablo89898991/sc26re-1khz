@@ -78,6 +78,18 @@ def hseq(steps, out_steam=True):
 v = hseq([(STEAM, 80)]); check("Steam tap: a 100 ms tap goes to Steam after it is let go", v == (100, 81), v)
 v = hseq([(STEAM, 30), (STEAM | 1 << 13, 40), (STEAM, 30)]); check("Steam + D-pad (profile): Steam never sees Steam", v[0] == 0, v)
 v = hseq([(STEAM, 200), (STEAM | 1 << 3, 600)]); check("Steam + Y (power off): Steam never sees Steam", v[0] == 0, v)
+def steam_menu_turns_remapper_on():
+    """remapper off, Steam pressed, Menu joins: the remapper turns on and takes Steam from the report
+    in that same pass (Steam still physically held): no tap may reach Steam (it opened Big Picture)"""
+    t, on = T[0], 0
+    MENU = 1 << 6
+    for out, phys, ms in ((STEAM, STEAM, 120), (0, STEAM | MENU, 80), (0, STEAM, 40), (0, 0, 300)):
+        for _ in range(ms):
+            t += 1
+            if h(out, phys, t) & STEAM: on += 1
+    T[0] = t
+    return on
+v = steam_menu_turns_remapper_on(); check("Steam + Menu turning the remapper on: Steam never gets a tap (v51 test 89)", v == 0, v)
 v = hseq([(STEAM, 50), (STEAM | 1 << 2, 100), (STEAM, 50)]); check("Steam + X (gyro calibration, v51 test 86): Steam never sees Steam", v[0] == 0, v)
 v = hseq([(STEAM, 50), (STEAM | 1 << 1, 100), (STEAM, 50)]); check("Steam + B (Steam's own chord): Steam gets it as B joins", v == (150, 51), v)
 v = hseq([(STEAM | 1 << 23, 100)]); check("RT held before Steam (screenshot chord): Steam at once", v == (100, 1), v)

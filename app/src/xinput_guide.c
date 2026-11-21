@@ -106,7 +106,10 @@ uint32_t steam_button_hold_back(uint32_t out, uint32_t phys, int64_t now)
 	if(down)
 	{
 		down = false;
-		if(mode == 0U)
+		/* a tap only when Steam was really let go: still held but gone from the report means the
+		 * remapper took it (Steam + Menu turned it on): that is the controller's, not Steam's
+		 * (before v51 test 89 Steam got a tap and opened Big Picture) */
+		if(mode == 0U && !(phys & steam))
 		{
 			tap_until = now + STEAM_TAP_MS;
 		}
