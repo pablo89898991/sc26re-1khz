@@ -545,6 +545,38 @@ def _(): return _ring_case(0, DPAD8, True)
 @case("rstick_dpad8_outer_ring_90", "RS 8-way + outer ring at 90 %")
 def _(): return _ring_case(1, DPAD8, False, ring=9000, rs=(20000, 32000))
 
+def _ring_first_case(side, mode):
+    """outer ring "ring key first" (v51 test 83): reaching the ring lets the direction go for
+    one pass, so the ring key (Shift) is down before the direction comes back"""
+    p = Profile(); p.analog(side, mode, dz_in=800, ring=8600, flags=0x08)
+    pre = "LS" if side == 0 else "RS"
+    for d, k in zip(("_UP", "_DOWN", "_LEFT", "_RIGHT"), "wsad"): p.bind(pre + d, key(k))
+    p.bind(pre + "_RING", key("lshift"))
+    st = [N(50), stick(side, 90, 16000, 60), stick(side, 90, 32767, 120), N(120), stick(side, 0, 32767, 120), N(120),
+          stick(side, 180, 25000, 60), stick(side, 180, 32767, 80), stick(side, 135, 32767, 80), N(120)]
+    sh = 0xE1
+    def o(l, P):
+        def before_ring(k):
+            ks = [e["keys"] for e in l]
+            for i, x in enumerate(ks):
+                if sh in x:
+                    return k not in x
+            return False
+        need(before_ring(key("w")), "walking up into the ring: Shift alone before W comes back", P)
+        need(any({sh, key("w")} <= set(e["keys"]) for e in l), "then W + Shift", P)
+        right = [e for e in l if 50 + 60 + 120 + 120 <= e["t"] < 50 + 60 + 120 + 120 + 120]
+        need(right and right[0]["keys"] and key("d") not in right[0]["keys"], "straight to the edge: Shift before D", P)
+        need(any({sh, key("d")} <= set(e["keys"]) for e in right), "then D + Shift", P)
+        diag = {sh, key("a"), key("w")} if mode == DPAD8 else {sh, key("a")}
+        need(any(diag <= set(e["keys"]) for e in l), "turning along the ring keeps Shift", P)
+        need(not l[-1]["keys"], "released", P)
+    return p, st + [N(100)], o
+
+@case("stick_dpad8_ring_first", "LS 8-way + outer ring, ring key first: Shift before W")
+def _(): return _ring_first_case(0, DPAD8)
+@case("stick_dpad4_ring_first", "LS 4-way + outer ring, ring key first")
+def _(): return _ring_first_case(0, DPAD4)
+
 @case("stick_pass_shaping", "LS to Steam: dead zones, anti dead zone, invert; RS curve 2.0 + rotate 90", snap=True)
 def _():
     p = Profile(); p.analog(0, PASS, dz_in=1000, dz_out=1000, anti=2000, flags=AF_INVY); p.analog(1, PASS, curve=200, rotate=90)
