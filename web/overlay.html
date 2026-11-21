@@ -394,7 +394,7 @@ function glow(name, color, k) { const p = parts.get(name); if (!p) return; p.mat
 function popOf(name) {
   const side = /_l\d?$/.test(name) ? -1 : 1;
   if (name.startsWith("trigger_") && $("#popTrig").checked) { const d = $("#mdl").value === "detail"; /* the detailed trigger hangs lower and further back from its hinge */
-    return new THREE.Vector3(0, d ? 1.9 : 0.95, d ? -2.7 : -3.8); } /* depth: the same as its bumper, one line from the side */
+    return new THREE.Vector3(0, d ? 1.9 : 0.95, d ? -2.1 : -3.25); } /* depth: the same as its bumper, one line from the side */
   if (name.startsWith("bumper_") && $("#popBump").checked) return new THREE.Vector3(0, 0.2, -2.0); /* a column over each top corner: trigger on top, bumper under it, a gap to the body; both turned face-on */
   if (name.startsWith("back_") && $("#popBack").checked) return new THREE.Vector3(side * 3.4, 3, name.endsWith("5") ? 1.2 : -1.2);
   return null;
