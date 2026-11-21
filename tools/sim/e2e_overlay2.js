@@ -38,6 +38,11 @@ const check = (name, ok, info = '') => { total++; if (!ok) bad++; if (!ok || pro
     const cx = b => (b.min[0] + b.max[0]) / 2, cy = b => (b.min[1] + b.max[1]) / 2;
     const under = (b, t) => Math.abs(cx(b) - cx(t)) < 1.0 && cy(b) < cy(t) && b.max[1] > r.body.max[1] - 0.5;
     check(`${mdl}: popped bumpers right under their triggers, above the body`, under(r.bl, r.tl) && under(r.br, r.tr), JSON.stringify(r));
+    const depth = await ev(() => { const M = __ov.model; M.updateMatrixWorld(true); const inv = M.matrixWorld.clone().invert();
+      const cy = n => { let lo = 1e9, hi = -1e9; __ov.parts.get(n).pivot.traverse(m => { if (!m.isMesh) return; const pos = m.geometry.getAttribute('position'), v = M.position.clone();
+        for (let i = 0; i < pos.count; i++) { v.fromBufferAttribute(pos, i); m.localToWorld(v); v.applyMatrix4(inv); lo = Math.min(lo, v.y); hi = Math.max(hi, v.y); } }); return (lo + hi) / 2; };
+      return [cy('trigger_l'), cy('bumper_l'), cy('trigger_r'), cy('bumper_r')]; });
+    check(`${mdl}: popped trigger and bumper in one line from the side`, Math.abs(depth[0] - depth[1]) < 0.15 && Math.abs(depth[2] - depth[3]) < 0.15, depth.map(x => x.toFixed(2)).join(' '));
     check(`${mdl}: both bumpers at one height`, Math.abs(cy(r.bl) - cy(r.br)) < 0.01 && Math.abs(cy(r.tl) - cy(r.tr)) < 0.01);
     check(`${mdl}: back buttons turned their marked face to the camera`, Math.abs(r.rz) > 3, String(r.rz));
   }
