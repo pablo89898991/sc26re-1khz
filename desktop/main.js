@@ -24,6 +24,7 @@ const saveConf = () => { try { fs.writeFileSync(CONF, JSON.stringify(conf)); } c
 protocol.registerSchemesAsPrivileged([{ scheme: "app", privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true } }]);
 
 if (!app.requestSingleInstanceLock()) { app.quit(); }
+if (process.platform === "win32") app.setAppUserModelId("io.github.pablo89898991.sc26re-overlay");
 app.commandLine.appendSwitch("disable-renderer-backgrounding");
 /* Linux: run through X11 (XWayland on a Wayland session). A native Wayland window cannot be always on top,
  * placed at a fixed position, or click-through the same way. SC2_OVERLAY_WAYLAND=1 opts out. */
@@ -137,9 +138,28 @@ function tell(key, title, body, url) {
   /* test mode: once per run, not remembered */
   if (UPD_TEST) { if (tell.run[key]) return; tell.run[key] = 1; }
   else { if (conf.told[key]) return; conf.told[key] = 1; saveConf(); }
+  notify(title, body, url);
+}
+/* Windows: a toast from a portable .exe without a Start menu shortcut is dropped silently, so the
+ * tray icon's own balloon is used there (Windows 10/11 show it as a normal notification). One at a
+ * time: a second balloon would replace the first, so they wait in a queue. */
+const balloons = []; let balloonUrl = null, balloonT = null;
+function nextBalloon() {
+  clearTimeout(balloonT); balloonT = null;
+  const b = balloons.shift(); if (!b || !tray) return; /* the last one stays clickable in the notification centre */
+  balloonUrl = b.url;
+  tray.displayBalloon({ title: b.title, content: b.body, icon: nativeImage.createFromPath(ICON), respectQuietTime: false });
+  balloonT = setTimeout(nextBalloon, 8000);
+}
+function notify(title, body, url) {
+  if (process.platform === "win32") {
+    balloons.push({ title, body, url });
+    if (!balloonT) nextBalloon();
+    return;
+  }
   if (!Notification.isSupported()) return;
   const n = new Notification({ title, body, icon: ICON });
-  n.on("click", () => shell.openExternal(url));
+  if (url) n.on("click", () => shell.openExternal(url));
   n.show();
 }
 tell.run = {};
@@ -165,10 +185,10 @@ async function checkUpdates(manual) {
     upd.app = best(/^overlay-v/); upd.fw = best(/^v\d/); upd.checked = Date.now(); upd.error = "";
   } catch (e) { upd.error = e.message; console.warn("update check:", e.message); }
   announce(); buildTray();
-  if (manual && Notification.isSupported()) {
+  if (manual) {
     const items = updateItems().length - 1; /* the "Updates" submenu is always there */
-    if (upd.error) new Notification({ title: "SC2 Overlay", body: "Could not check for updates: " + upd.error, icon: ICON }).show();
-    else if (!items) new Notification({ title: "SC2 Overlay", body: "Everything is up to date" + (upd.fwHave === undefined ? " (connect the controller to check its firmware too)." : "."), icon: ICON }).show();
+    if (upd.error) notify("SC2 Overlay", "Could not check for updates: " + upd.error, RELEASES);
+    else if (!items) notify("SC2 Overlay", "Everything is up to date" + (upd.fwHave === undefined ? " (connect the controller to check its firmware too)." : "."), null);
   }
 }
 function updateItems() {
@@ -257,6 +277,7 @@ app.whenReady().then(() => {
   makeOverlay();
   tray = new Tray(nativeImage.createFromPath(path.join(__dirname, "tray.png")));
   tray.on("click", toggleArrange);
+  tray.on("balloon-click", () => { if (balloonUrl) shell.openExternal(balloonUrl); });
   buildTray();
   /* register() answers false when the desktop does not give the key (Wayland, or another app has it) */
   if (!globalShortcut.register(KEY_ARRANGE, toggleArrange)) console.warn("hotkey not available: " + KEY_ARRANGE + " (use sc2-overlay --arrange)");
@@ -267,7 +288,6 @@ app.whenReady().then(() => {
   /* games that grab "topmost" for themselves: take it back now and then */
   setInterval(() => { if (overlay && conf.shown) overlay.setAlwaysOnTop(true, "screen-saver"); }, 5000);
   runArgs(process.argv);
-  if (process.platform === "win32") app.setAppUserModelId("io.github.pablo89898991.sc26re-overlay");
   setTimeout(() => { if (conf.updates) checkUpdates(); }, 5000);
   setInterval(() => { if (conf.updates) checkUpdates(); }, 6 * 3600 * 1000);
 });
