@@ -418,10 +418,15 @@ static void gyro_auto_poll(const struct controller_report *r, bool full_cal_busy
 	int16_t secs = sc26re_cfg_get(SC26RE_CFG_GYRO_AUTO_CAL);
 	int64_t now = k_uptime_get();
 
-	if(r->buttons != 0 || full_cal_busy || !imu_streaming() || secs <= 0)
+	/* put down: no buttons or touches, sticks centred, triggers released */
+	bool idle = r->buttons == 0 && abs(r->stick_left_x) < 4000 && abs(r->stick_left_y) < 4000 &&
+	            abs(r->stick_right_x) < 4000 && abs(r->stick_right_y) < 4000 &&
+	            r->trigger_left < 2000 && r->trigger_right < 2000;
+
+	if(!idle || full_cal_busy || !imu_streaming() || secs <= 0)
 	{
 		still_since = now;
-		if(r->buttons != 0)
+		if(!idle)
 		{
 			armed = true;
 		}
@@ -658,8 +663,11 @@ int main(void)
 			bool cal_busy = gyro_chord_poll(&current);
 
 			gyro_auto_poll(&current, cal_busy);
-			/* any gyro calibration (combination, meter, automatic) pauses the gyro mouse */
-			gyro_mouse_suspend(cal_busy || imu_gyro_cal_state() == 1U || imu_band_measure_state() == 1U);
+			/* a gyro calibration (combination, meter) pauses the gyro mouse; the automatic
+			 * one runs in the background and stops by itself when the controller moves */
+			gyro_mouse_suspend(cal_busy ||
+			                   (imu_gyro_cal_state() == 1U && !imu_gyro_cal_is_auto()) ||
+			                   imu_band_measure_state() == 1U);
 		}
 		now_ms = k_uptime_get();
 #if CONFIG_IBEX_RGBW_LED

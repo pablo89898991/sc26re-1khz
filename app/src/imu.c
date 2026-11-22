@@ -2005,11 +2005,39 @@ static float gyro_cal_max[3];
 static void gyro_cal_work_handler(struct k_work *work);
 static K_WORK_DEFINE(gyro_cal_work, gyro_cal_work_handler);
 
+static bool gyro_cal_auto;
+
+/*
+ * Automatic calibration runs in the background while the gyro mouse keeps
+ * working, so it must give up the moment the controller turns: a sample this
+ * far from the current bias ends it at once (state 3, old bias kept).
+ */
+#define GYRO_AUTO_ABORT_RATE 0.02f /* rad/s (~1.1 deg/s) */
+/* an automatic result this far from the current bias is a slow turn, not drift */
+#define GYRO_AUTO_MAX_CHANGE 0.035f /* rad/s (~2 deg/s) */
+
+bool imu_gyro_cal_is_auto(void)
+{
+	return gyro_cal_auto;
+}
+
 static void gyro_cal_sample(const float gyro[3])
 {
 	if(!atomic_get(&gyro_cal_active))
 	{
 		return;
+	}
+	if(gyro_cal_auto)
+	{
+		for(size_t i = 0; i < 3; ++i)
+		{
+			if(fabsf(gyro[i] - gyro_bias[i]) > GYRO_AUTO_ABORT_RATE)
+			{
+				atomic_set(&gyro_cal_active, 0);
+				atomic_set(&gyro_cal_state, 3);
+				return;
+			}
+		}
 	}
 	for(size_t i = 0; i < 3; ++i)
 	{
@@ -2040,7 +2068,6 @@ static int imu_save_gyro_bias(const float bias_in[3], bool persist);
 #define GYRO_AUTO_MIN_CHANGE 0.0005f   /* rad/s (~0.03 deg/s): smaller is ignored */
 #define GYRO_AUTO_BIG_CHANGE 0.005f    /* rad/s (~0.3 deg/s): saved right away */
 #define GYRO_AUTO_SAVE_INTERVAL_MS (5 * 60 * 1000)
-static bool gyro_cal_auto;
 static int64_t gyro_auto_last_save_ms = -GYRO_AUTO_SAVE_INTERVAL_MS;
 
 static void gyro_cal_work_handler(struct k_work *work)
@@ -2085,6 +2112,12 @@ static void gyro_cal_work_handler(struct k_work *work)
 		{
 			change = MAX(change, fabsf(bias[i] - gyro_bias[i]));
 		}
+		if(change > GYRO_AUTO_MAX_CHANGE)
+		{
+			atomic_set(&gyro_cal_state, 3);
+			LOG_WRN("auto gyro calibration: change too big, kept old bias");
+			return;
+		}
 		if(change < GYRO_AUTO_MIN_CHANGE)
 		{
 			atomic_set(&gyro_cal_state, 2);
@@ -2104,12 +2137,21 @@ static void gyro_cal_work_handler(struct k_work *work)
 	atomic_set(&gyro_cal_state, imu_save_gyro_bias(bias, true) == 0 ? 2 : 4);
 }
 
+static int gyro_cal_start(bool automatic)
+{
+	gyro_cal_auto = automatic;
+	memset(gyro_cal_sum, 0, sizeof(gyro_cal_sum));
+	memset(gyro_cal_sumsq, 0, sizeof(gyro_cal_sumsq));
+	gyro_cal_n = 0;
+	atomic_set(&gyro_cal_state, 1);
+	atomic_set(&gyro_cal_active, 1);
+	LOG_INF("gyro calibration%s: measuring, keep the controller still", automatic ? " (auto)" : "");
+	return 0;
+}
+
 int imu_calibrate_gyro_auto(void)
 {
-	int err = imu_calibrate_gyro();
-
-	gyro_cal_auto = true;
-	return err;
+	return gyro_cal_start(true);
 }
 
 bool imu_streaming(void)
@@ -2123,14 +2165,7 @@ bool imu_streaming(void)
 
 int imu_calibrate_gyro(void)
 {
-	gyro_cal_auto = false;
-	memset(gyro_cal_sum, 0, sizeof(gyro_cal_sum));
-	memset(gyro_cal_sumsq, 0, sizeof(gyro_cal_sumsq));
-	gyro_cal_n = 0;
-	atomic_set(&gyro_cal_state, 1);
-	atomic_set(&gyro_cal_active, 1);
-	LOG_INF("gyro calibration: measuring, keep the controller still");
-	return 0;
+	return gyro_cal_start(false);
 }
 
 static atomic_t gyro_bias_program_err;

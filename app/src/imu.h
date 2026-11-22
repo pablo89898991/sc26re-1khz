@@ -20,6 +20,8 @@ int imu_calibrate_gyro_auto(void);
 bool imu_streaming(void);
 /* 0 idle, 1 measuring, 2 saved, 3 moved (kept old), 4 save failed */
 uint8_t imu_gyro_cal_state(void);
+/* the running measurement is the automatic one (does not pause the gyro mouse) */
+bool imu_gyro_cal_is_auto(void);
 /* stream the IMU during a calibration even when the host has it off */
 void imu_force_on(bool on);
 
