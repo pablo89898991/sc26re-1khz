@@ -127,22 +127,27 @@ const openRemap = () => openPage("remap.html");
 const REPO = "pablo89898991/sc26re-1khz";
 const RELEASES = `https://github.com/${REPO}/releases`;
 const upd = { app: null, fw: null, fwHave: undefined, checked: 0, error: "" };
+/* --updates-test: act as app 1.0.0 with a controller on v50, so both notifications show (testing) */
+const UPD_TEST = process.argv.includes("--updates-test");
+const appVer = () => UPD_TEST ? "1.0.0" : app.getVersion();
 /* "v51.2" / "overlay-v1.10.0" -> [51, 2] / [1, 10, 0]; null if it is not a version */
 const verOf = t => { const m = /^(?:overlay-)?v(\d+(?:\.\d+)*)$/.exec(t || ""); return m ? m[1].split(".").map(Number) : null; };
 const verCmp = (a, b) => { for (let i = 0; i < Math.max(a.length, b.length); i++) { const d = (a[i] || 0) - (b[i] || 0); if (d) return d; } return 0; };
 function tell(key, title, body, url) {
-  if (conf.told[key]) return;
-  conf.told[key] = 1; saveConf();
+  /* test mode: once per run, not remembered */
+  if (UPD_TEST) { if (tell.run[key]) return; tell.run[key] = 1; }
+  else { if (conf.told[key]) return; conf.told[key] = 1; saveConf(); }
   if (!Notification.isSupported()) return;
   const n = new Notification({ title, body, icon: ICON });
   n.on("click", () => shell.openExternal(url));
   n.show();
 }
+tell.run = {};
 function announce() {
   if (!conf.updates) return;
-  const mine = verOf("v" + app.getVersion());
+  const mine = verOf("v" + appVer());
   if (upd.app && verCmp(verOf(upd.app.tag), mine) > 0)
-    tell("app " + upd.app.tag, "SC2 Overlay update", `Version ${upd.app.tag.replace("overlay-v", "")} is out (you have ${app.getVersion()}). Click to open the download page.`, upd.app.url);
+    tell("app " + upd.app.tag, "SC2 Overlay update", `Version ${upd.app.tag.replace("overlay-v", "")} is out (you have ${appVer()}). Click to open the download page.`, upd.app.url);
   /* the firmware: only once the overlay has read the controller's version (undefined = no controller yet) */
   if (upd.fw && upd.fwHave !== undefined) {
     const have = verOf(upd.fwHave);
@@ -167,17 +172,17 @@ async function checkUpdates(manual) {
   }
 }
 function updateItems() {
-  const items = [], mine = verOf("v" + app.getVersion());
+  const items = [], mine = verOf("v" + appVer());
   if (upd.app && verCmp(verOf(upd.app.tag), mine) > 0)
     items.push({ label: `SC2 Overlay ${upd.app.tag.replace("overlay-v", "")} available…`, click: () => shell.openExternal(upd.app.url) });
   if (upd.fw && upd.fwHave !== undefined && (!verOf(upd.fwHave) || verCmp(verOf(upd.fw.tag), verOf(upd.fwHave)) > 0))
     items.push({ label: `Firmware ${upd.fw.tag} available…`, click: () => shell.openExternal(upd.fw.url) });
   items.push({ label: "Updates", submenu: [
-    { label: `This app: ${app.getVersion()}`, enabled: false },
+    { label: `This app: ${appVer()}`, enabled: false },
     { label: `Controller firmware: ${upd.fwHave === undefined ? "no controller yet" : upd.fwHave || "older than v51.2"}`, enabled: false },
     { label: upd.error ? `Last check failed (${upd.error})` : upd.checked ? `Newest: firmware ${upd.fw ? upd.fw.tag : "?"}, app ${upd.app ? upd.app.tag.replace("overlay-v", "") : "?"}` : "Not checked yet", enabled: false },
     { type: "separator" },
-    { label: "Check now", click: () => { conf.told = {}; saveConf(); checkUpdates(true); } },
+    { label: "Check now", click: () => { conf.told = {}; tell.run = {}; saveConf(); checkUpdates(true); } },
     { label: "Notify me about new versions", type: "checkbox", checked: conf.updates, click: m => { conf.updates = m.checked; saveConf(); if (m.checked) checkUpdates(); } },
     { label: "Open the releases page…", click: () => shell.openExternal(RELEASES) },
   ] });
@@ -244,7 +249,7 @@ app.whenReady().then(() => {
   });
   ipcMain.on("arrange", () => toggleArrange());
   ipcMain.on("firmware", (e, info) => {
-    const rel = info && typeof info.release === "string" ? info.release.slice(0, 16) : "";
+    const rel = UPD_TEST ? "v50" : info && typeof info.release === "string" ? info.release.slice(0, 16) : "";
     if (upd.fwHave !== rel) { upd.fwHave = rel; announce(); buildTray(); }
   });
   ipcMain.on("edit", (e, on) => { if (overlay && e.sender === overlay.webContents) setEditing(on); });
