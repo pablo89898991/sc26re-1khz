@@ -9,7 +9,9 @@
   "private": true,
   "scripts": {
     "start": "electron .",
-    "dist": "electron-builder --win portable --x64 --publish never"
+    "dist": "electron-builder --win portable --x64 --publish never",
+    "dist:win": "electron-builder --win portable --x64 --publish never",
+    "dist:linux": "electron-builder --linux deb AppImage --x64 --publish never -c.productName=SC2-Overlay"
   },
   "devDependencies": {
     "electron": "^33.2.0",
@@ -18,10 +20,58 @@
   "build": {
     "appId": "io.github.pablo89898991.sc26re-overlay",
     "productName": "SC2 Overlay",
-    "files": ["main.js", "preload.js", "icon.png", "tray.png", "package.json"],
-    "extraResources": [{ "from": "../web", "to": "web", "filter": ["**/*", "!hwtests.json", "!hwrand.json", "!hwdiag.json"] }],
-    "win": { "target": "portable", "icon": "icon.png" },
-    "portable": { "artifactName": "SC2-Overlay-${version}.exe" },
-    "directories": { "output": "dist" }
-  }
+    "files": [
+      "main.js",
+      "preload.js",
+      "icon.png",
+      "tray.png",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "../web",
+        "to": "web",
+        "filter": [
+          "**/*",
+          "!hwtests.json",
+          "!hwrand.json",
+          "!hwdiag.json"
+        ]
+      },
+      {
+        "from": "linux/70-sc26re.rules",
+        "to": "70-sc26re.rules"
+      }
+    ],
+    "win": {
+      "target": "portable",
+      "icon": "icon.png"
+    },
+    "portable": {
+      "artifactName": "SC2-Overlay-${version}.exe"
+    },
+    "directories": {
+      "output": "dist"
+    },
+    "linux": {
+      "target": [
+        "deb",
+        "AppImage"
+      ],
+      "icon": "build/icon.png",
+      "category": "Utility",
+      "maintainer": "sc26re <noreply@users.noreply.github.com>",
+      "synopsis": "Steam Controller 2026 overlay",
+      "artifactName": "SC2-Overlay-${version}.${ext}",
+      "desktop": {
+        "Comment": "See-through on-screen menus and 3D controller over games",
+        "Keywords": "steam;controller;overlay;"
+      },
+      "executableName": "sc2-overlay"
+    },
+    "deb": {
+      "afterInstall": "linux/after-install.sh"
+    }
+  },
+  "homepage": "https://github.com/pablo89898991/sc26re-1khz"
 }

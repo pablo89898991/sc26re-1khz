@@ -62,4 +62,39 @@ jobs:
           if ! gh release view "overlay-v$ver" >/dev/null 2>&1; then
             gh release create "overlay-v$ver" SC2-Overlay.exe --target "$GITHUB_SHA" --title "SC2 Overlay $ver (Windows app)" --notes-file desktop/RELEASE.md --latest=false
           fi
+          gh release edit "overlay-v$ver" --notes-file desktop/RELEASE.md --title "SC2 Overlay $ver (Windows and Linux)" || true
           git tag -f overlay-app "$GITHUB_SHA" && git push -f origin overlay-app || true
+
+  linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Build (.deb, AppImage)
+        working-directory: desktop
+        run: |
+          npm install --no-audit --no-fund
+          npx electron-builder --linux deb AppImage --x64 --publish never -c.productName=SC2-Overlay
+          ls -l dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: SC2-Overlay-linux
+          path: |
+            desktop/dist/*.deb
+            desktop/dist/*.AppImage
+      - name: Releases
+        if: ${{ !startsWith(github.ref, 'refs/tags/') }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          ver=$(node -p "require('./desktop/package.json').version")
+          deb=$(ls desktop/dist/*.deb | head -1); img=$(ls desktop/dist/*.AppImage | head -1)
+          gh release view overlay-app >/dev/null 2>&1 && gh release upload overlay-app "$deb" "$img" --clobber
+          # the version's own release: the Linux files once (a new version gets its own release from the Windows job)
+          for i in 1 2 3 4 5 6 7 8 9 10; do gh release view "overlay-v$ver" >/dev/null 2>&1 && break; sleep 30; done
+          have=$(gh release view "overlay-v$ver" --json assets -q '.assets[].name' || true)
+          for f in "$deb" "$img"; do
+            case "$have" in *"$(basename "$f")"*) echo "already there: $(basename "$f")" ;; *) gh release upload "overlay-v$ver" "$f" ;; esac
+          done

@@ -1,4 +1,4 @@
-// SC2 overlay for Windows: the overlay page (web/overlay.html) in a see-through window over the
+// SC2 overlay for Windows and Linux: the overlay page (web/overlay.html) in a see-through window over the
 // whole screen, always on top and letting every click through to the game. The tray icon
 // arranges it, opens the remapper (its Overlay tab sets the overlay up live), picks the screen.
 const { app, BrowserWindow, Tray, Menu, screen, session, protocol, net, globalShortcut, ipcMain, nativeImage, shell } = require("electron");
@@ -13,6 +13,7 @@ const CONF = path.join(app.getPath("userData"), "app.json");
 const VALVE = 0x28de;
 const KEY_ARRANGE = "CommandOrControl+Shift+F10";
 const KEY_SHOW = "CommandOrControl+Shift+F9";
+const LINUX = process.platform === "linux";
 
 let conf = { display: null, shown: true };
 try { conf = Object.assign(conf, JSON.parse(fs.readFileSync(CONF, "utf8"))); } catch (e) {}
@@ -24,6 +25,27 @@ protocol.registerSchemesAsPrivileged([{ scheme: "app", privileges: { standard: t
 
 if (!app.requestSingleInstanceLock()) { app.quit(); }
 app.commandLine.appendSwitch("disable-renderer-backgrounding");
+/* Linux: run through X11 (XWayland on a Wayland session). A native Wayland window cannot be always on top,
+ * placed at a fixed position, or click-through the same way. SC2_OVERLAY_WAYLAND=1 opts out. */
+if (LINUX && !process.env.SC2_OVERLAY_WAYLAND) app.commandLine.appendSwitch("ozone-platform", "x11");
+
+/* "Start at login": Electron's login item only covers Windows and macOS, so on Linux it is an XDG autostart
+ * entry (~/.config/autostart). An AppImage starts through its own path, else the installed binary. */
+const AUTOSTART = path.join(process.env.XDG_CONFIG_HOME || path.join(require("os").homedir(), ".config"), "autostart", "sc2-overlay.desktop");
+function getAutostart() {
+  if (!LINUX) return app.getLoginItemSettings().openAtLogin;
+  return fs.existsSync(AUTOSTART);
+}
+function setAutostart(on) {
+  if (!LINUX) return app.setLoginItemSettings({ openAtLogin: on });
+  try {
+    if (!on) { fs.rmSync(AUTOSTART, { force: true }); return; }
+    fs.mkdirSync(path.dirname(AUTOSTART), { recursive: true });
+    const exe = (process.env.APPIMAGE || process.execPath).replace(/"/g, '\\"');
+    fs.writeFileSync(AUTOSTART, ["[Desktop Entry]", "Type=Application", "Name=SC2 Overlay", "Comment=Steam Controller 2026 overlay",
+      `Exec="${exe}"`, "X-GNOME-Autostart-enabled=true", ""].join("\n"));
+  } catch (e) { console.warn("autostart:", e.message); }
+}
 
 let overlay = null, tray = null, editing = false;
 const pages = {}; /* page file -> its window (remapper, report meter, ...) */
@@ -56,6 +78,8 @@ function placeOverlay() {
 
 function setEditing(on) {
   editing = on;
+  /* Linux: the overlay window gets no keyboard focus, so Esc is a global key while arranging (X11 only) */
+  if (LINUX) { if (on) globalShortcut.register("Escape", toggleArrange); else globalShortcut.unregister("Escape"); }
   if (!overlay) return;
   overlay.setIgnoreMouseEvents(!on);
   overlay.setFocusable(on);
@@ -104,19 +128,30 @@ function buildTray() {
     { type: "separator" },
     { label: editing ? "Done arranging" : "Arrange the overlay…", accelerator: KEY_ARRANGE, click: toggleArrange },
     ...PAGES.map(([f, label]) => ({ label, click: () => openPage(f) })),
-    { label: "Recenter the 3D controller", click: () => overlay && overlay.webContents.executeJavaScript(`window.postMessage("sc26re:recenter", location.origin)`).catch(() => {}) },
+    { label: "Recenter the 3D controller", click: recenter },
     { label: "Show the overlay", type: "checkbox", checked: conf.shown, accelerator: KEY_SHOW, click: toggleShown },
     { label: "Screen", submenu: displays.map((d, i) => ({ label: `Screen ${i + 1} (${d.size.width} × ${d.size.height})${d.id === screen.getPrimaryDisplay().id ? ", main" : ""}`,
       type: "radio", checked: d.id === cur.id, click: () => { conf.display = d.id; saveConf(); placeOverlay(); } })) },
-    { label: "Start with Windows", type: "checkbox", checked: app.getLoginItemSettings().openAtLogin,
-      click: m => app.setLoginItemSettings({ openAtLogin: m.checked }) },
+    { label: LINUX ? "Start at login" : "Start with Windows", type: "checkbox", checked: getAutostart(),
+      click: m => setAutostart(m.checked) },
     { type: "separator" },
     { label: "Quit", click: () => app.quit() },
   ]));
   tray.setToolTip("SC2 overlay" + (editing ? " (arranging)" : ""));
 }
 
-app.on("second-instance", () => openRemap());
+/* Command line, for a desktop shortcut or a key binding where global hotkeys are not available (Wayland):
+ *   sc2-overlay --arrange | --toggle | --recenter | --settings   (run it while the app is already running) */
+function runArgs(argv) {
+  let did = false;
+  if (argv.includes("--arrange")) { toggleArrange(); did = true; }
+  if (argv.includes("--toggle")) { toggleShown(); did = true; }
+  if (argv.includes("--recenter")) { recenter(); did = true; }
+  if (argv.includes("--settings")) { openRemap(); did = true; }
+  return did;
+}
+const recenter = () => overlay && overlay.webContents.executeJavaScript(`window.postMessage("sc26re:recenter", location.origin)`).catch(() => {});
+app.on("second-instance", (e, argv) => { if (!runArgs(argv)) openRemap(); });
 
 app.whenReady().then(() => {
   protocol.handle("app", req => {
@@ -149,14 +184,15 @@ app.whenReady().then(() => {
   tray = new Tray(nativeImage.createFromPath(path.join(__dirname, "tray.png")));
   tray.on("click", toggleArrange);
   buildTray();
-  globalShortcut.register(KEY_ARRANGE, toggleArrange);
-  globalShortcut.register(KEY_SHOW, toggleShown);
+  /* register() answers false when the desktop does not give the key (Wayland, or another app has it) */
+  if (!globalShortcut.register(KEY_ARRANGE, toggleArrange)) console.warn("hotkey not available: " + KEY_ARRANGE + " (use sc2-overlay --arrange)");
+  if (!globalShortcut.register(KEY_SHOW, toggleShown)) console.warn("hotkey not available: " + KEY_SHOW + " (use sc2-overlay --toggle)");
   screen.on("display-removed", () => { placeOverlay(); buildTray(); });
   screen.on("display-added", buildTray);
   screen.on("display-metrics-changed", placeOverlay);
   /* games that grab "topmost" for themselves: take it back now and then */
   setInterval(() => { if (overlay && conf.shown) overlay.setAlwaysOnTop(true, "screen-saver"); }, 5000);
-  if (process.argv.includes("--settings")) openRemap();
+  runArgs(process.argv);
 });
 
 app.on("window-all-closed", e => { /* the tray keeps it running */ });

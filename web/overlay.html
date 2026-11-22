@@ -505,6 +505,7 @@ function setEdit(on) {
   editOn = !!on; $("#menu").style.pointerEvents = editOn ? "auto" : "none"; $("#menu").style.cursor = editOn ? "move" : "";
   if (editOn) $("#ui").classList.remove("hidden"); else if (IN_TAB) $("#ui").classList.add("hidden");
   $("#arrange").textContent = editOn ? "Done arranging (Esc)" : "Arrange on screen";
+  { let b = document.getElementById("doneBtn"); if (!b && window.sc26reApp) { b = document.createElement("button"); b.id = "doneBtn"; b.textContent = "Done arranging"; b.style.cssText = "position:fixed;top:18px;left:50%;transform:translateX(-50%);z-index:99999;padding:10px 24px;font:600 15px system-ui,sans-serif;border:0;border-radius:10px;background:#2b7fff;color:#fff;cursor:pointer;box-shadow:0 2px 10px #0008"; b.onclick = () => setEdit(false); document.body.appendChild(b); } if (b) b.style.display = editOn ? "block" : "none"; }
   if (window.sc26reApp) sc26reApp.edit(editOn); /* the Windows app: clicks reach this window only while arranging */
 }
 window.__ovEdit = setEdit;
@@ -529,6 +530,7 @@ function editHit(x, y) {
 }
 $("#arrange").onclick = () => setEdit(!editOn);
 window.addEventListener("keydown", e => { if (e.key === "Escape" && editOn) setEdit(false); });
+window.addEventListener("contextmenu", e => { if (editOn) { e.preventDefault(); setEdit(false); } });
 window.addEventListener("message", e => { if (e.origin === location.origin && e.data === "sc26re:edit") setEdit(!editOn); });
 function drawOne(c, m, g, label, a, BG, ACC) {
   const { cx, cy, R } = g;

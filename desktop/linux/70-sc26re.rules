@@ -1,0 +1,8 @@
+# Steam Controller (2026) and the Puck (Valve, 28de): let the logged-in user open them.
+# Needed for WebHID (settings, remapper, report meter) and the Web Serial flasher.
+# Steam's own rules already cover the HID part; this file is harmless alongside them.
+KERNEL=="hidraw*", ATTRS{idVendor}=="28de", MODE="0660", TAG+="uaccess"
+KERNEL=="hidraw*", KERNELS=="*28DE:*", MODE="0660", TAG+="uaccess"
+SUBSYSTEM=="usb", ATTRS{idVendor}=="28de", MODE="0660", TAG+="uaccess"
+# the controller's bootloader serial port (28de:1005), used by the flasher
+SUBSYSTEM=="tty", KERNEL=="ttyACM*", ATTRS{idVendor}=="28de", MODE="0660", TAG+="uaccess"
