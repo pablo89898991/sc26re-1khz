@@ -4,7 +4,7 @@ on:
   push:
     branches: [master, imu-1khz]
     tags: ['v*']
-    paths-ignore: ['web/**', 'docs/*', '*.md', 'valve/**', 'tools/**', 'desktop/**', '.github/workflows/desktop.yml']
+    paths-ignore: ['web/**', 'docs/*', '*.md', 'valve/**', 'tools/**', 'desktop/**', '.github/workflows/desktop.yml', '3dco/**', '.github/workflows/3dco.yml']
   pull_request:
   workflow_dispatch:
 

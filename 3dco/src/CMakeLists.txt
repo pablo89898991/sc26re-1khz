@@ -1,0 +1,18 @@
+add_executable(${PROJECT_SHORTNAME}
+    controller_window.cpp
+    controller_window.h
+    cube_info.h
+    main.cpp
+    sc26re_input.cpp
+    sc26re_input.h
+    model.cpp
+    model.h
+    settings_window.cpp
+    settings_window.h
+    settings.cpp
+    settings.h
+    shader_source.h
+    shader.cpp
+    shader.h
+    shaders.h
+)

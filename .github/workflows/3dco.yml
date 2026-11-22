@@ -1,0 +1,70 @@
+name: 3dco
+
+# 3D Controller Overlay, sc26re edition (3dco/): a Windows build put on the "3dco-sc26re"
+# pre-release (replaced on every build).
+on:
+  push:
+    branches: [master]
+    paths: ['3dco/**', '.github/workflows/3dco.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: 3dco
+  cancel-in-progress: true
+
+env:
+  VCPKG_BINARY_SOURCES: "clear;files,${{ github.workspace }}/vcpkg_cache,readwrite"
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: TheMrMilchmann/setup-msvc-dev@v4
+        with:
+          arch: x64
+      - uses: actions/checkout@v4
+      - name: Restore vcpkg cache
+        id: cache-vcpkg
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ github.workspace }}/vcpkg_cache
+          key: vcpkg-3dco-x64-windows-static-release
+      - name: Configure
+        shell: pwsh
+        run: >-
+          cmake -S 3dco -B build
+          -DCMAKE_BUILD_TYPE=Release
+          -DCMAKE_TOOLCHAIN_FILE="${env:VCPKG_INSTALLATION_ROOT}/scripts/buildsystems/vcpkg.cmake"
+          -DVCPKG_TARGET_TRIPLET=x64-windows-static-release
+          -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded
+      - name: Build
+        run: cmake --build build --config Release
+      - name: Package
+        shell: pwsh
+        run: |
+          cd build
+          cpack
+          Get-ChildItem *.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: 3dco-sc26re
+          path: build/*.zip
+      - name: Pre-release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          zip=$(ls build/*.zip | head -1)
+          cp "$zip" 3dco-sc26re-windows.zip
+          gh release view 3dco-sc26re >/dev/null 2>&1 || gh release create 3dco-sc26re --prerelease --latest=false --target "$GITHUB_SHA" \
+            --title "3D Controller Overlay — sc26re edition (Windows)" --notes-file 3dco/RELEASE.md
+          gh release upload 3dco-sc26re 3dco-sc26re-windows.zip --clobber
+      - name: Save vcpkg cache
+        if: always() && steps.cache-vcpkg.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ github.workspace }}/vcpkg_cache
+          key: vcpkg-3dco-x64-windows-static-release
