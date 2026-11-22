@@ -474,6 +474,21 @@ function parseMenu(b) {
   return o;
 }
 function toast(text) { const t = $("#toast"); t.style.top = $("#toastY").value + "%"; t.textContent = text; t.classList.add("on"); toastT = performance.now(); }
+/* the overlay app's update check: which firmware the controller runs (once per connection) */
+(async function versionLoop() {
+  if (!window.sc26reApp || !sc26reApp.firmware) return;
+  let told = false;
+  for (;;) {
+    await new Promise(r => setTimeout(r, told ? 5000 : 2000));
+    if (!devs.length) { told = false; continue; }
+    if (told) continue;
+    let b; try { b = await readPath("sc26re/version"); } catch (e) { continue; }
+    /* empty: a firmware before this path (v51.1 or older) */
+    const rel = b.length > 4 ? new TextDecoder().decode(b.subarray(4)) : "";
+    sc26reApp.firmware({ release: /^v\d/.test(rel) ? rel : "", build: b.length >= 4 ? new DataView(b.buffer, b.byteOffset).getUint32(0, true) : 0 });
+    told = true;
+  }
+})();
 (async function menuLoop() {
   for (;;) {
     if (!devs.length || (!$("#menuOn").checked && !$("#toastOn").checked) || menuOk === false) { await new Promise(r => setTimeout(r, menuOk === false ? 3000 : 250)); if (menuOk === false && devs.length) menuOk = null; continue; }

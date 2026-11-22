@@ -29,6 +29,12 @@
 #include "power.h"
 
 /* Report meter: stick/grip capacitive thresholds (live via STAGE, saved via COMMIT). */
+#ifndef SC26RE_RELEASE
+#define SC26RE_RELEASE "v0" /* the simulator */
+#endif
+#ifndef CONFIG_IBEX_BUILD_TIMESTAMP
+#define CONFIG_IBEX_BUILD_TIMESTAMP 0
+#endif
 #define SC26RE_CAPSENSE_PATH "sc26re/capsense"
 #include "haptics.h"
 
@@ -561,6 +567,15 @@ bool valve_settings_read(const char *path, uint8_t *buf, size_t capacity, size_t
 	if(sc26re_cfg_path(path))
 	{
 		return sc26re_cfg_read(path, buf, capacity, len);
+	}
+	if(strcmp(path, "sc26re/version") == 0 && capacity >= 4 + sizeof(SC26RE_RELEASE))
+	{
+		/* build id, then the release this build belongs to ("v51.2"): the overlay app's
+		 * update check */
+		sys_put_le32((uint32_t)CONFIG_IBEX_BUILD_TIMESTAMP, buf);
+		memcpy(&buf[4], SC26RE_RELEASE, sizeof(SC26RE_RELEASE) - 1);
+		*len = 4 + sizeof(SC26RE_RELEASE) - 1;
+		return true;
 	}
 	if(strcmp(path, "sc26re/host") == 0 && capacity >= 4)
 	{

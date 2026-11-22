@@ -5,4 +5,6 @@ contextBridge.exposeInMainWorld("sc26reApp", {
   edit: on => ipcRenderer.send("edit", !!on),
   /* the remapper's Arrange button: arranges the overlay over the screen */
   arrange: () => ipcRenderer.send("arrange"),
+  /* the overlay page tells which firmware the connected controller runs (update check) */
+  firmware: info => ipcRenderer.send("firmware", info),
 });
