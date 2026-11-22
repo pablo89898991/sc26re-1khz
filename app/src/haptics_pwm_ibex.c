@@ -1933,8 +1933,25 @@ int haptics_backend_effect(const struct haptics_effect *effect)
 	switch(effect->type)
 	{
 		case HAPTICS_EFFECT_STOP:
-			/* OFW routes generic OFF through cleanup slot 9 and does not interrupt active slots. */
+		{
+			/*
+			 * OFW routes generic OFF through cleanup slot 9 and does not interrupt active
+			 * slots. Then a long host tone (the RC car page asks for 32.7 s tones and stops
+			 * them with this OFF) kept playing after the stop. Stop the long synthesized
+			 * slots on these outputs; short ticks and clicks finish by themselves.
+			 */
+			static const enum ibex_haptics_effect_slot slots[] = {
+				IBEX_HAPTICS_SLOT_LFO_TONE,
+				IBEX_HAPTICS_SLOT_RANDOM_LFO,
+				IBEX_HAPTICS_SLOT_LOG_SWEEP,
+			};
+
+			for(size_t i = 0; i < ARRAY_SIZE(slots); ++i)
+			{
+				(void)submit_channels(effect->channels, slots[i], apply_stop, NULL, 0);
+			}
 			return 0;
+		}
 		case HAPTICS_EFFECT_STOP_PCM:
 			return submit_channels(effect->channels, IBEX_HAPTICS_SLOT_PCM, apply_stop, NULL, 0);
 		case HAPTICS_EFFECT_BUTTON_PULSE:
