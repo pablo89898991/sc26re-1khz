@@ -1094,10 +1094,10 @@ static bool handle_host_poll(const struct valve_esb_payload *payload)
 			}
 			case ESB_APP_HAPTICS:
 			{
-				if(haptics_handle_output_report(0, body, body_len) != 0)
-				{
-					return false;
-				}
+				/* A haptic report that cannot be played (queue full, unknown id) must not
+				 * drop the rest of the packet: a stop right behind it would be lost and
+				 * the motors kept running. The packet itself was received fine. */
+				(void)haptics_handle_output_report(0, body, body_len);
 				break;
 			}
 		}

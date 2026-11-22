@@ -38,6 +38,13 @@ LOG_MODULE_REGISTER(haptics);
 #define HAPTICS_CLICK_FREQUENCY_HZ 699
 #define HAPTICS_RUMBLE_CARRIER_FREQUENCY_HZ 65
 #define HAPTICS_RUMBLE_DURATION_MS 100
+/*
+ * Longest tone / sweep a host report may ask for. Steam's effects are short; apps that play
+ * continuously (Haptics Singer, the RC car page: 32.7 s tones refreshed every 20 ms) keep
+ * resending. A stop lost on the way, or an app that dies, then ends within this time instead
+ * of the motors running for half a minute.
+ */
+#define HAPTICS_HOST_MAX_DURATION_MS 3000U
 #define HAPTICS_RUMBLE_RIGHT_RANDOM_RATE_MIN_HZ 4.0f
 #define HAPTICS_RUMBLE_RIGHT_RANDOM_RATE_RANGE_HZ 73.0f
 #define HAPTICS_RUMBLE_LEFT_LFO_RATE_MIN_HZ 2.0f
@@ -871,6 +878,15 @@ static int haptics_submit_effect_raw(const struct haptics_effect *effect)
 	}
 
 	err = k_msgq_put(msgq, effect, K_NO_WAIT);
+	if(err && (effect->type == HAPTICS_EFFECT_STOP || effect->type == HAPTICS_EFFECT_STOP_PCM))
+	{
+		/* A stop is never dropped: the effects still waiting are older than it, so
+		 * make room by discarding the oldest one. */
+		struct haptics_effect old;
+
+		(void)k_msgq_get(msgq, &old, K_NO_WAIT);
+		err = k_msgq_put(msgq, effect, K_NO_WAIT);
+	}
 	if(err)
 	{
 		atomic_inc(&haptics_effects_queue_busy);
@@ -1767,7 +1783,7 @@ static int handle_haptic_lfo_tone(const uint8_t *data, size_t len, bool log)
 
 	channels = haptics_redirect_channels(haptics_command_channels(data[0]), false, false);
 	frequency_hz = sys_get_le16(&data[2]);
-	duration_ms = sys_get_le16(&data[4]);
+	duration_ms = MIN(sys_get_le16(&data[4]), HAPTICS_HOST_MAX_DURATION_MS);
 	if(log)
 	{
 		LOG_INF("haptics lfo_tone side=0x%02x channels=%s gain_db=%d freq=%u duration_ms=%u "
@@ -1802,7 +1818,7 @@ static int handle_haptic_log_sweep(const uint8_t *data, size_t len, bool log)
 	}
 
 	channels = haptics_redirect_channels(haptics_command_channels(data[0]), false, false);
-	duration_ms = sys_get_le16(&data[2]);
+	duration_ms = MIN(sys_get_le16(&data[2]), HAPTICS_HOST_MAX_DURATION_MS);
 	start_frequency_hz = sys_get_le16(&data[4]);
 	end_frequency_hz = sys_get_le16(&data[6]);
 	if((data[0] & 0x7f) == 6)
