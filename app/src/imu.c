@@ -1980,6 +1980,21 @@ int imu_read_report(struct controller_report *report)
  * min..max check. Hand tremor is several deg/s; a still controller ~0.1.
  */
 #define GYRO_CAL_MAX_STDDEV 0.015f /* rad/s (~0.86 deg/s) */
+/*
+ * v51.3: "moved" is judged on 50 ms averages. Some controllers show fast noise of
+ * 1-2 deg/s on one axis while lying still (seen after long strong rumble), which
+ * failed the per-sample test above forever (the calibration beeped in a loop) although
+ * the average, the bias, is fine. A hand or a turn moves the 50 ms averages; the fast
+ * noise averages out. The per-sample spread is still capped, for shaking.
+ */
+#define GYRO_CAL_BLOCK 50
+#define GYRO_CAL_MAX_BLOCK_STDDEV 0.006f /* rad/s (~0.34 deg/s) */
+#define GYRO_CAL_MAX_RAW_STDDEV 0.07f    /* rad/s (~4 deg/s) */
+static float gyro_cal_block_sum[3];
+static uint32_t gyro_cal_block_n;
+static uint32_t gyro_cal_blocks;
+static double gyro_cal_bsum[3];
+static double gyro_cal_bsumsq[3];
 static atomic_t gyro_cal_active;
 /* 0 = idle, 1 = measuring, 2 = saved, 3 = moved (old bias kept), 4 = save failed */
 static atomic_t gyro_cal_state;
@@ -2027,17 +2042,29 @@ static void gyro_cal_sample(const float gyro[3])
 	{
 		return;
 	}
-	if(gyro_cal_auto)
+	for(size_t i = 0; i < 3; ++i)
+	{
+		gyro_cal_block_sum[i] += gyro[i];
+	}
+	if(++gyro_cal_block_n >= GYRO_CAL_BLOCK)
 	{
 		for(size_t i = 0; i < 3; ++i)
 		{
-			if(fabsf(gyro[i] - gyro_bias[i]) > GYRO_AUTO_ABORT_RATE)
+			float m = gyro_cal_block_sum[i] / (float)GYRO_CAL_BLOCK;
+
+			/* the automatic one gives up as soon as a 50 ms average shows a turn */
+			if(gyro_cal_auto && fabsf(m - gyro_bias[i]) > GYRO_AUTO_ABORT_RATE)
 			{
 				atomic_set(&gyro_cal_active, 0);
 				atomic_set(&gyro_cal_state, 3);
 				return;
 			}
+			gyro_cal_bsum[i] += (double)m;
+			gyro_cal_bsumsq[i] += (double)m * (double)m;
+			gyro_cal_block_sum[i] = 0.0f;
 		}
+		gyro_cal_block_n = 0;
+		gyro_cal_blocks++;
 	}
 	for(size_t i = 0; i < 3; ++i)
 	{
@@ -2087,7 +2114,18 @@ static void gyro_cal_work_handler(struct k_work *work)
 		gyro_cal_std_mdps[i] = (int16_t)CLAMP((int32_t)(sd * mdps_per_rad), 0, INT16_MAX);
 		gyro_cal_spread_mdps[i] = (int16_t)CLAMP(
 		    (int32_t)((gyro_cal_max[i] - gyro_cal_min[i]) * mdps_per_rad), 0, INT16_MAX);
-		if(sd > GYRO_CAL_MAX_STDDEV)
+		if(gyro_cal_blocks > 1)
+		{
+			double bm = gyro_cal_bsum[i] / (double)gyro_cal_blocks;
+			double bvar = gyro_cal_bsumsq[i] / (double)gyro_cal_blocks - bm * bm;
+			float bsd = bvar > 0.0 ? sqrtf((float)bvar) : 0.0f;
+
+			if(bsd > GYRO_CAL_MAX_BLOCK_STDDEV || sd > GYRO_CAL_MAX_RAW_STDDEV)
+			{
+				moved = true;
+			}
+		}
+		else if(sd > GYRO_CAL_MAX_STDDEV)
 		{
 			moved = true;
 		}
@@ -2142,6 +2180,11 @@ static int gyro_cal_start(bool automatic)
 	gyro_cal_auto = automatic;
 	memset(gyro_cal_sum, 0, sizeof(gyro_cal_sum));
 	memset(gyro_cal_sumsq, 0, sizeof(gyro_cal_sumsq));
+	memset(gyro_cal_block_sum, 0, sizeof(gyro_cal_block_sum));
+	memset(gyro_cal_bsum, 0, sizeof(gyro_cal_bsum));
+	memset(gyro_cal_bsumsq, 0, sizeof(gyro_cal_bsumsq));
+	gyro_cal_block_n = 0;
+	gyro_cal_blocks = 0;
 	gyro_cal_n = 0;
 	atomic_set(&gyro_cal_state, 1);
 	atomic_set(&gyro_cal_active, 1);
