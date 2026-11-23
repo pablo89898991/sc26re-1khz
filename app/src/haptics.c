@@ -699,6 +699,8 @@ void haptics_trigger_update(int16_t left, int16_t right)
  */
 /* set when the last redirect moved an effect to a grip because a trigger was in use */
 static bool trigger_redirect_pending;
+/* set when the last redirect asked for "both" (grips and trackpads): see haptics_submit_effect() */
+static bool split_both_pending;
 
 /*
  * Steam's trigger haptics (soft/full pull) are PULSE reports (on 600 us) to the trackpad of the
@@ -730,6 +732,7 @@ int haptics_host_log(uint8_t *buf, size_t cap)
 static uint8_t haptics_redirect_channels(uint8_t channels, bool trigger_pulse, bool gyro_tick)
 {
 	trigger_redirect_pending = false;
+	split_both_pending = false;
 #if CONFIG_IBEX_HAPTICS_TRIGGERS_ON_GRIPS
 	/* trig_haptic (v51.4): Steam's trigger haptics (pulses aimed at a trackpad while its trigger
 	 * is pulled) on 0 the grips, 1 the trackpads (Valve's firmware), 2 both; whatever the grips
@@ -747,6 +750,7 @@ static uint8_t haptics_redirect_channels(uint8_t channels, bool trigger_pulse, b
 			{
 				out = (uint8_t)((out & ~pad[i]) | haptics_place_channels(place, pad[i]));
 				trigger_redirect_pending = place != 1;
+				split_both_pending |= place == 2;
 			}
 		}
 		channels = out;
@@ -758,6 +762,7 @@ static uint8_t haptics_redirect_channels(uint8_t channels, bool trigger_pulse, b
 	if(gyro_tick && (int32_t)(atomic_get(&gyro_haptic_until_ms) - (int32_t)k_uptime_get_32()) > 0)
 	{
 		channels = haptics_place_channels(sc26re_cfg_get(SC26RE_CFG_GYRO_HAPTIC_AT), channels);
+		split_both_pending |= sc26re_cfg_get(SC26RE_CFG_GYRO_HAPTIC_AT) == 2;
 	}
 #endif
 	hl_out = channels;
@@ -869,8 +874,38 @@ static const char *haptics_effect_name(enum haptics_effect_type type)
 
 static int haptics_submit_effect_raw(const struct haptics_effect *effect);
 
+static int haptics_submit_effect_raw(const struct haptics_effect *effect);
+/* "both" from Steam's trigger / gyro haptics (v51.4 test 12): the grips now, the trackpads 80 ms
+ * later; played together the grips are not felt */
+static struct haptics_effect both_later;
+
+static void both_later_handler(struct k_work *work)
+{
+	ARG_UNUSED(work);
+	(void)haptics_submit_effect_raw(&both_later);
+}
+
+static K_WORK_DELAYABLE_DEFINE(both_later_work, both_later_handler);
+
 static int haptics_submit_effect(const struct haptics_effect *effect)
 {
+	const uint8_t grips = HAPTICS_CHANNEL_LEFT_1 | HAPTICS_CHANNEL_RIGHT_1;
+
+	if(split_both_pending)
+	{
+		split_both_pending = false;
+		if(effect->type != HAPTICS_EFFECT_STOP && effect->type != HAPTICS_EFFECT_STOP_PCM &&
+		   (effect->channels & grips) != 0 && (effect->channels & HAPTICS_CHANNELS_PRIMARY) != 0)
+		{
+			struct haptics_effect now = *effect;
+
+			both_later = *effect;
+			both_later.channels &= HAPTICS_CHANNELS_PRIMARY;
+			now.channels &= (uint8_t)~HAPTICS_CHANNELS_PRIMARY;
+			(void)k_work_reschedule(&both_later_work, K_MSEC(80));
+			return haptics_submit_effect(&now);
+		}
+	}
 #if CONFIG_IBEX_HAPTICS_TRIGGERS_ON_GRIPS && CONFIG_IBEX_HAPTICS_TRIGGER_GRIP_BOOST_DB != 0
 	if(trigger_redirect_pending &&
 	   (effect->channels & (HAPTICS_CHANNEL_LEFT_1 | HAPTICS_CHANNEL_RIGHT_1)) != 0)
