@@ -648,6 +648,34 @@ void haptics_gyro_update(int16_t gx, int16_t gy, int16_t gz)
 
 void haptics_trigger_update(int16_t left, int16_t right)
 {
+	{
+		/* trig_fw_haptic (v51.4): the firmware's own trigger haptics, without Steam: a tick /
+		 * click / strong pulse when a trigger reaches trig_fw_point % (back below it - 8 %
+		 * re-arms), where trig_haptic says */
+		static bool past[2];
+		int16_t lvl = sc26re_cfg_get(SC26RE_CFG_TRIG_FW_HAPTIC);
+		int32_t pt = (int32_t)INT16_MAX * sc26re_cfg_get(SC26RE_CFG_TRIG_FW_POINT) / 100;
+		int32_t rel = (int32_t)INT16_MAX * MAX(sc26re_cfg_get(SC26RE_CFG_TRIG_FW_POINT) - 8, 1) / 100;
+		const int16_t v[2] = { left, right };
+		static const uint8_t pad[2] = { HAPTICS_CHANNEL_LEFT_0, HAPTICS_CHANNEL_RIGHT_0 };
+
+		for(int i = 0; i < 2; ++i)
+		{
+			if(!past[i] && v[i] >= pt)
+			{
+				past[i] = true;
+				if(lvl > 0)
+				{
+					(void)haptics_play_feedback((uint8_t)lvl,
+					                            haptics_place_channels(sc26re_cfg_get(SC26RE_CFG_TRIG_HAPTIC), pad[i]));
+				}
+			}
+			else if(past[i] && v[i] < rel)
+			{
+				past[i] = false;
+			}
+		}
+	}
 #if CONFIG_IBEX_HAPTICS_TRIGGERS_ON_GRIPS
 	int32_t now = (int32_t)k_uptime_get_32();
 
@@ -682,48 +710,33 @@ static uint8_t haptics_redirect_channels(uint8_t channels, bool trigger_pulse, b
 {
 	trigger_redirect_pending = false;
 #if CONFIG_IBEX_HAPTICS_TRIGGERS_ON_GRIPS
-	/* trig_haptic: 0 grips unless the thumb is on that trackpad, 1 always the grips, 2 the trackpads */
-	int16_t trig_at = sc26re_cfg_get(SC26RE_CFG_TRIG_HAPTIC);
-
-	if(trigger_pulse && trig_at != 2)
+	/* trig_haptic (v51.4): Steam's trigger haptics (pulses aimed at a trackpad while its trigger
+	 * is pulled) on 0 the grips, 1 the trackpads (Valve's firmware), 2 both; whatever the grips
+	 * or the trackpads are touched */
+	if(trigger_pulse)
 	{
-	static const uint8_t pad[2] = { HAPTICS_CHANNEL_LEFT_0, HAPTICS_CHANNEL_RIGHT_0 };
-	static const uint8_t grip[2] = { HAPTICS_CHANNEL_LEFT_1, HAPTICS_CHANNEL_RIGHT_1 };
-	int32_t now = (int32_t)k_uptime_get_32();
+		static const uint8_t pad[2] = { HAPTICS_CHANNEL_LEFT_0, HAPTICS_CHANNEL_RIGHT_0 };
+		int16_t place = sc26re_cfg_get(SC26RE_CFG_TRIG_HAPTIC);
+		int32_t now = (int32_t)k_uptime_get_32();
+		uint8_t out = channels;
 
-	for(int i = 0; i < 2; ++i)
-	{
-		if((channels & pad[i]) != 0 &&
-		   (int32_t)(atomic_get(&trigger_haptic_until_ms[i]) - now) > 0 &&
-		   (trig_at == 1 || atomic_get(&trackpad_touched[i]) == 0))
+		for(int i = 0; i < 2; ++i)
 		{
-			channels = (channels & ~pad[i]) | grip[i];
-			trigger_redirect_pending = true;
+			if((channels & pad[i]) != 0 && (int32_t)(atomic_get(&trigger_haptic_until_ms[i]) - now) > 0)
+			{
+				out = (uint8_t)((out & ~pad[i]) | haptics_place_channels(place, pad[i]));
+				trigger_redirect_pending = place != 1;
+			}
 		}
-	}
+		channels = out;
 	}
 #endif
 #if CONFIG_IBEX_HAPTICS_GYRO_ON_GRIPS
-	/* gyro_haptic_at: 0 grips, 1 the trackpads (stock) */
-	if(gyro_tick && sc26re_cfg_get(SC26RE_CFG_GYRO_HAPTIC_AT) == 0)
+	/* gyro_haptic_at (v51.4): Steam's Rotational Haptics on 0 the grips, 1 the trackpads, 2 both,
+	 * while the controller turns, whatever is touched */
+	if(gyro_tick && (int32_t)(atomic_get(&gyro_haptic_until_ms) - (int32_t)k_uptime_get_32()) > 0)
 	{
-		static const uint8_t gpad[2] = { HAPTICS_CHANNEL_LEFT_0, HAPTICS_CHANNEL_RIGHT_0 };
-		static const uint8_t ggrip[2] = { HAPTICS_CHANNEL_LEFT_1, HAPTICS_CHANNEL_RIGHT_1 };
-		int32_t gnow = (int32_t)k_uptime_get_32();
-
-		if((int32_t)(atomic_get(&gyro_haptic_until_ms) - gnow) > 0)
-		{
-			for(int i = 0; i < 2; ++i)
-			{
-				bool pad_idle = atomic_get(&trackpad_touched[i]) == 0 ||
-				                gnow - (int32_t)atomic_get(&pad_moved_ms[i]) >= PAD_STILL_MS;
-
-				if((channels & gpad[i]) != 0 && pad_idle)
-				{
-					channels = (channels & ~gpad[i]) | ggrip[i];
-				}
-			}
-		}
+		channels = haptics_place_channels(sc26re_cfg_get(SC26RE_CFG_GYRO_HAPTIC_AT), channels);
 	}
 #endif
 	return channels;
@@ -1721,9 +1734,8 @@ static int handle_haptic_command(const uint8_t *data, size_t len, bool log)
 	{
 		bool gyro_tick = data[1] == HAPTIC_TYPE_TICK && is_gyro_level((int8_t)data[2]);
 
-		/* gyro_haptic_at 2: Steam's Rotational Haptics off (ticks at its gyro levels while the
-		 * controller turns are dropped) */
-		if(gyro_tick && sc26re_cfg_get(SC26RE_CFG_GYRO_HAPTIC_AT) == 2 &&
+		/* the firmware plays its own rotational haptics (gm_rot_haptic): Steam's are dropped */
+		if(gyro_tick && sc26re_cfg_get(SC26RE_CFG_GM_ROT_HAPTIC) > 0 &&
 		   (int32_t)(atomic_get(&gyro_haptic_until_ms) - (int32_t)k_uptime_get_32()) > 0)
 		{
 			return 0;
@@ -2268,6 +2280,20 @@ int haptics_play_beep(uint16_t frequency_hz, uint16_t duration_ms)
 	};
 
 	return haptics_submit_effect(&command);
+}
+
+uint8_t haptics_place_channels(int16_t place, uint8_t channels)
+{
+	uint8_t grips = ((channels & HAPTICS_CHANNEL_LEFT_0) ? HAPTICS_CHANNEL_LEFT_1 : 0) |
+	                ((channels & HAPTICS_CHANNEL_RIGHT_0) ? HAPTICS_CHANNEL_RIGHT_1 : 0);
+	uint8_t pads = channels & HAPTICS_CHANNELS_PRIMARY;
+
+	switch(place)
+	{
+		case 1: return channels;
+		case 2: return channels | grips;
+		default: return (uint8_t)((channels & ~pads) | grips);
+	}
 }
 
 /* remapper / gyro feedback: 1 tick, 2 click, 3 strong pulse */

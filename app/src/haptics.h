@@ -126,5 +126,8 @@ int haptics_play_drop_sound(void);
 int haptics_play_beep(uint16_t frequency_hz, uint16_t duration_ms);
 /* remapper / gyro feedback on the trackpad actuators: 1 tick, 2 click, 3 strong pulse */
 int haptics_play_feedback(uint8_t level, uint8_t channels);
+/* where a haptic goes by a place setting (0 grips, 1 trackpads, 2 both): channels on the trackpads
+ * (LEFT_0 / RIGHT_0) are moved or copied to the grips of the same side */
+uint8_t haptics_place_channels(int16_t place, uint8_t pad_channels);
 /* Xbox 360 output: rumble motors from the game, 0..255 */
 void haptics_xinput_rumble(uint8_t big, uint8_t small);

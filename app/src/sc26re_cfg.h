@@ -101,10 +101,12 @@ enum sc26re_cfg_id
 	SC26RE_CFG_GM_SPACE,       /* gyro mouse: 0 the axis settings (local), 1 player space, 2 world space */
 	SC26RE_CFG_GYRO_MODE,      /* IMU operating mode: 0 high-accuracy ODR (2000/4000/8000 Hz), 1 high-performance (1920/3840/7680 Hz) */
 	SC26RE_CFG_GRIP_DRIFT,     /* grip hands-off drift tracking: the most it may absorb, % of the touch level (0 = off) */
-	SC26RE_CFG_TRIG_HAPTIC,    /* Steam trigger haptics: 0 grips unless the thumb is on that trackpad, 1 always the grips, 2 the trackpads (stock) */
-	SC26RE_CFG_GYRO_HAPTIC_AT, /* gyro haptics (Steam's rotational ones and the gyro mouse's): 0 grips, 1 trackpads, 2 Steam's off */
+	SC26RE_CFG_TRIG_HAPTIC,    /* trigger haptics (Steam's and the firmware's): 0 grips, 1 trackpads, 2 both */
+	SC26RE_CFG_GYRO_HAPTIC_AT, /* gyro haptics (Steam's rotational ones and the gyro mouse's): 0 grips, 1 trackpads, 2 both */
 	SC26RE_CFG_GM_ROT_HAPTIC,  /* gyro mouse: a tick while turning, 0 off, 1 light, 2 click, 3 strong */
 	SC26RE_CFG_GM_ROT_DEG,     /* gyro mouse: degrees of turn per tick */
+	SC26RE_CFG_TRIG_FW_HAPTIC, /* the firmware's own trigger haptics: 0 off, 1 tick, 2 click, 3 strong */
+	SC26RE_CFG_TRIG_FW_POINT,  /* ... played when a trigger reaches this % */
 	SC26RE_CFG_COUNT,
 };
 

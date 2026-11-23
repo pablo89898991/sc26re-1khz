@@ -233,6 +233,7 @@ void sim_host(int32_t *out)
 	memcpy(&out[7], host_kbd, 8);
 }
 int haptics_play_feedback(uint8_t level, uint8_t channels) { ev("H %u %u", level, channels); return 0; }
+uint8_t haptics_place_channels(int16_t place, uint8_t c) { uint8_t g = ((c & 1) ? 4 : 0) | ((c & 2) ? 8 : 0); return place == 1 ? c : place == 2 ? (c | g) : ((c & ~3) | g); }
 int haptics_play_beep(uint16_t f, uint16_t ms) { ev("B %u %u", f, ms); return 0; }
 static struct rgbw_color led;
 void rgbw_led_set(struct rgbw_color c) { led = c; ev("L %u %u %u", c.r, c.g, c.b); }

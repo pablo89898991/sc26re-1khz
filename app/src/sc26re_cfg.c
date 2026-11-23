@@ -123,6 +123,8 @@ static const struct cfg_desc descs[SC26RE_CFG_COUNT] = {
 	[SC26RE_CFG_GYRO_HAPTIC_AT] = { "gyro_haptic_at", 0, 0, 2, NO_REGISTRY, 1 },
 	[SC26RE_CFG_GM_ROT_HAPTIC] = { "gm_rot_haptic", 0, 0, 3, NO_REGISTRY, 1 },
 	[SC26RE_CFG_GM_ROT_DEG] = { "gm_rot_deg", 5, 1, 45, NO_REGISTRY, 1 },
+	[SC26RE_CFG_TRIG_FW_HAPTIC] = { "trig_fw_haptic", 0, 0, 3, NO_REGISTRY, 1 },
+	[SC26RE_CFG_TRIG_FW_POINT] = { "trig_fw_point", 85, 10, 99, NO_REGISTRY, 1 },
 };
 
 static int16_t values[SC26RE_CFG_COUNT];

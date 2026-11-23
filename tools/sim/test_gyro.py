@@ -134,7 +134,7 @@ s = gsim(p, gm_enabled=1, gm_act_button=-1, gm_act_mode=0, gm_smooth=50, gm_axis
 s.lib.sim_gyro(0, 2, 0); a = s.run(400).mouse(); s.lib.sim_gyro(0, 0, 0); s.run(400)
 check("precision smoothing: a slow turn still moves, nothing left moving after it", sum(abs(m[1]) for m in a) > 0 and mv(s.run(300)) == 0)
 # rotational haptics (v51.4): a tick every gm_rot_deg degrees of turn, grips by default
-for at, chans in ((0, 0x0C), (1, 0x03)):
+for at, chans in ((0, 0x0C), (1, 0x03), (2, 0x0F)):
     p = Profile(); p.bind("A", key("a"))
     s = gsim(p, gm_enabled=1, gm_act_button=-1, gm_act_mode=0, gm_rot_haptic=2, gm_rot_deg=5, gyro_haptic_at=at)
     s.lib.sim_gyro(0, 100, 0)
@@ -144,4 +144,11 @@ p = Profile(); p.bind("A", key("a"))
 s = gsim(p, gm_enabled=1, gm_act_button=-1, gm_act_mode=0, gm_rot_haptic=0)
 s.lib.sim_gyro(0, 100, 0)
 check("rotational haptics off by default", not s.run(300).haptics())
+p = Profile(); p.bind("A", key("a"))
+s = gsim(p, gm_enabled=1, gm_act_button=20, gm_act_mode=1, gm_rot_haptic=1)
+s.lib.sim_gyro(0, 100, 0)
+check("rotational haptics: none while the gyro mouse is on but not active", not s.run(300).haptics())
+s = gsim(p, gm_enabled=0, gm_rot_haptic=1)
+s.lib.sim_gyro(0, 100, 0)
+check("rotational haptics without the gyro mouse (gyro to Steam)", len(s.run(300).haptics()) >= 4)
 print("\n%d passed, %d failed" % (ok, fail))
