@@ -11,7 +11,6 @@ static int64_t now_ms; static int64_t k_uptime_get(void){return now_ms;}
 enum {SC26RE_CFG_GRIP_DRIFT}; static int cfg=60; static int sc26re_cfg_get(int id){return cfg;}
 struct olympus_pad_state { bool grip_touched; int32_t grip_rest_x16; int64_t grip_band_since_ms; int64_t grip_rest_at_ms; };
 #define GRIP_REST_UP_SHIFT 12      /* rest level moves (reading - rest) / 4096 per ms up: half way in ~2.8 s */
-#define GRIP_STUCK_MS 8000
 
 static int32_t grip_drift_update(struct olympus_pad_state *state, int32_t value,
                                  int32_t touch, int32_t release)
@@ -48,24 +47,9 @@ static int32_t grip_drift_update(struct olympus_pad_state *state, int32_t value,
 		}
 		state->grip_band_since_ms = 0;
 	}
-	else if(value - rest <= touch)
-	{
-		/* on, but below the touch level: a hand, or drift held by the hysteresis */
-		if(state->grip_band_since_ms == 0)
-		{
-			state->grip_band_since_ms = now;
-		}
-		else if(now - state->grip_band_since_ms >= GRIP_STUCK_MS)
-		{
-			state->grip_rest_x16 = MAX(value, 0) * 16;
-			state->grip_touched = false;
-			state->grip_band_since_ms = 0;
-		}
-	}
-	else
-	{
-		state->grip_band_since_ms = 0;
-	}
+	/* v51.4 test 3: no "stuck for 8 s" release any more. A light real grip reads between the release
+	 * and the touch level too, so the grip turned off under the hand after 8 s (and Steam then
+	 * moved the trigger haptics from the grips to the trackpads). */
 	state->grip_rest_x16 = CLAMP(state->grip_rest_x16, 0, cap_x16);
 	ARG_UNUSED(release);
 	return state->grip_rest_x16 / 16;
@@ -80,7 +64,7 @@ int main(){
  printf("drift test: stuck samples %d, missed-grab samples %d, rest %d\n", stuck, missed, st.grip_rest_x16/16);
  /* 2: steady hand 60 s at 1000 */
  st=(struct olympus_pad_state){0}; int off=0; for(now_ms=0; now_ms<60000; now_ms+=4){ bool on=step(1000); if(now_ms>100 && !on) off++; } printf("hold 60 s: off samples %d\n", off);
- /* 3: hand at 1000 but light grip 850 (between release and touch) held 60 s: released after 8 s? */
+ /* 3 (v51.4 test 3: must stay on now): hand at 1000 but light grip 850 (between release and touch) held 60 s: released after 8 s? */
  st=(struct olympus_pad_state){0}; for(now_ms=0; now_ms<200; now_ms+=4) step(1000); int offl=-1; for(; now_ms<60000; now_ms+=4){ if(!step(850) && offl<0) offl=(int)now_ms; } printf("light 850 after grab: off at %d ms\n", offl);
  /* 4: hand approaching slowly: 0 -> 1000 over 1 s */
  st=(struct olympus_pad_state){0}; int onat=-1; for(now_ms=0; now_ms<3000; now_ms+=4){ int v= now_ms<1000? (int)(now_ms) : 1000; if(step(v)&&onat<0) onat=(int)now_ms; } printf("slow approach 1 s: on at %d ms, rest %d\n", onat, st.grip_rest_x16/16);

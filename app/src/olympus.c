@@ -427,13 +427,9 @@ static int16_t grip_raw_for_source_state(int16_t raw)
  *    above it (a hand comes in faster and higher), and at most grip_drift % of the touch
  *    level (default 60);
  *  - the touch and release levels are measured above that rest level;
- *  - a grip that stays on for 8 s while the reading sits between the release and the touch
- *    level (a hand reads well above the touch level) is drift: the rest level takes the
- *    reading and the grip turns off.
  * grip_drift = 0 turns all of this off (stock behaviour).
  */
 #define GRIP_REST_UP_SHIFT 12      /* rest level moves (reading - rest) / 4096 per ms up: half way in ~2.8 s */
-#define GRIP_STUCK_MS 8000
 
 static int32_t grip_drift_update(struct olympus_pad_state *state, int32_t value,
                                  int32_t touch, int32_t release)
@@ -470,24 +466,9 @@ static int32_t grip_drift_update(struct olympus_pad_state *state, int32_t value,
 		}
 		state->grip_band_since_ms = 0;
 	}
-	else if(value - rest <= touch)
-	{
-		/* on, but below the touch level: a hand, or drift held by the hysteresis */
-		if(state->grip_band_since_ms == 0)
-		{
-			state->grip_band_since_ms = now;
-		}
-		else if(now - state->grip_band_since_ms >= GRIP_STUCK_MS)
-		{
-			state->grip_rest_x16 = MAX(value, 0) * 16;
-			state->grip_touched = false;
-			state->grip_band_since_ms = 0;
-		}
-	}
-	else
-	{
-		state->grip_band_since_ms = 0;
-	}
+	/* v51.4 test 3: no "stuck for 8 s" release any more. A light real grip reads between the release
+	 * and the touch level too, so the grip turned off under the hand after 8 s (and Steam then
+	 * moved the trigger haptics from the grips to the trackpads). */
 	state->grip_rest_x16 = CLAMP(state->grip_rest_x16, 0, cap_x16);
 	ARG_UNUSED(release);
 	return state->grip_rest_x16 / 16;
