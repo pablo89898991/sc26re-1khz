@@ -38,10 +38,14 @@ LOG_MODULE_REGISTER(puck_interface);
 #define PUCK_FRAME_IDLE_TIMEOUT_MS 1000
 #define PUCK_IDLE_TIMEOUTS_BEFORE_INACTIVE 2
 #define PUCK_THREAD_STACK_SIZE 2048
-/* v51.4: below the report, radio and input threads. At 9 (the radio's priority) the busy-wait
- * UART transmit (75 bytes, ~6.5 ms at 115200) and the frame search held the report and radio
- * threads back while the controller lay on the Puck: the controller lagged. */
-#define PUCK_THREAD_PRIORITY 14
+/* Starts at 9 as before: at power-on the first Puck frames must be read while main() still
+ * initialises, or the start on the Puck misses the contact and powers on fully instead of the
+ * charge-only mode (v51.4 test 13-17). After the first seconds it drops below the report, radio
+ * and input threads (v51.4): at 9 the busy-wait UART transmit (75 bytes, ~6.5 ms at 115200) held
+ * them back while the controller lay on the Puck and the controller lagged. */
+#define PUCK_THREAD_PRIORITY 9
+#define PUCK_THREAD_PRIORITY_RUNNING 14
+#define PUCK_THREAD_BOOT_MS 5000
 #define PUCK_OFW_MAGIC 0x69fe17ffu
 
 struct puck_frame_reader
@@ -327,9 +331,18 @@ static void puck_thread_entry(void *p1, void *p2, void *p3)
 	ARG_UNUSED(p2);
 	ARG_UNUSED(p3);
 
+	bool lowered = false;
+
 	for(;;)
 	{
-		int err = puck_read_frame(&reader, frame, timeout);
+		int err;
+
+		if(!lowered && k_uptime_get() > PUCK_THREAD_BOOT_MS)
+		{
+			k_thread_priority_set(k_current_get(), PUCK_THREAD_PRIORITY_RUNNING);
+			lowered = true;
+		}
+		err = puck_read_frame(&reader, frame, timeout);
 
 		if(err == -ETIMEDOUT)
 		{
