@@ -121,9 +121,12 @@ function yawStep(dt) {
 
 /* ---------- three.js scene (model space: cm, +x right, +y out of the face, +z towards the grips) ---------- */
 const view = $("#view");
-const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: false });
+/* quality "light": no edge smoothing (MSAA) and the window's own resolution; changing it reloads */
+const LIGHT = ($("#quality") && $("#quality").value) === "light";
+const renderer = new THREE.WebGLRenderer({ antialias: !LIGHT, alpha: true, preserveDrawingBuffer: false });
 /* a sharper canvas than 1.5x costs a lot of GPU time for little gain; in the remapper's small box 1.25x */
-renderer.setPixelRatio(Math.min(devicePixelRatio, IN_TAB ? 1.25 : 1.5));
+renderer.setPixelRatio(LIGHT ? 1 : Math.min(devicePixelRatio, IN_TAB ? 1.25 : 1.5));
+$("#quality") && $("#quality").addEventListener("change", e => { if ((e.target.value === "light") !== LIGHT) setTimeout(() => location.reload(), 150); });
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 view.appendChild(renderer.domElement);
 const scene = new THREE.Scene();
