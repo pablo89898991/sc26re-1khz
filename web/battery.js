@@ -30,16 +30,19 @@
     return parts.join(" · ");
   }
   function color(x) { return !x ? "" : x.charging || x.full ? "#5fd38d" : x.pct <= 15 ? "#ff6b6b" : x.pct <= 30 ? "#ffcc66" : ""; }
-  /* read(path) -> Promise<Uint8Array>; calls show(info|null) now and every ms (default 30 s) */
+  /* read(path) -> Promise<Uint8Array>; calls show(info | null | undefined). Until the controller
+   * answers (page just opened, not connected yet) it asks every 2 s, then every ms (default 15 s). */
   function poll(read, show, ms) {
-    let busy = false;
+    let busy = false, timer = null, got = false;
     const tick = async () => {
       if (busy) return; busy = true;
-      /* null: the controller answered without a battery (older firmware); undefined: no answer */
-      try { show(decode(await read("sc26re/battery"))); } catch (e) { show(undefined); }
+      try { show(decode(await read("sc26re/battery"))); got = true; }
+      catch (e) { show(undefined); got = false; }
       busy = false;
+      timer = setTimeout(tick, got ? (ms || 15000) : 2000);
     };
-    tick(); return setInterval(tick, ms || 30000);
+    timer = setTimeout(tick, 300);
+    return { now: () => { clearTimeout(timer); tick(); } };
   }
   /* fills a <span>: text, tooltip, colour */
   function paint(el, x) {

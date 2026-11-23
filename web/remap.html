@@ -110,7 +110,7 @@
 <body>
 <div class="top">
   <div class="topin">
-    <div class="brand">SC2 <span class="hz">Remapper</span> <span class="note" id="pagever" title="page version — if it is older than expected, press Ctrl+F5">p.2026-11-23a</span></div>
+    <div class="brand">SC2 <span class="hz">Remapper</span> <span class="note" id="pagever" title="page version — if it is older than expected, press Ctrl+F5">p.2026-11-23b</span></div>
     <button class="primary" id="connect">Connect controller</button>
     <span id="status" class="chip">not connected</span>
     <span id="batt" class="chip" hidden></span>
@@ -1511,7 +1511,7 @@ $("#tCalStop").onclick=async()=>{ await tool(0xF0,"sc26re/gm_cal_stop","saved");
 $("#tCalCancel").onclick=()=>tool(0xF0,"sc26re/gm_cal_cancel","cancelled");
 render();
 
-/* battery chip (firmware v51.4+), every 30 s while connected */
+/* battery chip (firmware v51.4+), every 15 s while connected */
 SCB.poll(path=>devs.length?read(path):Promise.reject(new Error("no controller")), x=>SCB.paint($("#batt"),x));
 </script>
 </body>

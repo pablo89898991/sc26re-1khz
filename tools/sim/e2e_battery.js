@@ -9,13 +9,13 @@ const { chromium } = require('/opt/npm-tools/node_modules/playwright');
     await pg.addInitScript({ path: __dirname + '/webhid_shim.js' });
     await pg.addInitScript(() => { window.__bat = []; window.sc26reApp = { edit() {}, arrange() {}, firmware() {}, battery: i => window.__bat.push(i) }; });
     await pg.goto('http://127.0.0.1:8766/' + page + q);
-    await pg.evaluate(() => document.querySelector('#connect').click());
+    const tc = Date.now(); await pg.evaluate(() => document.querySelector('#connect').click());
     await pg.waitForFunction(() => { const b = document.getElementById('batt'); return b && !b.hidden && b.textContent; }, null, { timeout: 40000 }).catch(() => {});
     const r = await pg.evaluate(() => { const b = document.getElementById('batt'); return { text: b && b.textContent, title: b && b.title, hidden: b && b.hidden, app: window.__bat.filter(Boolean)[0] }; });
     let ok = r.text === '⚡ 76%' && /Battery 76% · charging · 4\.05 V · 500 mA · 24\.5 °C/.test(r.title) && !errs.length;
     if (page === 'overlay.html') ok = ok && r.app && r.app.pct === 76 && r.app.charging === true;
     if (!ok) fail++;
-    console.log((ok ? 'PASS ' : 'FAIL ') + page + ' ' + JSON.stringify(r) + (errs.length ? ' errors: ' + errs.join('; ') : ''));
+    console.log((ok ? 'PASS ' : 'FAIL ') + page + ' after ' + (Date.now() - tc) + ' ms ' + JSON.stringify(r) + (errs.length ? ' errors: ' + errs.join('; ') : ''));
     await pg.close();
   }
   await br.close(); process.exit(fail ? 1 : 0);

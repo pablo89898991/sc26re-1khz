@@ -1266,7 +1266,7 @@ function plot(){
 }
 requestAnimationFrame(draw);
 
-/* battery badge (firmware v51.4+), every 30 s while connected */
+/* battery badge (firmware v51.4+), every 15 s while connected */
 SCB.poll(path=>{ const d=ctl(); if(!d) return Promise.reject(new Error("no controller")); return featRead(d,path); }, x=>SCB.paint($("#batt"),x));
 </script>
 </body>

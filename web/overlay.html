@@ -480,7 +480,7 @@ function toast(text) { const t = $("#toast"); t.style.top = $("#toastY").value +
 SCB.poll(path => devs.length ? readPath(path) : Promise.reject(new Error("no controller")), x => {
   SCB.paint(document.getElementById("batt"), x);
   if (window.sc26reApp && sc26reApp.battery && x !== undefined) sc26reApp.battery(x ? { pct: x.pct, text: SCB.long(x), charging: x.charging } : null);
-}, 30000);
+});
 (async function versionLoop() {
   if (!window.sc26reApp || !sc26reApp.firmware) return;
   let told = false;
