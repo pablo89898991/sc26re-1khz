@@ -49,3 +49,7 @@ void rgbw_led_poll_settings(void);
 void rgbw_led_load_settings(void);
 /* scale the output (0..100 %) without changing the colour, for status blinking */
 void rgbw_led_set_indicator_level(uint8_t level);
+
+/* diagnosis: [0] last caller, [1] the different caller before it, [2] sets, [3] channel errors,
+ * [4] brightness << 8 | indicator level; *other = the colour before the last caller changed */
+void rgbw_led_debug(uint32_t out[5], struct rgbw_color *other);
