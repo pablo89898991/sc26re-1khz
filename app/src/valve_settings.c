@@ -630,6 +630,28 @@ bool valve_settings_read(const char *path, uint8_t *buf, size_t capacity, size_t
 		*len = 28;
 		return true;
 	}
+	if(strcmp(path, "sc26re/hapdbg") == 0 && capacity >= 48)
+	{
+		/* haptics counters (le32): effects submitted, queue busy, backend calls, backend errors,
+		 * play started, play suppressed, last play error, last played channels, grip: I2S
+		 * starts, blocks with sound, write errors, starts skipped */
+		struct haptics_debug h;
+		struct haptics_backend_debug b;
+		uint32_t g[4];
+
+		haptics_get_debug(&h);
+		(void)haptics_backend_get_debug(&b);
+		haptics_backend_grip_counters(g);
+		const uint32_t v[12] = { h.effects_submitted, h.effects_queue_busy, h.backend_calls, h.backend_errors,
+		                         b.play_started, b.play_suppressed, (uint32_t)b.last_play_err, b.last_play_channels,
+		                         g[0], g[1], g[2], g[3] };
+		for(size_t i = 0; i < 12; ++i)
+		{
+			sys_put_le32(v[i], &buf[i * 4]);
+		}
+		*len = 48;
+		return true;
+	}
 	if(strcmp(path, "sc26re/haplog") == 0 && capacity >= 56)
 	{
 		*len = (size_t)haptics_host_log(buf, MIN(capacity, 56));

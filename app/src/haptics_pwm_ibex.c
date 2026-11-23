@@ -1306,6 +1306,8 @@ static int secondary_recover_block(void *block)
 }
 
 static bool haptics_secondary_hold;
+/* v51.4 test 10: grip (I2S) output counters for sc26re/hapdbg */
+static atomic_t sec_starts, sec_blocks, sec_errs, sec_suppressed;
 
 static bool secondary_queue_full(int err)
 {
@@ -1323,11 +1325,16 @@ static int secondary_queue_block(uint32_t silence_frames)
 		return err;
 	}
 
-	if(!render_secondary_block((int16_t *)block, silence_frames) && !amplifier_forced_on() &&
-	   !haptics_secondary_hold)
+	bool sound = render_secondary_block((int16_t *)block, silence_frames);
+
+	if(!sound && !amplifier_forced_on() && !haptics_secondary_hold)
 	{
 		k_mem_slab_free(&haptics_i2s_slab, block);
 		return 0;
+	}
+	if(sound)
+	{
+		atomic_inc(&sec_blocks);
 	}
 
 	err = i2s_write(haptics_i2s, block, IBEX_HAPTICS_SECONDARY_BLOCK_BYTES);
@@ -1388,9 +1395,18 @@ static int secondary_write_block(void)
 			return err;
 		}
 		haptics_secondary_running = true;
+		atomic_inc(&sec_starts);
 	}
 
 	return 0;
+}
+
+void haptics_backend_grip_counters(uint32_t out[4])
+{
+	out[0] = (uint32_t)atomic_get(&sec_starts);
+	out[1] = (uint32_t)atomic_get(&sec_blocks);
+	out[2] = (uint32_t)atomic_get(&sec_errs);
+	out[3] = (uint32_t)atomic_get(&sec_suppressed);
 }
 
 static void haptics_primary_thread_main(void *arg1, void *arg2, void *arg3)
@@ -1478,6 +1494,7 @@ static void haptics_secondary_thread_main(void *arg1, void *arg2, void *arg3)
 		err = secondary_write_block();
 		if(err && !secondary_queue_full(err))
 		{
+			atomic_inc(&sec_errs);
 			atomic_inc(&haptics_play_suppressed);
 			atomic_set(&haptics_last_play_err, err);
 		}
@@ -1736,6 +1753,10 @@ static int submit_channels_start(uint8_t channels, enum ibex_haptics_effect_slot
 
 	if(play_channels != channels)
 	{
+		if((channels & ~play_channels & (HAPTICS_CHANNEL_LEFT_1 | HAPTICS_CHANNEL_RIGHT_1)) != 0)
+		{
+			atomic_inc(&sec_suppressed);
+		}
 		atomic_inc(&haptics_play_suppressed);
 	}
 	if(play_channels == 0)

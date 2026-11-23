@@ -100,6 +100,8 @@ void haptics_touchpad_update(bool right, bool pressure_active, bool touch_active
 int haptics_backend_init(void);
 int haptics_backend_effect(const struct haptics_effect *effect);
 int haptics_backend_get_debug(struct haptics_backend_debug *debug);
+/* grip output: I2S starts, blocks with sound, write errors, grip starts skipped (still sounding) */
+void haptics_backend_grip_counters(uint32_t out[4]);
 int haptics_backend_set_master_gain_db(int16_t gain_db);
 int haptics_backend_set_amplifier_mode(bool forced_on);
 int haptics_backend_pulse(void);
