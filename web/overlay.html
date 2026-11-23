@@ -61,6 +61,10 @@ if (IN_TAB) $("#ui").classList.add("hidden");
 /* ?app: the Windows overlay app's see-through window over the whole screen (always transparent; the
  * 3D controller starts small in the bottom-right corner) */
 const APP = QS.has("app");
+/* the app (1.4+) runs two windows: ?part=model, a small one only around the 3D controller, and
+ * ?part=menu, the whole screen, shown only while a radial / touch menu, the profile name or the
+ * arrange mode is on it. A see-through window over the whole screen costs the game a lot. */
+const PART = APP ? QS.get("part") || "" : "", MODEL_ONLY = PART === "model", MENU_ONLY = PART === "menu";
 const stored = OVS.read(SET_KEY);
 OVS.apply(document, Object.assign({}, IN_TAB ? OVS.tabDefaults : {}, APP ? OVS.appDefaults : {}, stored));
 function saveSet() { OVS.showVals(document); try { localStorage.setItem(SET_KEY, JSON.stringify(OVS.collect(document))); } catch (e) {} }
@@ -281,7 +285,7 @@ let natT = 0, natCount = 0, qNat = null;
 let rawAng = null, rawTs = null; /* the controller's orientation and the reply time seen last (null: start over) */
 const nativeOn = () => rawOk && $("#src").value === "raw" && performance.now() - rawFresh < NAT_GONE;
 function onReport(e) {
-  if (e.reportId !== 0x42) return; if (!ctlDev) ctlDev = e.device; if (e.device !== ctlDev) return;
+  if (MENU_ONLY || e.reportId !== 0x42) return; if (!ctlDev) ctlDev = e.device; if (e.device !== ctlDev) return;
   const d = e.data; if (d.byteLength < 51) return;
   const g = o => d.getInt16(o, true);
   const ts = d.getUint32(29, true); let dt = lastTs === null ? 0.001 : ((ts - lastTs) >>> 0) / 1e6; lastTs = ts; if (!(dt > 0 && dt < 0.05)) dt = 0.001;
@@ -310,7 +314,7 @@ navigator.hid && navigator.hid.getDevices().then(ds => ds.filter(d => d.vendorId
 navigator.hid && navigator.hid.addEventListener && navigator.hid.addEventListener("disconnect", e => { e.device.removeEventListener("inputreport", onReport); devs = devs.filter(d => d !== e.device); if (ctlDev === e.device) ctlDev = null; rawAng = rawTs = lastTs = null; if (!devs.length) $("#status").textContent = "disconnected"; });
 navigator.hid && navigator.hid.addEventListener && navigator.hid.addEventListener("connect", async e => { const d = e.device; if (d.vendorId !== 0x28de) return; try { if (!d.opened) await d.open(); rawAng = rawTs = null; addDev(d); } catch (err) {} });
 /* optional: gyro on without Steam (same as the report meter) */
-setInterval(async () => { if (!$("#imuOn").checked) return; for (const d of devs) { if (!d.collections.some(c => c.featureReports && c.featureReports.length)) continue;
+setInterval(async () => { if (MENU_ONLY || !$("#imuOn").checked) return; for (const d of devs) { if (!d.collections.some(c => c.featureReports && c.featureReports.length)) continue;
   const b = new Uint8Array(63); b[0] = 0x87; b[1] = 3; b[2] = 48; b[3] = 0x1C; try { await d.sendFeatureReport(1, b); } catch (e) {} } }, 2000);
 
 /* ---------- native source: the controller's physical state, polled (sc26re v51+) ---------- */
@@ -353,6 +357,7 @@ setInterval(() => { const n = rawN; rawN = 0; if (!devs.length) return;
     : rawOk ? '<span class="warn">connected · native reads paused, showing what Steam receives</span>'
     : '<span class="warn">connected · no native reads (firmware before v51, or blocked): showing what Steam receives</span>'; }, 1000);
 (async function rawLoop() {
+  if (MENU_ONLY) return;
   let fails = 0, levelT = 0, asked = 0;
   for (;;) {
     if (!devs.length || $("#src").value !== "raw") { rawAng = qNat = null; await new Promise(r => setTimeout(r, 200)); continue; }
@@ -481,11 +486,12 @@ function parseMenu(b) {
 function toast(text) { const t = $("#toast"); t.style.top = $("#toastY").value + "%"; t.textContent = text; t.classList.add("on"); toastT = performance.now(); }
 /* the overlay app's update check: which firmware the controller runs (once per connection) */
 /* battery: a badge on the page and, in the app, the tray icon's tooltip (firmware v51.4+) */
-SCB.poll(path => devs.length ? readPath(path) : Promise.reject(new Error("no controller")), x => {
+if (!MENU_ONLY) SCB.poll(path => devs.length ? readPath(path) : Promise.reject(new Error("no controller")), x => {
   SCB.paint(document.getElementById("batt"), x);
   if (window.sc26reApp && sc26reApp.battery && x !== undefined) sc26reApp.battery(x ? { pct: x.pct, text: SCB.long(x), charging: x.charging } : null);
 });
 (async function versionLoop() {
+  if (MENU_ONLY) return;
   if (!window.sc26reApp || !sc26reApp.firmware) return;
   let told = false;
   for (;;) {
@@ -500,6 +506,7 @@ SCB.poll(path => devs.length ? readPath(path) : Promise.reject(new Error("no con
   }
 })();
 (async function menuLoop() {
+  if (MODEL_ONLY) return;
   for (;;) {
     if (!devs.length || (!$("#menuOn").checked && !$("#toastOn").checked) || menuOk === false) { await new Promise(r => setTimeout(r, menuOk === false ? 3000 : 250)); if (menuOk === false && devs.length) menuOk = null; continue; }
     let b = null; try { b = await readPath("sc26re/osd"); } catch (e) { await new Promise(r => setTimeout(r, 100)); continue; }
@@ -587,10 +594,16 @@ function caption(c, text, x, y, size) {
   c.font = `${Math.max(11, size)}px system-ui,Segoe UI,sans-serif`; c.textAlign = "center"; c.textBaseline = "middle";
   c.fillStyle = "rgba(223,231,245,.95)"; c.shadowColor = "#000"; c.shadowBlur = 4; c.fillText(text, x, y); c.shadowBlur = 0;
 }
-let menuDrawn = true;
+let menuDrawn = true, menuShown = null;
+/* the app's menu window is shown only while something is on it (a timer: a hidden window gets no frames) */
+if (MENU_ONLY && window.sc26reApp && sc26reApp.menuShow) setInterval(() => {
+  const now = performance.now(), show = !!(editOn || (menuSt && menuSt.menus.length && $("#menuOn").checked && now - menuSeen <= 500) || (toastT && now - toastT <= 1600));
+  if (show !== menuShown) { menuShown = show; sc26reApp.menuShow(show); }
+}, 20);
 function drawMenu(now) {
+  if (MODEL_ONLY) return;
   if (toastT && now - toastT > 1600) { $("#toast").classList.remove("on"); toastT = 0; }
-  const want = editOn || (menuSt && $("#menuOn").checked && now - menuSeen <= 500);
+  const want = editOn || (menuSt && menuSt.menus.length && $("#menuOn").checked && now - menuSeen <= 500);
   if (!want && !menuDrawn) return;
   menuDrawn = !!want;
   const cv = $("#menu"), dpr = window.devicePixelRatio || 1, W = innerWidth, H = innerHeight;
@@ -621,11 +634,16 @@ if (location.hash === "#debug") window.__menu = { parseMenu, set(b) { menuSt = p
 /* where the 3D controller is drawn: an area of the window (size %) around a point (X, Y %) */
 let viewPlace = "";
 function placeView() {
-  const k = +$("#modelSize").value / 100, x = +$("#modelX").value, y = +$("#modelY").value, key = k + "/" + x + "/" + y;
+  const k = +$("#modelSize").value / 100, x = +$("#modelX").value, y = +$("#modelY").value, on = $("#modelOn").checked, key = k + "/" + x + "/" + y + "/" + on;
   if (key === viewPlace) return; viewPlace = key;
+  /* the app's model window is that area itself: the app moves the window */
+  if (MODEL_ONLY) { Object.assign(view.style, { left: "0", top: "0", width: "100%", height: "100%", right: "auto", bottom: "auto" });
+    if (window.sc26reApp && sc26reApp.modelRect) sc26reApp.modelRect({ x, y, size: k * 100, on }); return; }
   Object.assign(view.style, { left: (x - 50 * k) + "%", top: (y - 50 * k) + "%", width: 100 * k + "%", height: 100 * k + "%", right: "auto", bottom: "auto" });
 }
 
+/* the app's model window: also while it is hidden (no frames then), so turning the model on shows it */
+if (MODEL_ONLY) setInterval(placeView, 250);
 /* ---------- render ---------- */
 let lastFrame = 0, fpsN = 0, fpsT = performance.now();
 function frame(now) {
@@ -653,11 +671,11 @@ function frame(now) {
   /* popped triggers stand above the top: aim a little higher so the whole set is in the frame */
   const lift = $("#popTrig").checked ? 1.6 : 0;
   camera.position.set(0, lift, dist); camera.lookAt(0, lift, 0);
-  $("#view").style.visibility = $("#modelOn").checked ? "" : "hidden";
+  $("#view").style.visibility = $("#modelOn").checked && !MENU_ONLY ? "" : "hidden";
   /* draw only when something changed: the pose, the inputs, a setting, the size; once a second
    * anyway (settings that arrive without an event). A resting controller then costs ~1 frame/s. */
   const mq = model.quaternion, sig = [mq.x, mq.y, mq.z, mq.w].map(v => v.toFixed(5)).join() + JSON.stringify(st) + dist + lift + ready + loadGen + renderer.domElement.width + "x" + renderer.domElement.height;
-  if ($("#modelOn").checked && (ovDirty || sig !== lastSig || now - lastDraw > 1000)) {
+  if ($("#modelOn").checked && !MENU_ONLY && (ovDirty || sig !== lastSig || now - lastDraw > 1000)) {
     renderer.render(scene, camera); lastSig = sig; lastDraw = now; ovDirty = false; drawN++;
   }
   drawMenu(now);

@@ -9,4 +9,8 @@ contextBridge.exposeInMainWorld("sc26reApp", {
   firmware: info => ipcRenderer.send("firmware", info),
   /* controller battery for the tray icon's tooltip (null: none reported) */
   battery: info => ipcRenderer.send("battery", info),
+  /* 1.4: the 3D controller's window follows its area ({ x, y, size } in % of the screen, on) */
+  modelRect: r => ipcRenderer.send("modelRect", r),
+  /* 1.4: the menu window over the whole screen is shown only while a menu / toast / arranging is on it */
+  menuShow: on => ipcRenderer.send("menuShow", !!on),
 });

@@ -48,7 +48,11 @@ function setAutostart(on) {
   } catch (e) { console.warn("autostart:", e.message); }
 }
 
-let overlay = null, tray = null, editing = false;
+/* 1.4: two windows. overlay = the menus, over the whole screen, shown only while a menu, the profile
+ * name or the arrange mode is on it; modelWin = a small window only around the 3D controller.
+ * A see-through window over the whole screen made the game's frames slower (Windows blends all of
+ * it every frame); a small one costs about what 3D Controller Overlay's window does. */
+let overlay = null, modelWin = null, tray = null, editing = false, menuWanted = false;
 const pages = {}; /* page file -> its window (remapper, report meter, ...) */
 
 function pickDisplay() {
@@ -56,25 +60,46 @@ function pickDisplay() {
   return all.find(d => d.id === conf.display) || screen.getPrimaryDisplay();
 }
 
-function makeOverlay() {
-  const d = pickDisplay();
-  overlay = new BrowserWindow({
-    x: d.bounds.x, y: d.bounds.y, width: d.bounds.width, height: d.bounds.height,
+function seeThrough(bounds, part) {
+  const w = new BrowserWindow({
+    x: bounds.x, y: bounds.y, width: bounds.width, height: bounds.height,
     transparent: true, backgroundColor: "#00000000", frame: false, hasShadow: false, resizable: false, movable: false,
     skipTaskbar: true, focusable: false, alwaysOnTop: true, fullscreenable: false, show: false, icon: ICON,
     webPreferences: { preload: path.join(__dirname, "preload.js"), backgroundThrottling: false },
   });
-  overlay.setAlwaysOnTop(true, "screen-saver");
-  overlay.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
-  overlay.setIgnoreMouseEvents(true);
-  overlay.loadURL(ORIGIN + "/overlay.html?pip=1&app=1");
-  overlay.once("ready-to-show", () => { if (conf.shown) overlay.showInactive(); });
+  w.setAlwaysOnTop(true, "screen-saver");
+  w.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+  w.setIgnoreMouseEvents(true);
+  w.loadURL(ORIGIN + "/overlay.html?pip=1&app=1&part=" + part);
+  return w;
+}
+/* the 3D controller's area: size % of the screen around (x %, y %), like the page places it */
+function modelBounds() {
+  const d = pickDisplay().bounds, r = conf.model || { x: 85, y: 78, size: 30, on: true }, k = Math.max(0.05, Math.min(1, r.size / 100));
+  const w = Math.max(40, Math.round(d.width * k)), h = Math.max(40, Math.round(d.height * k));
+  return { x: Math.round(d.x + d.width * r.x / 100 - w / 2), y: Math.round(d.y + d.height * r.y / 100 - h / 2), width: w, height: h };
+}
+function showModel() {
+  if (!modelWin) return;
+  const on = conf.shown && (!conf.model || conf.model.on !== false);
+  if (on && !modelWin.isVisible()) modelWin.showInactive(); else if (!on && modelWin.isVisible()) modelWin.hide();
+}
+function showMenu() {
+  if (!overlay) return;
+  const on = editing || (conf.shown && menuWanted);
+  if (on && !overlay.isVisible()) { overlay.showInactive(); overlay.moveTop(); } else if (!on && overlay.isVisible()) overlay.hide();
+}
+function makeOverlay() {
+  overlay = seeThrough(pickDisplay().bounds, "menu");
   overlay.on("closed", () => { overlay = null; });
+  modelWin = seeThrough(modelBounds(), "model");
+  modelWin.once("ready-to-show", showModel);
+  modelWin.on("closed", () => { modelWin = null; });
 }
 
 function placeOverlay() {
-  if (!overlay) return;
-  const d = pickDisplay(); overlay.setBounds(d.bounds);
+  if (overlay) overlay.setBounds(pickDisplay().bounds);
+  if (modelWin) modelWin.setBounds(modelBounds());
 }
 
 function setEditing(on) {
@@ -84,7 +109,8 @@ function setEditing(on) {
   if (!overlay) return;
   overlay.setIgnoreMouseEvents(!on);
   overlay.setFocusable(on);
-  if (on) { if (!overlay.isVisible()) overlay.showInactive(); overlay.focus(); }
+  showMenu();
+  if (on) overlay.focus();
   overlay.setAlwaysOnTop(true, "screen-saver");
   buildTray();
 }
@@ -96,7 +122,8 @@ function toggleArrange() {
 
 function toggleShown() {
   conf.shown = !conf.shown; saveConf();
-  if (overlay) { if (conf.shown) overlay.showInactive(); else { if (editing) toggleArrange(); overlay.hide(); } }
+  if (!conf.shown && editing) toggleArrange();
+  showMenu(); showModel();
   buildTray();
 }
 
@@ -243,7 +270,7 @@ function runArgs(argv) {
   if (argv.includes("--settings")) { openRemap(); did = true; }
   return did;
 }
-const recenter = () => overlay && overlay.webContents.executeJavaScript(`window.postMessage("sc26re:recenter", location.origin)`).catch(() => {});
+const recenter = () => modelWin && modelWin.webContents.executeJavaScript(`window.postMessage("sc26re:recenter", location.origin)`).catch(() => {});
 app.on("second-instance", (e, argv) => { if (!runArgs(argv)) openRemap(); });
 
 app.whenReady().then(() => {
@@ -283,6 +310,15 @@ app.whenReady().then(() => {
     const rel = UPD_TEST ? "v50" : info && typeof info.release === "string" ? info.release.slice(0, 16) : "";
     if (upd.fwHave !== rel) { upd.fwHave = rel; announce(); buildTray(); }
   });
+  ipcMain.on("modelRect", (e, r) => {
+    if (!r || ![r.x, r.y, r.size].every(Number.isFinite)) return;
+    const m = { x: r.x, y: r.y, size: r.size, on: r.on !== false };
+    if (JSON.stringify(m) === JSON.stringify(conf.model)) return;
+    conf.model = m; saveConf();
+    if (modelWin) modelWin.setBounds(modelBounds());
+    showModel();
+  });
+  ipcMain.on("menuShow", (e, on) => { if (overlay && e.sender === overlay.webContents) { menuWanted = !!on; showMenu(); } });
   ipcMain.on("edit", (e, on) => { if (overlay && e.sender === overlay.webContents) setEditing(on); });
 
   makeOverlay();
@@ -297,7 +333,7 @@ app.whenReady().then(() => {
   screen.on("display-added", buildTray);
   screen.on("display-metrics-changed", placeOverlay);
   /* games that grab "topmost" for themselves: take it back now and then */
-  setInterval(() => { if (overlay && conf.shown) overlay.setAlwaysOnTop(true, "screen-saver"); }, 5000);
+  setInterval(() => { for (const w of [modelWin, overlay]) if (w && w.isVisible()) w.setAlwaysOnTop(true, "screen-saver"); }, 5000);
   runArgs(process.argv);
   setTimeout(() => { if (conf.updates) checkUpdates(); }, 5000);
   setInterval(() => { if (conf.updates) checkUpdates(); }, 6 * 3600 * 1000);
