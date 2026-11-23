@@ -444,6 +444,43 @@ static void feedback(uint8_t level, int side)
 	(void)haptics_play_feedback(level, ch[side]);
 }
 
+/* a binding's haptic (v51.4 test 8): trigger sources (soft pull, full pull) play where trig_haptic
+ * says, gyro tilt sources where gyro_haptic_at says (grips / trackpads / both), the rest on the
+ * trackpads */
+static void feedback_src(uint8_t level, int s)
+{
+	static int64_t last[3];
+	int64_t now = k_uptime_get();
+	int side = src_side(s), place = -1;
+
+	if(s == REMAP_SRC_LT_SOFT || s == REMAP_SRC_RT_SOFT || s == CONTROLLER_BUTTON_LEFT_TRIGGER_CLICK ||
+	   s == CONTROLLER_BUTTON_RIGHT_TRIGGER_CLICK)
+	{
+		place = sc26re_cfg_get(SC26RE_CFG_TRIG_HAPTIC);
+		side = s == REMAP_SRC_LT_SOFT || s == CONTROLLER_BUTTON_LEFT_TRIGGER_CLICK ? 0 : 1;
+	}
+	else if(s >= REMAP_SRC_GYRO_UP && s < REMAP_SRC_LS_DIAG)
+	{
+		place = sc26re_cfg_get(SC26RE_CFG_GYRO_HAPTIC_AT);
+	}
+	if(place < 0)
+	{
+		feedback(level, side);
+		return;
+	}
+	if(level == 0U || side < 0 || side > 2 || now - last[side] < 20)
+	{
+		return;
+	}
+	last[side] = now;
+	fb_count++;
+	{
+		static const uint8_t ch[3] = { HAPTICS_CHANNEL_LEFT_0, HAPTICS_CHANNEL_RIGHT_0, HAPTICS_CHANNELS_PRIMARY };
+
+		(void)haptics_play_feedback(level, haptics_place_channels(place, ch[side]));
+	}
+}
+
 static uint8_t dir_mask(uint8_t mode, float fx, float fy, float dz)
 {
 	static const uint8_t m8[8] = { 8, 8 | 1, 1, 1 | 4, 4, 4 | 2, 2, 2 | 8 };
@@ -664,7 +701,7 @@ static void fire(const struct remap_binding *b, int g, int s)
 	{
 		edge_action(b->act[g][i]);
 	}
-	feedback(REMAP_HAPTIC_LEVEL(b->haptic), src_side(s));
+	feedback_src(REMAP_HAPTIC_LEVEL(b->haptic), s);
 }
 
 static void activate(const struct remap_binding *b, int g, int8_t *slot, int s)
@@ -881,7 +918,7 @@ static void run_source(const struct remap_binding *b, struct src_state *s, bool 
 			s->toggled = !s->toggled;
 			if(!s->toggled)
 			{
-				feedback(REMAP_HAPTIC_LEVEL(b->haptic), src_side(src));
+				feedback_src(REMAP_HAPTIC_LEVEL(b->haptic), src);
 			}
 		}
 		s->down = down;
@@ -3293,7 +3330,7 @@ void remap_process(struct controller_report *r, float dt)
 		 * of a hold has it from fire()); before v51 test 46 only the first one ticked */
 		if(turbo && !turbo_gap && !ss->turbo_on && ss->turbo_again)
 		{
-			feedback(REMAP_HAPTIC_LEVEL(b->haptic), src_side(s));
+			feedback_src(REMAP_HAPTIC_LEVEL(b->haptic), s);
 		}
 		ss->turbo_again = turbo && (ss->turbo_again || !turbo_gap);
 		ss->turbo_on = turbo && !turbo_gap;
