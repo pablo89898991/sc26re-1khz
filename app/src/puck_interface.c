@@ -122,7 +122,8 @@ static void puck_uart_isr(const struct device *dev, void *user_data)
 
 	if(received)
 	{
-		atomic_set(&puck_active, 1);
+		/* not "active" on any byte (v51.4 test 15): lifted off the Puck the contact can pick up
+		 * noise, and the controller then thought it still lay there (amber charge light stayed) */
 		k_sem_give(&puck_rx_ready);
 	}
 }
@@ -290,6 +291,10 @@ static bool puck_frame_reader_push(struct puck_frame_reader *reader, uint8_t byt
 static int puck_read_frame(struct puck_frame_reader *reader, uint8_t frame[static PUCK_FRAME_SIZE],
                            k_timeout_t timeout)
 {
+	/* the timeout counts from the start: bytes that never make a valid frame (noise on the
+	 * contact) must not keep the link "active" */
+	k_timepoint_t end = sys_timepoint_calc(timeout);
+
 	for(;;)
 	{
 		uint8_t byte;
@@ -309,7 +314,7 @@ static int puck_read_frame(struct puck_frame_reader *reader, uint8_t frame[stati
 			}
 		}
 
-		if(k_sem_take(&puck_rx_ready, timeout) != 0)
+		if(sys_timepoint_expired(end) || k_sem_take(&puck_rx_ready, sys_timepoint_timeout(end)) != 0)
 		{
 			return -ETIMEDOUT;
 		}

@@ -27,6 +27,7 @@
 #include "hwtest.h"
 #endif
 #include "power.h"
+#include "charge_mode.h"
 #include "battery.h"
 
 /* Report meter: stick/grip capacitive thresholds (live via STAGE, saved via COMMIT). */
@@ -628,6 +629,16 @@ bool valve_settings_read(const char *path, uint8_t *buf, size_t capacity, size_t
 			memcpy(&buf[18], c->thread, 10);
 		}
 		*len = 28;
+		return true;
+	}
+	if(strcmp(path, "sc26re/dock") == 0 && capacity >= 3)
+	{
+#if CONFIG_IBEX_RGBW_LED && CONFIG_IBEX_DOCK_CHARGE_LED
+		charge_mode_dock_debug(buf);
+#else
+		memset(buf, 0, 3);
+#endif
+		*len = 3;
 		return true;
 	}
 	if(strcmp(path, "sc26re/hapdbg") == 0 && capacity >= 48)

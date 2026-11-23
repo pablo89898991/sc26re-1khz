@@ -365,6 +365,14 @@ static struct rgbw_color dock_led_breathe(uint32_t t)
 
 static bool dock_led_docked;
 
+/* sc26re/dock (v51.4 test 15): on the Puck for the LED, Puck link frames, pilot contact */
+void charge_mode_dock_debug(uint8_t out[3])
+{
+	out[0] = dock_led_docked ? 1U : 0U;
+	out[1] = puck_interface_active() ? 1U : 0U;
+	out[2] = puck_pilot_present() ? 1U : 0U;
+}
+
 bool charge_mode_dock_led_active(void)
 {
 	return dock_led_docked;
