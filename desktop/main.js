@@ -15,7 +15,7 @@ const KEY_ARRANGE = "CommandOrControl+Shift+F10";
 const KEY_SHOW = "CommandOrControl+Shift+F9";
 const LINUX = process.platform === "linux";
 
-let conf = { display: null, shown: true, updates: true, told: {} };
+let conf = { display: null, shown: true, updates: true, told: {}, fastGpu: true };
 try { conf = Object.assign(conf, JSON.parse(fs.readFileSync(CONF, "utf8"))); } catch (e) {}
 const saveConf = () => { try { fs.writeFileSync(CONF, JSON.stringify(conf)); } catch (e) {} };
 
@@ -26,6 +26,11 @@ protocol.registerSchemesAsPrivileged([{ scheme: "app", privileges: { standard: t
 if (!app.requestSingleInstanceLock()) { app.quit(); }
 if (process.platform === "win32") app.setAppUserModelId("io.github.pablo89898991.sc26re-overlay");
 app.commandLine.appendSwitch("disable-renderer-backgrounding");
+/* 1.4: draw on the fast graphics card. On a laptop with two (an integrated one and NVIDIA / AMD) the
+ * app ran on the integrated one while the game ran on the fast one, and every overlay frame had to be
+ * copied from one card to the other for Windows to blend it over the game: that made the overlay and
+ * the game stutter. 3D Controller Overlay ran on the fast card. Tray: "Use the fast graphics card". */
+if (conf.fastGpu) app.commandLine.appendSwitch("force_high_performance_gpu");
 /* Linux: run through X11 (XWayland on a Wayland session). A native Wayland window cannot be always on top,
  * placed at a fixed position, or click-through the same way. SC2_OVERLAY_WAYLAND=1 opts out. */
 if (LINUX && !process.env.SC2_OVERLAY_WAYLAND) app.commandLine.appendSwitch("ozone-platform", "x11");
@@ -252,6 +257,8 @@ function buildTray() {
       type: "radio", checked: d.id === cur.id, click: () => { conf.display = d.id; saveConf(); placeOverlay(); } })) },
     ...(batt ? [{ label: batt.text, enabled: false }] : []),
     ...updateItems(),
+    { label: "Use the fast graphics card (restarts)", type: "checkbox", checked: conf.fastGpu,
+      click: m => { conf.fastGpu = m.checked; saveConf(); app.relaunch(); app.quit(); } },
     { label: LINUX ? "Start at login" : "Start with Windows", type: "checkbox", checked: getAutostart(),
       click: m => setAutostart(m.checked) },
     { type: "separator" },
