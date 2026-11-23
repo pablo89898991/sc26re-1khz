@@ -167,6 +167,7 @@ struct olympus_pad_state
 	int16_t grip_samples[2];
 	/* hands-off level the grip reading has drifted to (x16), see grip_drift_update() */
 	int32_t grip_rest_x16;
+	int32_t grip_floor;     /* lowest hands-off reading since power-on (+1, 0 = none yet) */
 	int64_t grip_band_since_ms;
 	int64_t grip_rest_at_ms;
 	float filtered_x;
@@ -425,8 +426,9 @@ static int16_t grip_raw_for_source_state(int16_t raw)
  *  - while the grip is off, the rest level follows the reading: down at once, up slowly
  *    (half way in ~3 s) and only while the reading is within a quarter of the touch level
  *    above it (a hand comes in faster and higher), and at most grip_drift % of the touch
- *    level (default 60);
- *  - the touch and release levels are measured above that rest level;
+ *    level (default 60) of drift;
+ *  - the touch and release levels move up by how far the rest level has risen above the
+ *    lowest hands-off reading since power-on (that is the drift);
  * grip_drift = 0 turns all of this off (stock behaviour).
  */
 #define GRIP_REST_UP_SHIFT 12      /* rest level moves (reading - rest) / 4096 per ms up: half way in ~2.8 s */
@@ -448,6 +450,11 @@ static int32_t grip_drift_update(struct olympus_pad_state *state, int32_t value,
 	state->grip_rest_at_ms = now;
 	rest = state->grip_rest_x16 / 16;
 
+	if(state->grip_floor == 0 && !state->grip_touched)
+	{
+		/* the first reading is the hands-off level to follow from */
+		state->grip_rest_x16 = MAX(value, 0) * 16;
+	}
 	if(!state->grip_touched)
 	{
 		int32_t target_x16 = MAX(value, 0) * 16;
@@ -469,9 +476,18 @@ static int32_t grip_drift_update(struct olympus_pad_state *state, int32_t value,
 	/* v51.4 test 3: no "stuck for 8 s" release any more. A light real grip reads between the release
 	 * and the touch level too, so the grip turned off under the hand after 8 s (and Steam then
 	 * moved the trigger haptics from the grips to the trackpads). */
-	state->grip_rest_x16 = CLAMP(state->grip_rest_x16, 0, cap_x16);
+	/* v51.4 test 5: the thresholds move only by how far the hands-off level has risen above the
+	 * lowest it was. The hands-off reading need not be near 0: on battery it is x1.5, and a
+	 * controller can rest at 500-700. Taking the whole rest level off the reading (test 2-4)
+	 * then left a real hand below the touch level: the grips never turned on, and Steam moved
+	 * the trigger haptics to the trackpads. */
+	if(!state->grip_touched && (state->grip_floor == 0 || value + 1 < state->grip_floor))
+	{
+		state->grip_floor = MAX(value, 0) + 1;
+	}
 	ARG_UNUSED(release);
-	return state->grip_rest_x16 / 16;
+	ARG_UNUSED(rest);
+	return CLAMP(state->grip_rest_x16 / 16 - (state->grip_floor - 1), 0, cap_x16 / 16);
 }
 
 static int32_t two_sample_mean(const int16_t samples[2])

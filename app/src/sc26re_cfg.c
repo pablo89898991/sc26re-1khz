@@ -120,7 +120,7 @@ static const struct cfg_desc descs[SC26RE_CFG_COUNT] = {
 	[SC26RE_CFG_GYRO_MODE] = { "gyro_mode", 0, 0, 1, NO_REGISTRY, 1 },
 	[SC26RE_CFG_GRIP_DRIFT] = { "grip_drift", 60, 0, 90, NO_REGISTRY, 1 },
 	[SC26RE_CFG_TRIG_HAPTIC] = { "trig_haptic", 0, 0, 2, NO_REGISTRY, 1 },
-	[SC26RE_CFG_GYRO_HAPTIC_AT] = { "gyro_haptic_at", 0, 0, 1, NO_REGISTRY, 1 },
+	[SC26RE_CFG_GYRO_HAPTIC_AT] = { "gyro_haptic_at", 0, 0, 2, NO_REGISTRY, 1 },
 	[SC26RE_CFG_GM_ROT_HAPTIC] = { "gm_rot_haptic", 0, 0, 3, NO_REGISTRY, 1 },
 	[SC26RE_CFG_GM_ROT_DEG] = { "gm_rot_deg", 5, 1, 45, NO_REGISTRY, 1 },
 };

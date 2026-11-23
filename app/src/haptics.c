@@ -1718,8 +1718,18 @@ static int handle_haptic_command(const uint8_t *data, size_t len, bool log)
 		return -EMSGSIZE;
 	}
 
-	channels = haptics_redirect_channels(haptics_command_channels(data[0]), false,
-	                                     data[1] == HAPTIC_TYPE_TICK && is_gyro_level((int8_t)data[2]));
+	{
+		bool gyro_tick = data[1] == HAPTIC_TYPE_TICK && is_gyro_level((int8_t)data[2]);
+
+		/* gyro_haptic_at 2: Steam's Rotational Haptics off (ticks at its gyro levels while the
+		 * controller turns are dropped) */
+		if(gyro_tick && sc26re_cfg_get(SC26RE_CFG_GYRO_HAPTIC_AT) == 2 &&
+		   (int32_t)(atomic_get(&gyro_haptic_until_ms) - (int32_t)k_uptime_get_32()) > 0)
+		{
+			return 0;
+		}
+		channels = haptics_redirect_channels(haptics_command_channels(data[0]), false, gyro_tick);
+	}
 	if(log)
 	{
 		LOG_INF("haptics command side=0x%02x channels=%s command=%u %s gain_db=%d", data[0],

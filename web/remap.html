@@ -110,7 +110,7 @@
 <body>
 <div class="top">
   <div class="topin">
-    <div class="brand">SC2 <span class="hz">Remapper</span> <span class="note" id="pagever" title="page version — if it is older than expected, press Ctrl+F5">p.2026-11-23f</span></div>
+    <div class="brand">SC2 <span class="hz">Remapper</span> <span class="note" id="pagever" title="page version — if it is older than expected, press Ctrl+F5">p.2026-11-23g</span></div>
     <button class="primary" id="connect">Connect controller</button>
     <span id="status" class="chip">not connected</span>
     <span id="batt" class="chip" hidden></span>
@@ -1190,9 +1190,9 @@ const GY=[
  ["gm_ratchet","Ratchet (pause) button","sel",BTNOPTS,1,"while held the gyro stops moving — re-centre your hands, then let go"],
  ["gm_space","Gyro space","sel",[[0,"local (the axis settings below)"],[1,"player space"],[2,"world space"]],1,"player / world: turning about the vertical works the same however you hold the controller; a profile can choose its own"],
  ["gm_haptic","Haptics","sel",[[0,"off"],[1,"tick (light)"],[2,"click"],[3,"strong"]],1,"when the activation button starts the mouse, and on quick turns (the Quick turns buttons on this page)"],
- ["gm_rot_haptic","Rotational haptics","sel",[[0,"off"],[1,"tick (light)"],[2,"click"],[3,"strong"]],1,"a tick while the gyro mouse turns, like Steam's Rotational Haptics (all profiles, v51.4+)"],
+ ["gm_rot_haptic","Rotational haptics","sel",[[0,"off"],[1,"tick (light)"],[2,"click"],[3,"strong"]],1,"a tick while the gyro mouse turns, like Steam's Rotational Haptics. Global setting (pick Global above to change it), v51.4+"],
  ["gm_rot_deg","…every","num",[1,45,1],1,"degrees of turn per tick"],
- ["gyro_haptic_at","Gyro haptics on","sel",[[0,"the grips"],[1,"the trackpads"]],1,"the rotational ticks above and Steam's Rotational Haptics (v51.4+)"],
+ ["gyro_haptic_at","Gyro haptics on","sel",[[0,"the grips"],[1,"the trackpads"],[2,"Steam's off (only the ticks above)"]],1,"where the rotational ticks above and Steam's Rotational Haptics play; Steam's come while the gyro goes to Steam (remapper off or gyro not used by the gyro mouse). Global setting: pick Global above (v51.4+)"],
 ];
 const GYI={}; for(const e of GY) if(e[0]!=="#") GYI[e[0]]=e;
 function ctlHtml(n,short){
@@ -1288,7 +1288,7 @@ const LV=[
  ["Reports and IMU",[["report_rate","Report rate","Hz: 1000, 500 or 250 (buttons always instant)"],["gyro_avg","Gyro averaging","1 = newest sample, 2 = average of 2 (less noise, +0.25 ms)"],["imu_pace","IMU read timing (USB)","0 = USB frame start (default), 1 = after the PC fetched, 2 = 1 ms timer"],["imu_i2c_khz","IMU bus speed","kHz, 400 standard … 800 faster"]]],
  ["Trackpads",[["tp_smoothing","Smoothing","0 off, 5 stock, 10 smoothest"],["tp_click","Click pressure","pressure needed for a pad click"],["tp_noise","Noise threshold","higher = ignores lighter touches"]]],
  ["Touch sensors",[["cap:0","Stick touch on (capsense)","raw value for a thumb touch; higher = less sensitive (default 720)"],["cap:1","Stick touch off","must be below “on” (default 80 % of on)"],["cap:2","Grip touch on (gripsense)","raw grip value for a touch (default 900)"],["grip_drift","Grip drift tracking","% of the grip touch level that may be taken as hands-off drift (default 60, 0 = off). Fixes grips that turn on and stay on after some play (v51.4+)"]]],
- ["Haptics and sounds",[["haptic_gain","Haptics volume","dB, −24 … +6"],["trig_haptic","Trigger haptics on","0 = the grips, but the trackpad while your thumb is on it · 1 = always the grips · 2 = the trackpads (Valve) (v51.4+)"],["chime","Power-on chime",""],["drop_scream","Drop: scream chance","% per drop"],["drop_meow","Drop: meow chance","% per drop (scream + meow ≤ 100)"]]],
+ ["Haptics and sounds",[["haptic_gain","Haptics volume","dB, −24 … +6"],["trig_haptic","Trigger haptics on","0 = the grips, but the trackpad while your thumb is on it · 1 = always the grips · 2 = the trackpads (Valve). Needs the grips to be seen as held (v51.4+)"],["chime","Power-on chime",""],["drop_scream","Drop: scream chance","% per drop"],["drop_meow","Drop: meow chance","% per drop (scream + meow ≤ 100)"]]],
  ["Power and LED",[["led_brightness","LED brightness","%"],["auto_off","Auto power-off","minutes without input, 0 = never"],["link_lost_off","Off when the Puck / BT host is gone","minutes, 0 = never"]]],
 ];
 function lvBuild(){
