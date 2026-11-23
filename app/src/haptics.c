@@ -2347,8 +2347,20 @@ uint8_t haptics_place_channels(int16_t place, uint8_t channels)
 	}
 }
 
-/* a feedback where a place setting says. "Both": the grip one level stronger and the trackpad one
- * level lighter, else the trackpad under the thumb drowns the grip out (v51.4 test 9) */
+/* a feedback where a place setting says. "Both" (v51.4 test 11): the grip now, the trackpad 80 ms
+ * later. Measured on the controller: the grip output plays, but while the trackpads' amplifier
+ * plays too the grip is not felt (its signal ends up on the trackpads); one after the other both
+ * are felt. */
+static uint8_t both_level, both_channels;
+
+static void both_work_handler(struct k_work *work)
+{
+	ARG_UNUSED(work);
+	(void)haptics_play_feedback(both_level, both_channels);
+}
+
+static K_WORK_DELAYABLE_DEFINE(both_work, both_work_handler);
+
 int haptics_play_feedback_at(uint8_t level, int16_t place, uint8_t pad_channels)
 {
 	uint8_t grips = (uint8_t)(haptics_place_channels(0, pad_channels) & ~HAPTICS_CHANNELS_PRIMARY);
@@ -2359,8 +2371,10 @@ int haptics_play_feedback_at(uint8_t level, int16_t place, uint8_t pad_channels)
 	}
 	if(place == 2 && grips != 0U)
 	{
-		(void)haptics_play_feedback(MIN(level + 1U, 3U), grips);
-		return haptics_play_feedback(level > 1U ? level - 1U : 1U, pad_channels & HAPTICS_CHANNELS_PRIMARY);
+		both_level = level;
+		both_channels = pad_channels & HAPTICS_CHANNELS_PRIMARY;
+		(void)k_work_reschedule(&both_work, K_MSEC(80));
+		return haptics_play_feedback(level, grips);
 	}
 	return haptics_play_feedback(level, haptics_place_channels(place, pad_channels));
 }

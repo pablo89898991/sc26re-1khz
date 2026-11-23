@@ -233,7 +233,7 @@ void sim_host(int32_t *out)
 	memcpy(&out[7], host_kbd, 8);
 }
 int haptics_play_feedback(uint8_t level, uint8_t channels) { ev("H %u %u", level, channels); return 0; }
-int haptics_play_feedback_at(uint8_t level, int16_t place, uint8_t c) { uint8_t g = ((c & 1) ? 4 : 0) | ((c & 2) ? 8 : 0); if(!level) return 0; if(place == 2) { ev("H %u %u", level < 3 ? level + 1 : 3, g); ev("H %u %u", level > 1 ? level - 1 : 1, c & 3); return 0; } ev("H %u %u", level, place == 1 ? c : ((c & ~3) | g)); return 0; }
+int haptics_play_feedback_at(uint8_t level, int16_t place, uint8_t c) { uint8_t g = ((c & 1) ? 4 : 0) | ((c & 2) ? 8 : 0); if(!level) return 0; if(place == 2) { ev("H %u %u", level, g); ev("H %u %u", level, c & 3); return 0; } ev("H %u %u", level, place == 1 ? c : ((c & ~3) | g)); return 0; }
 uint8_t haptics_place_channels(int16_t place, uint8_t c) { uint8_t g = ((c & 1) ? 4 : 0) | ((c & 2) ? 8 : 0); return place == 1 ? c : place == 2 ? (c | g) : ((c & ~3) | g); }
 int haptics_play_beep(uint16_t f, uint16_t ms) { ev("B %u %u", f, ms); return 0; }
 static struct rgbw_color led;

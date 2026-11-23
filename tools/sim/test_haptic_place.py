@@ -13,9 +13,9 @@ for place, want in ((0, 8), (1, 2)):           # right side: pad 0x02, grip 0x08
     a = H(s.run(50, A=1))
     check("full pull haptic, trig_haptic=%d" % place, h and all(x[1] == want for x in h), h)
     check("a face button stays on the trackpads (trig_haptic=%d)" % place, a and all(x[1] in (1, 2, 3) for x in a), a)
-# both: the grip a level stronger, the trackpad a level lighter
+# both: the grip and (80 ms later in the firmware) the trackpad, same level
 p = Profile(); p.bind("RT_CLICK", key("a"), haptic=2)
 s = Sim(); s.use(p); s.cfg("trig_haptic", 2); s.run(5)
 h = H(s.run(50, RT_CLICK=1))
-check("both: grip strong (3), trackpad tick (1)", sorted(h) == [(1, 2), (3, 8)], h)
+check("both: grip and trackpad, same level", sorted(h) == [(2, 2), (2, 8)], h)
 print(); print("%d passed, %d failed" % (ok, fail))
