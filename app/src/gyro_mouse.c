@@ -534,6 +534,36 @@ void gyro_mouse_feed(const float dps[3], uint32_t buttons, float dt_s)
 			}
 		}
 		w = sqrtf(wx * wx + wy * wy);
+		{
+			/* rotational haptics (v51.4): a tick every gm_rot_deg degrees of turn, at most
+			 * one per 25 ms, on the grips or the trackpads (gyro_haptic_at) */
+			static float turned;
+			static int64_t last_tick;
+			int16_t lvl = sc26re_cfg_get(SC26RE_CFG_GM_ROT_HAPTIC);
+
+			if(lvl > 0)
+			{
+				turned += w * dt_s;
+				if(turned >= (float)sc26re_cfg_get(SC26RE_CFG_GM_ROT_DEG))
+				{
+					int64_t t = k_uptime_get();
+
+					turned = 0.0f;
+					if(t - last_tick >= 25)
+					{
+						last_tick = t;
+						(void)haptics_play_feedback((uint8_t)lvl,
+						                            sc26re_cfg_get(SC26RE_CFG_GYRO_HAPTIC_AT) == 1
+						                                ? HAPTICS_CHANNELS_PRIMARY
+						                                : (HAPTICS_CHANNEL_LEFT_1 | HAPTICS_CHANNEL_RIGHT_1));
+					}
+				}
+			}
+			else
+			{
+				turned = 0.0f;
+			}
+		}
 		if(out >= 1 && out <= 4)
 		{
 			/* gyro as joystick: camera = turn rate, deflection = tilt since activation */

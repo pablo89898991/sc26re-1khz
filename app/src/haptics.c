@@ -682,7 +682,10 @@ static uint8_t haptics_redirect_channels(uint8_t channels, bool trigger_pulse, b
 {
 	trigger_redirect_pending = false;
 #if CONFIG_IBEX_HAPTICS_TRIGGERS_ON_GRIPS
-	if(trigger_pulse)
+	/* trig_haptic: 0 grips unless the thumb is on that trackpad, 1 always the grips, 2 the trackpads */
+	int16_t trig_at = sc26re_cfg_get(SC26RE_CFG_TRIG_HAPTIC);
+
+	if(trigger_pulse && trig_at != 2)
 	{
 	static const uint8_t pad[2] = { HAPTICS_CHANNEL_LEFT_0, HAPTICS_CHANNEL_RIGHT_0 };
 	static const uint8_t grip[2] = { HAPTICS_CHANNEL_LEFT_1, HAPTICS_CHANNEL_RIGHT_1 };
@@ -692,7 +695,7 @@ static uint8_t haptics_redirect_channels(uint8_t channels, bool trigger_pulse, b
 	{
 		if((channels & pad[i]) != 0 &&
 		   (int32_t)(atomic_get(&trigger_haptic_until_ms[i]) - now) > 0 &&
-		   atomic_get(&trackpad_touched[i]) == 0)
+		   (trig_at == 1 || atomic_get(&trackpad_touched[i]) == 0))
 		{
 			channels = (channels & ~pad[i]) | grip[i];
 			trigger_redirect_pending = true;
@@ -701,7 +704,8 @@ static uint8_t haptics_redirect_channels(uint8_t channels, bool trigger_pulse, b
 	}
 #endif
 #if CONFIG_IBEX_HAPTICS_GYRO_ON_GRIPS
-	if(gyro_tick)
+	/* gyro_haptic_at: 0 grips, 1 the trackpads (stock) */
+	if(gyro_tick && sc26re_cfg_get(SC26RE_CFG_GYRO_HAPTIC_AT) == 0)
 	{
 		static const uint8_t gpad[2] = { HAPTICS_CHANNEL_LEFT_0, HAPTICS_CHANNEL_RIGHT_0 };
 		static const uint8_t ggrip[2] = { HAPTICS_CHANNEL_LEFT_1, HAPTICS_CHANNEL_RIGHT_1 };
