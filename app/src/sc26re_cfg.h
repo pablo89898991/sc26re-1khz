@@ -100,6 +100,7 @@ enum sc26re_cfg_id
 	SC26RE_CFG_XI_GUIDE,       /* Xbox output: a lone tap of the Steam button = Xbox Guide (0 off) */
 	SC26RE_CFG_GM_SPACE,       /* gyro mouse: 0 the axis settings (local), 1 player space, 2 world space */
 	SC26RE_CFG_GYRO_MODE,      /* IMU operating mode: 0 high-accuracy ODR (2000/4000/8000 Hz), 1 high-performance (1920/3840/7680 Hz) */
+	SC26RE_CFG_GRIP_DRIFT,     /* grip hands-off drift tracking: the most it may absorb, % of the touch level (0 = off) */
 	SC26RE_CFG_COUNT,
 };
 

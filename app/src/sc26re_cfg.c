@@ -118,6 +118,7 @@ static const struct cfg_desc descs[SC26RE_CFG_COUNT] = {
 	[SC26RE_CFG_XI_GUIDE] = { "xi_guide", 0, 0, 1, NO_REGISTRY, 1 },
 	[SC26RE_CFG_GM_SPACE] = { "gm_space", 0, 0, 2, NO_REGISTRY, 1 },
 	[SC26RE_CFG_GYRO_MODE] = { "gyro_mode", 0, 0, 1, NO_REGISTRY, 1 },
+	[SC26RE_CFG_GRIP_DRIFT] = { "grip_drift", 60, 0, 90, NO_REGISTRY, 1 },
 };
 
 static int16_t values[SC26RE_CFG_COUNT];

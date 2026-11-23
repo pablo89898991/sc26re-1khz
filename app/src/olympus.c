@@ -165,6 +165,10 @@ struct olympus_pad_state
 	uint8_t grip_sample_index;
 	int16_t click_samples[2];
 	int16_t grip_samples[2];
+	/* hands-off level the grip reading has drifted to (x16), see grip_drift_update() */
+	int32_t grip_rest_x16;
+	int64_t grip_band_since_ms;
+	int64_t grip_rest_at_ms;
 	float filtered_x;
 	float filtered_y;
 	struct one_euro_filter euro_x;
@@ -411,6 +415,82 @@ static int16_t grip_raw_for_source_state(int16_t raw)
 	return CLAMP(((int32_t)raw * OLYMPUS_GRIP_NO_SOURCE_SCALE_NUMERATOR) /
 	                 OLYMPUS_GRIP_NO_SOURCE_SCALE_DENOMINATOR,
 	             INT16_MIN, INT16_MAX);
+}
+
+/*
+ * Grip drift (v51.4). The capacitive grip reading with no hand on it is zeroed only when the
+ * sensor chip starts; warmth and humidity from the hand then push it up. Once it creeps above
+ * the release level (80 % of the touch level) the grip turns on and never turns off again
+ * until the controller is switched off. So the firmware follows the hands-off level:
+ *  - while the grip is off, the rest level follows the reading: down at once, up slowly
+ *    (half way in ~3 s) and only while the reading is within a quarter of the touch level
+ *    above it (a hand comes in faster and higher), and at most grip_drift % of the touch
+ *    level (default 60);
+ *  - the touch and release levels are measured above that rest level;
+ *  - a grip that stays on for 8 s while the reading sits between the release and the touch
+ *    level (a hand reads well above the touch level) is drift: the rest level takes the
+ *    reading and the grip turns off.
+ * grip_drift = 0 turns all of this off (stock behaviour).
+ */
+#define GRIP_REST_UP_SHIFT 12      /* rest level moves (reading - rest) / 4096 per ms up: half way in ~2.8 s */
+#define GRIP_STUCK_MS 8000
+
+static int32_t grip_drift_update(struct olympus_pad_state *state, int32_t value,
+                                 int32_t touch, int32_t release)
+{
+	int32_t cap_pct = sc26re_cfg_get(SC26RE_CFG_GRIP_DRIFT);
+	int64_t now = k_uptime_get();
+	int32_t cap_x16, rest, dt;
+
+	if(cap_pct <= 0)
+	{
+		state->grip_rest_x16 = 0;
+		return 0;
+	}
+	cap_x16 = (touch * cap_pct / 100) * 16;
+	dt = (int32_t)CLAMP(now - state->grip_rest_at_ms, 0, 100);
+	state->grip_rest_at_ms = now;
+	rest = state->grip_rest_x16 / 16;
+
+	if(!state->grip_touched)
+	{
+		int32_t target_x16 = MAX(value, 0) * 16;
+
+		if(target_x16 < state->grip_rest_x16)
+		{
+			state->grip_rest_x16 = target_x16;
+		}
+		else if(target_x16 - state->grip_rest_x16 < touch * 16 / 4)
+		{
+			/* only small, slow changes are drift; a hand coming closer jumps far above the
+			 * rest level and must not be learned */
+			int32_t step = ((target_x16 - state->grip_rest_x16) * dt) >> GRIP_REST_UP_SHIFT;
+
+			state->grip_rest_x16 += MAX(step, target_x16 > state->grip_rest_x16 ? 1 : 0);
+		}
+		state->grip_band_since_ms = 0;
+	}
+	else if(value - rest <= touch)
+	{
+		/* on, but below the touch level: a hand, or drift held by the hysteresis */
+		if(state->grip_band_since_ms == 0)
+		{
+			state->grip_band_since_ms = now;
+		}
+		else if(now - state->grip_band_since_ms >= GRIP_STUCK_MS)
+		{
+			state->grip_rest_x16 = MAX(value, 0) * 16;
+			state->grip_touched = false;
+			state->grip_band_since_ms = 0;
+		}
+	}
+	else
+	{
+		state->grip_band_since_ms = 0;
+	}
+	state->grip_rest_x16 = CLAMP(state->grip_rest_x16, 0, cap_x16);
+	ARG_UNUSED(release);
+	return state->grip_rest_x16 / 16;
 }
 
 static int32_t two_sample_mean(const int16_t samples[2])
@@ -1014,13 +1094,18 @@ static void decode_pad(struct olympus_pad_state *state, const int16_t *x_samples
 	}
 	grip_value = two_sample_mean(state->grip_samples);
 
-	if(state->grip_touched)
 	{
-		state->grip_touched = grip_value >= grip_release;
-	}
-	else
-	{
-		state->grip_touched = grip_value > grip_touch;
+		int32_t rest = grip_drift_update(state, grip_value, grip_touch, grip_release);
+		int32_t above = grip_value - rest;
+
+		if(state->grip_touched)
+		{
+			state->grip_touched = above >= grip_release;
+		}
+		else
+		{
+			state->grip_touched = above > grip_touch;
+		}
 	}
 
 	*pressure = scale_pad_pressure(right, normalized_pressure);
