@@ -34,6 +34,7 @@
 #include "xinput.h"
 #include "imu.h"
 #include "rgbw_led.h"
+#include "charge_mode.h"
 #include "sc26re_cfg.h"
 
 LOG_MODULE_REGISTER(remap, LOG_LEVEL_INF);
@@ -2023,16 +2024,17 @@ static void profile_changed(void)
 	pc_last = now;
 	if(now >= 0 && (p->led[0] | p->led[1] | p->led[2]))
 	{
+		/* on the Puck the charge light stays: the colour under it changes (v51.4 test 23) */
 		if(!led_saved)
 		{
-			saved = rgbw_led_get();
+			saved = charge_mode_led_base_get();
 			led_saved = true;
 		}
-		rgbw_led_set((struct rgbw_color){ p->led[0], p->led[1], p->led[2], 0 });
+		charge_mode_led_base_set((struct rgbw_color){ p->led[0], p->led[1], p->led[2], 0 });
 	}
 	else if(led_saved)
 	{
-		rgbw_led_set(saved);
+		charge_mode_led_base_set(saved);
 		led_saved = false;
 	}
 	if(now >= 0 && (p->flags & REMAP_PF_GYRO_ON))

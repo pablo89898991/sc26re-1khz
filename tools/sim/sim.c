@@ -239,6 +239,18 @@ int haptics_play_beep(uint16_t f, uint16_t ms) { ev("B %u %u", f, ms); return 0;
 static struct rgbw_color led;
 void rgbw_led_set(struct rgbw_color c) { led = c; ev("L %u %u %u", c.r, c.g, c.b); }
 struct rgbw_color rgbw_led_get(void) { return led; }
+/* the Puck's charge light (charge_mode.c): the colour under it, sim_dock() lands / lifts */
+static int sim_docked;
+static struct rgbw_color sim_dock_saved;
+struct rgbw_color charge_mode_led_base_get(void) { return sim_docked ? sim_dock_saved : led; }
+void charge_mode_led_base_set(struct rgbw_color c) { if(sim_docked) sim_dock_saved = c; else rgbw_led_set(c); }
+void sim_dock(int on)
+{
+	if(on && !sim_docked) { sim_dock_saved = led; sim_docked = 1; rgbw_led_set((struct rgbw_color){ 26, 20, 0, 0 }); }
+	else if(!on && sim_docked) { sim_docked = 0; rgbw_led_set(sim_dock_saved); remap_led_refresh(); }
+}
+void sim_led_set(int r, int g, int b) { rgbw_led_set((struct rgbw_color){ r, g, b, 0 }); }
+int sim_led_get(void) { return led.r << 16 | led.g << 8 | led.b; }
 static bool gm_on;
 #ifndef WITH_GM
 void gyro_mouse_set_enabled(bool on) { gm_on = on; (void)sc26re_cfg_set(SC26RE_CFG_GM_ENABLED, on ? 1 : 0, false); ev("G %d", on); } /* as gyro_mouse.c */

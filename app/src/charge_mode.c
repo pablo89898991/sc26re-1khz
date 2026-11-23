@@ -375,6 +375,24 @@ static struct rgbw_color dock_led_breathe(uint32_t t)
 }
 
 static bool dock_led_docked;
+static struct rgbw_color dock_led_saved; /* the colour under the charge light */
+
+struct rgbw_color charge_mode_led_base_get(void)
+{
+	return dock_led_docked ? dock_led_saved : rgbw_led_get();
+}
+
+void charge_mode_led_base_set(struct rgbw_color c)
+{
+	if(dock_led_docked)
+	{
+		dock_led_saved = c; /* the charge light stays, this shows once lifted (or after full) */
+	}
+	else
+	{
+		rgbw_led_set(c);
+	}
+}
 
 /* sc26re/dock (v51.4 test 15): on the Puck for the LED, Puck link frames, pilot contact */
 void charge_mode_dock_debug(uint8_t out[5])
@@ -395,7 +413,6 @@ void charge_mode_dock_led_poll(void)
 {
 	static int64_t last_step, last_sample, last_seen, docked_since, full_since;
 	bool docked = dock_led_docked;
-	static struct rgbw_color saved;
 	int64_t now = k_uptime_get();
 
 	if(now - last_step < DOCK_LED_STEP_MS)
@@ -430,13 +447,13 @@ void charge_mode_dock_led_poll(void)
 		docked = dock_led_docked = true;
 		docked_since = now;
 		full_since = 0;
-		saved = rgbw_led_get();
+		dock_led_saved = rgbw_led_get();
 		LOG_INF("on the Puck: charge LED");
 	}
 	else if(!contact && docked)
 	{
 		docked = dock_led_docked = false;
-		rgbw_led_set(saved);
+		rgbw_led_set(dock_led_saved);
 		/* the remapper's profile colour wins over the snapshot (Steam or a profile switch may
 		 * have changed the LED while it lay on the Puck) */
 		remap_led_refresh();
@@ -460,7 +477,7 @@ void charge_mode_dock_led_poll(void)
 		}
 		else
 		{
-			rgbw_led_set(saved);
+			rgbw_led_set(dock_led_saved);
 			remap_led_refresh();
 		}
 		return;
@@ -476,5 +493,15 @@ void charge_mode_dock_led_poll(void)
 bool charge_mode_dock_led_active(void)
 {
 	return false;
+}
+
+struct rgbw_color charge_mode_led_base_get(void)
+{
+	return rgbw_led_get();
+}
+
+void charge_mode_led_base_set(struct rgbw_color c)
+{
+	rgbw_led_set(c);
 }
 #endif
