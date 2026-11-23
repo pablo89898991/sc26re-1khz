@@ -10,6 +10,7 @@
 #include "analog.h"
 #include "battery.h"
 #include "charge_mode.h"
+#include "remap.h"
 #include "controller.h"
 #include "power.h"
 #include "puck_interface.h"
@@ -405,6 +406,9 @@ void charge_mode_dock_led_poll(void)
 	{
 		docked = dock_led_docked = false;
 		rgbw_led_set(saved);
+		/* the remapper's profile colour wins over the snapshot (Steam or a profile switch may
+		 * have changed the LED while it lay on the Puck) */
+		remap_led_refresh();
 		LOG_INF("off the Puck: LED restored");
 		return;
 	}
@@ -419,7 +423,15 @@ void charge_mode_dock_led_poll(void)
 		{
 			full_since = now;
 		}
-		rgbw_led_set(now - full_since < CHARGE_MODE_FULL_LED_MS ? led_peak_amber : saved);
+		if(now - full_since < CHARGE_MODE_FULL_LED_MS)
+		{
+			rgbw_led_set(led_peak_amber);
+		}
+		else
+		{
+			rgbw_led_set(saved);
+			remap_led_refresh();
+		}
 		return;
 	}
 	full_since = 0;

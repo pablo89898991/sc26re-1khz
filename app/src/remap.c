@@ -2047,6 +2047,18 @@ static void profile_changed(void)
 	}
 }
 
+/* the LED was taken over (the Puck's charge light): show the active profile's colour again */
+void remap_led_refresh(void)
+{
+	const struct remap_profile *p = active();
+
+	if(pc_last >= 0 && remap_enabled() && p->magic == REMAP_MAGIC && p->version == REMAP_VERSION &&
+	   (p->led[0] | p->led[1] | p->led[2]))
+	{
+		rgbw_led_set((struct rgbw_color){ p->led[0], p->led[1], p->led[2], 0 });
+	}
+}
+
 static const struct remap_profile *layer_profile(void)
 {
 	const struct remap_profile *l;

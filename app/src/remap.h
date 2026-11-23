@@ -325,3 +325,6 @@ bool remap_path(const char *path);
 bool remap_read(const char *path, uint8_t *buf, size_t capacity, size_t *len);
 int remap_stage(const char *path, const uint8_t *value, size_t len);
 int remap_commit(const char *path);
+
+/* the LED was used for something else (Puck charge light): put the active profile's colour back */
+void remap_led_refresh(void);
