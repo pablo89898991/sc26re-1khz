@@ -355,7 +355,7 @@ setInterval(() => { const n = rawN; rawN = 0; if (!devs.length) return;
     if (!devs.length || $("#src").value !== "raw") { rawAng = qNat = null; await new Promise(r => setTimeout(r, 200)); continue; }
     /* at most 250 reads a second: the pad reports keep the model moving in between, and Steam and
      * the remapper page share the channel */
-    const wait = asked + (IN_TAB ? 8 : 4) - performance.now(); if (wait > 0) await new Promise(r => setTimeout(r, wait));
+    const wait = asked + 4 - performance.now(); if (wait > 0) await new Promise(r => setTimeout(r, wait));
     asked = performance.now();
     let b; try { b = await readPath("sc26re/raw"); fails = 0; } catch (e) {
       /* firmware without native reads answers nothing: ask once a second, not hundreds of times */
@@ -628,9 +628,7 @@ let lastFrame = 0, fpsN = 0, fpsT = performance.now();
 function frame(now) {
   requestAnimationFrame(frame);
   /* frame rate limit: draw only once the next frame is due (a little early, so 60 on a 60 Hz screen stays 60) */
-  /* inside the remapper (tab or window on top) "as the screen" means at most 60: a 144-240 Hz
-   * screen would spend that much GPU on a preview */
-  const fps = +$("#fps").value || (IN_TAB ? 60 : 0);
+  const fps = +$("#fps").value;
   if (fps > 0 && now - lastFrame < 1000 / fps - 1.5) return;
   lastFrame = now; fpsN++;
   if (now - fpsT >= 1000) { $("#fpsV").textContent = Math.round(drawN * 1000 / (now - fpsT)) + " fps (only when it moves)"; fpsN = 0; drawN = 0; fpsT = now; }

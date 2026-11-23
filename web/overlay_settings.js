@@ -47,7 +47,7 @@
     ] },
     { g: "look", name: "Window", rows: [
       [{ t: "select", id: "bg", label: "Background", opts: [["#00ff00", "green (chroma key)"], ["#ff00ff", "magenta (chroma key)"], ["#0d1320", "dark"], ["#ffffff", "white"], ["custom", "my colour"], ["transparent", "transparent"]], def: "#00ff00" }, { t: "color", id: "bgCol", def: "#202020", title: "the colour for “my colour”" }],
-      [{ t: "select", id: "fps", label: "Frame rate", opts: [["0", "as the screen (60 in the remapper)"], ["30", "30"], ["60", "60"], ["120", "120"], ["144", "144"], ["240", "240"]], def: "0", out: "fpsV" }],
+      [{ t: "select", id: "fps", label: "Frame rate", opts: [["0", "as the screen"], ["30", "30"], ["60", "60"], ["120", "120"], ["144", "144"], ["240", "240"]], def: "0", out: "fpsV" }],
     ] },
   ];
   const all = []; for (const g of G) for (const r of g.rows) for (const it of r) if (it.id && it.t !== "button") all.push(it);
