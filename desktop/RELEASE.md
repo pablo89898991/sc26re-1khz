@@ -1,8 +1,13 @@
-## SC2 Overlay 1.2 for Windows and Linux
+## SC2 Overlay 1.3 for Windows and Linux
 
 Special thanks to **Rhyn0_Rang3r**, our Discord tester, for making the Linux version and for testing.
 
-**New in 1.2: update notifications.** At start and every 6 hours the app checks this project's releases and shows a notification when a new **SC2 Overlay** or a new **firmware** is out (once per version; a click opens the download page). The tray's *Updates* menu shows the app's version, the connected controller's firmware, *Check now* and an on/off switch. Nothing is downloaded or installed by itself. The firmware check needs **[sc26re v51.2](https://github.com/pablo89898991/sc26re-1khz/releases/tag/v51.2)** or newer on the controller (older firmware shows as "older than v51.2").
+**New in 1.3**
+- **Battery in the tray.** Hover the tray icon: the controller's battery level, whether it is charging, voltage and temperature. The same line is at the top of the tray menu, and a notification comes once when the battery drops to 15 % while not charging. Needs firmware **v51.4** or newer (the first one that reports the battery); with older firmware the line is simply not there.
+- **Lighter 3D controller.** It is drawn only when something changes (a still controller costs about one frame a second instead of the screen's full rate), with a smaller canvas, and the full-screen menu layer is left alone while nothing is on it.
+- **Quality setting** (Remapper and overlay settings → Window → Quality): *light* turns edge smoothing off and draws at the window's own resolution, about half the GPU work. Pick it if the overlay stutters next to a game.
+
+**From 1.2: update notifications.** At start and every 6 hours the app checks this project's releases and tells you when a new **SC2 Overlay** or a new **firmware** is out (tray → *Updates*). Nothing is downloaded or installed by itself.
 
 Firmware for this app: **[sc26re v51.2](https://github.com/pablo89898991/sc26re-1khz/releases/tag/v51.2)**.
 
@@ -21,8 +26,8 @@ A small Windows and Linux app for the **sc26re** firmware (Steam Controller 2026
 
 The Linux version was made by **Rhyn0_Rang3r**. Thank you!
 
-- **Ubuntu / Debian:** `SC2-Overlay-1.2.0.deb`. Install it with `sudo apt install ./SC2-Overlay-1.2.0.deb`, then unplug and replug the controller once. The package also installs the controller access rules (udev).
-- **Other distributions:** `SC2-Overlay-1.2.0.AppImage`. Make it executable and run it. On Ubuntu 24.04+ it may need `--no-sandbox`.
+- **Ubuntu / Debian:** `SC2-Overlay-1.3.0.deb`. Install it with `sudo apt install ./SC2-Overlay-1.3.0.deb`, then unplug and replug the controller once. The package also installs the controller access rules (udev).
+- **Other distributions:** `SC2-Overlay-1.3.0.AppImage`. Make it executable and run it. On Ubuntu 24.04+ it may need `--no-sandbox`.
 - **Wayland:** global hotkeys don't reach apps, so bind these commands to keys (the installer script does it for GNOME): `sc2-overlay --arrange`, `sc2-overlay --toggle`, `sc2-overlay --recenter`, `sc2-overlay --settings`.
 - **Arranging:** leave with the blue **Done arranging** button or a right-click.
 - **Building from source:** use `install-linux.sh` in the repository. Details are in `desktop/LINUX.md`.
