@@ -505,9 +505,8 @@ void gyro_mouse_feed(const float dps[3], uint32_t buttons, float dt_s)
 				if(t - last_tick >= 25)
 				{
 					last_tick = t;
-					(void)haptics_play_feedback((uint8_t)lvl,
-					                            haptics_place_channels(sc26re_cfg_get(SC26RE_CFG_GYRO_HAPTIC_AT),
-					                                                   HAPTICS_CHANNELS_PRIMARY));
+					(void)haptics_play_feedback_at((uint8_t)lvl, sc26re_cfg_get(SC26RE_CFG_GYRO_HAPTIC_AT),
+					                               HAPTICS_CHANNELS_PRIMARY);
 				}
 			}
 		}

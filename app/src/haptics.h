@@ -129,6 +129,9 @@ int haptics_play_feedback(uint8_t level, uint8_t channels);
 /* where a haptic goes by a place setting (0 grips, 1 trackpads, 2 both): channels on the trackpads
  * (LEFT_0 / RIGHT_0) are moved or copied to the grips of the same side */
 uint8_t haptics_place_channels(int16_t place, uint8_t pad_channels);
+/* feedback (1 tick, 2 click, 3 strong) on trackpad channels moved by a place setting; "both" plays
+ * the grip a level stronger and the trackpad a level lighter */
+int haptics_play_feedback_at(uint8_t level, int16_t place, uint8_t pad_channels);
 /* the last host haptic reports, 8 bytes each, oldest first: seq le16, id, side, d1, d2, flags
  * (1/2 trigger L/R pulled, 4/8 trackpad L/R touched, 16 turning, 128 refused), channels played
  * (0xFF: none decided) */

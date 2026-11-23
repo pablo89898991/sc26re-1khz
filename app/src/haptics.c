@@ -666,8 +666,7 @@ void haptics_trigger_update(int16_t left, int16_t right)
 				past[i] = true;
 				if(lvl > 0)
 				{
-					(void)haptics_play_feedback((uint8_t)lvl,
-					                            haptics_place_channels(sc26re_cfg_get(SC26RE_CFG_TRIG_HAPTIC), pad[i]));
+					(void)haptics_play_feedback_at((uint8_t)lvl, sc26re_cfg_get(SC26RE_CFG_TRIG_HAPTIC), pad[i]);
 				}
 			}
 			else if(past[i] && v[i] < rel)
@@ -2346,6 +2345,24 @@ uint8_t haptics_place_channels(int16_t place, uint8_t channels)
 		case 2: return channels | grips;
 		default: return (uint8_t)((channels & ~pads) | grips);
 	}
+}
+
+/* a feedback where a place setting says. "Both": the grip one level stronger and the trackpad one
+ * level lighter, else the trackpad under the thumb drowns the grip out (v51.4 test 9) */
+int haptics_play_feedback_at(uint8_t level, int16_t place, uint8_t pad_channels)
+{
+	uint8_t grips = (uint8_t)(haptics_place_channels(0, pad_channels) & ~HAPTICS_CHANNELS_PRIMARY);
+
+	if(level == 0U)
+	{
+		return 0;
+	}
+	if(place == 2 && grips != 0U)
+	{
+		(void)haptics_play_feedback(MIN(level + 1U, 3U), grips);
+		return haptics_play_feedback(level > 1U ? level - 1U : 1U, pad_channels & HAPTICS_CHANNELS_PRIMARY);
+	}
+	return haptics_play_feedback(level, haptics_place_channels(place, pad_channels));
 }
 
 /* remapper / gyro feedback: 1 tick, 2 click, 3 strong pulse */

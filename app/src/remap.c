@@ -477,7 +477,7 @@ static void feedback_src(uint8_t level, int s)
 	{
 		static const uint8_t ch[3] = { HAPTICS_CHANNEL_LEFT_0, HAPTICS_CHANNEL_RIGHT_0, HAPTICS_CHANNELS_PRIMARY };
 
-		(void)haptics_play_feedback(level, haptics_place_channels(place, ch[side]));
+		(void)haptics_play_feedback_at(level, (int16_t)place, ch[side]);
 	}
 }
 
