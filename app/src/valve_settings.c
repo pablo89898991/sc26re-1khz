@@ -631,14 +631,15 @@ bool valve_settings_read(const char *path, uint8_t *buf, size_t capacity, size_t
 		*len = 28;
 		return true;
 	}
-	if(strcmp(path, "sc26re/dock") == 0 && capacity >= 3)
+	if(strcmp(path, "sc26re/dock") == 0 && capacity >= 5)
 	{
+		/* [0] LED: on the Puck, [1] Puck link, [2] pilot contact, [3] why the last start went
+		 * as it did, [4] its result (charge_mode.c) */
+		memset(buf, 0, 5);
 #if CONFIG_IBEX_RGBW_LED && CONFIG_IBEX_DOCK_CHARGE_LED
 		charge_mode_dock_debug(buf);
-#else
-		memset(buf, 0, 3);
 #endif
-		*len = 3;
+		*len = 5;
 		return true;
 	}
 	if(strcmp(path, "sc26re/hapdbg") == 0 && capacity >= 48)

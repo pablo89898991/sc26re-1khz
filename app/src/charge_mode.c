@@ -255,6 +255,17 @@ static enum charge_mode_result wait_for_usb_or_steam(void)
 	return steam_power_requested() ? CHARGE_MODE_POWER_ON_RADIO : CHARGE_MODE_SKIPPED;
 }
 
+/* why the last start went the way it did (sc26re/dock, diagnosis): 1 continue-wireless flag,
+ * 2 no USB / Puck contact, 3 USB path, 4 Steam held, 5 left charge-only mode */
+static uint8_t cm_why, cm_result;
+
+static enum charge_mode_result cm_note(uint8_t why, enum charge_mode_result r)
+{
+	cm_why = why;
+	cm_result = (uint8_t)r;
+	return r;
+}
+
 enum charge_mode_result charge_mode_run_if_needed(void)
 {
 	int64_t charge_complete_since_ms = 0;
@@ -269,11 +280,11 @@ enum charge_mode_result charge_mode_run_if_needed(void)
 	   !transport_usb_configured())
 	{
 		LOG_INF("Continue wireless operation (%s)", usb_attached ? "USB" : "PUCK");
-		return CHARGE_MODE_POWER_ON_RADIO;
+		return cm_note(1, CHARGE_MODE_POWER_ON_RADIO);
 	}
 	if(!usb_attached && !puck_contact)
 	{
-		return CHARGE_MODE_SKIPPED;
+		return cm_note(2, CHARGE_MODE_SKIPPED);
 	}
 	charge_mode_note_contact();
 
@@ -282,16 +293,16 @@ enum charge_mode_result charge_mode_run_if_needed(void)
 		result = wait_for_usb_or_steam();
 		if(result != CHARGE_MODE_SKIPPED)
 		{
-			return result;
+			return cm_note(3, result);
 		}
 		if(!transport_usb_attached() || transport_usb_configured())
 		{
-			return transport_usb_configured() ? CHARGE_MODE_USB_CONFIGURED : CHARGE_MODE_SKIPPED;
+			return cm_note(3, transport_usb_configured() ? CHARGE_MODE_USB_CONFIGURED : CHARGE_MODE_SKIPPED);
 		}
 	}
 	else if(steam_power_requested())
 	{
-		return CHARGE_MODE_POWER_ON_RADIO;
+		return cm_note(4, CHARGE_MODE_POWER_ON_RADIO);
 	}
 
 	LOG_INF("%s; entering charge-only mode",
@@ -325,7 +336,7 @@ enum charge_mode_result charge_mode_run_if_needed(void)
 		if(result != CHARGE_MODE_SKIPPED)
 		{
 			charge_led_set(led_off);
-			return result;
+			return cm_note(5, result);
 		}
 	}
 }
@@ -366,8 +377,10 @@ static struct rgbw_color dock_led_breathe(uint32_t t)
 static bool dock_led_docked;
 
 /* sc26re/dock (v51.4 test 15): on the Puck for the LED, Puck link frames, pilot contact */
-void charge_mode_dock_debug(uint8_t out[3])
+void charge_mode_dock_debug(uint8_t out[5])
 {
+	out[3] = cm_why;
+	out[4] = cm_result;
 	out[0] = dock_led_docked ? 1U : 0U;
 	out[1] = puck_interface_active() ? 1U : 0U;
 	out[2] = puck_pilot_present() ? 1U : 0U;
