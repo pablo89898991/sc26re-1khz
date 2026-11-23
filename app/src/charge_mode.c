@@ -415,6 +415,16 @@ void charge_mode_dock_led_poll(void)
 
 	bool contact = last_seen != 0 && now - last_seen < DOCK_LED_LOST_MS;
 
+	/* v51.4 test 22: the Puck's link starts talking only 10-15 s after the controller lands
+	 * (measured), its power reaches the charger at once: power in without a USB host also
+	 * means "on the Puck" (a wall charger on the cable shows the charge light too) */
+	if(!contact && !transport_usb_configured())
+	{
+		struct controller_battery_report b;
+
+		contact = battery_get_status(&b) == 0 && b.charger_type != 0U;
+	}
+
 	if(contact && !docked)
 	{
 		docked = dock_led_docked = true;
