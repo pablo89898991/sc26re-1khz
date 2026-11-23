@@ -479,7 +479,7 @@ function toast(text) { const t = $("#toast"); t.style.top = $("#toastY").value +
 /* battery: a badge on the page and, in the app, the tray icon's tooltip (firmware v51.4+) */
 SCB.poll(path => devs.length ? readPath(path) : Promise.reject(new Error("no controller")), x => {
   SCB.paint(document.getElementById("batt"), x);
-  if (window.sc26reApp && sc26reApp.battery) sc26reApp.battery(x ? { pct: x.pct, text: SCB.long(x), charging: x.charging } : null);
+  if (window.sc26reApp && sc26reApp.battery && x !== undefined) sc26reApp.battery(x ? { pct: x.pct, text: SCB.long(x), charging: x.charging } : null);
 }, 30000);
 (async function versionLoop() {
   if (!window.sc26reApp || !sc26reApp.firmware) return;

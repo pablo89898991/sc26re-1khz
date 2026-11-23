@@ -21,7 +21,7 @@
     return (x.charging ? "⚡" : "🔋") + " " + x.pct + "%" + (x.full && x.charging === false && x.state === 4 ? " full" : "");
   }
   function long(x) {
-    if (!x) return "Battery: not reported (firmware v51.4 or newer shows it)";
+    if (!x) return "Battery: this firmware does not report it (sc26re v51.4 or newer does)";
     const parts = [`Battery ${x.pct}%`, x.stateName];
     if (x.mv) parts.push((x.mv / 1000).toFixed(2) + " V");
     if (x.charging && x.ma) parts.push(x.ma + " mA");
@@ -35,7 +35,8 @@
     let busy = false;
     const tick = async () => {
       if (busy) return; busy = true;
-      try { show(decode(await read("sc26re/battery"))); } catch (e) { /* not connected / busy */ }
+      /* null: the controller answered without a battery (older firmware); undefined: no answer */
+      try { show(decode(await read("sc26re/battery"))); } catch (e) { show(undefined); }
       busy = false;
     };
     tick(); return setInterval(tick, ms || 30000);
@@ -43,8 +44,9 @@
   /* fills a <span>: text, tooltip, colour */
   function paint(el, x) {
     if (!el) return;
-    el.hidden = !x; el.textContent = short(x); el.title = long(x);
-    el.style.color = color(x);
+    el.hidden = x === undefined;
+    el.textContent = x ? short(x) : "🔋 –"; el.title = long(x);
+    el.style.color = color(x); el.style.opacity = x ? "" : "0.6";
   }
   window.SCB = { decode, short, long, color, poll, paint };
 })();
