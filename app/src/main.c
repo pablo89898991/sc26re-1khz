@@ -547,6 +547,12 @@ int main(void)
 	}
 	radio_personality_init();
 	sc26re_cfg_load();
+	/* remap_boot 1 (v51.4): every power-on starts with the remapper off (Steam mode); Steam +
+	 * Menu turns it on, and that is not saved for the next power-on */
+	if(sc26re_cfg_get(SC26RE_CFG_REMAP_BOOT) == 1 && sc26re_cfg_get(SC26RE_CFG_REMAP_ON) == 1)
+	{
+		(void)sc26re_cfg_set(SC26RE_CFG_REMAP_ON, 0, false);
+	}
 	remap_init();
 	/* the gyro mouse always starts off */
 	(void)sc26re_cfg_set(SC26RE_CFG_GM_ENABLED, 0, false);

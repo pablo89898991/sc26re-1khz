@@ -107,6 +107,7 @@ enum sc26re_cfg_id
 	SC26RE_CFG_GM_ROT_DEG,     /* gyro mouse: degrees of turn per tick */
 	SC26RE_CFG_TRIG_FW_HAPTIC, /* the firmware's own trigger haptics: 0 off, 1 tick, 2 click, 3 strong */
 	SC26RE_CFG_TRIG_FW_POINT,  /* ... played when a trigger reaches this % */
+	SC26RE_CFG_REMAP_BOOT,     /* at power-on: 0 the remapper as it was (Steam + Menu), 1 always off */
 	SC26RE_CFG_COUNT,
 };
 

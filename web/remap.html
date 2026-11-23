@@ -110,7 +110,7 @@
 <body>
 <div class="top">
   <div class="topin">
-    <div class="brand">SC2 <span class="hz">Remapper</span> <span class="note" id="pagever" title="page version — if it is older than expected, press Ctrl+F5">p.2026-11-23h</span></div>
+    <div class="brand">SC2 <span class="hz">Remapper</span> <span class="note" id="pagever" title="page version — if it is older than expected, press Ctrl+F5">p.2026-11-23i</span></div>
     <button class="primary" id="connect">Connect controller</button>
     <span id="status" class="chip">not connected</span>
     <span id="batt" class="chip" hidden></span>
@@ -1289,7 +1289,7 @@ const LV=[
  ["Trackpads",[["tp_smoothing","Smoothing","0 off, 5 stock, 10 smoothest"],["tp_click","Click pressure","pressure needed for a pad click"],["tp_noise","Noise threshold","higher = ignores lighter touches"]]],
  ["Touch sensors",[["cap:0","Stick touch on (capsense)","raw value for a thumb touch; higher = less sensitive (default 720)"],["cap:1","Stick touch off","must be below “on” (default 80 % of on)"],["cap:2","Grip touch on (gripsense)","raw grip value for a touch (default 900)"],["grip_drift","Grip drift tracking","% of the grip touch level that may be taken as hands-off drift (default 60, 0 = off). Fixes grips that turn on and stay on after some play (v51.4+)"]]],
  ["Haptics and sounds",[["haptic_gain","Haptics volume","dB, −24 … +6"],["trig_haptic","Trigger haptics on","0 = the grips · 1 = the trackpads (Valve) · 2 = both — Steam's trigger haptics and the firmware's below, whatever you touch (v51.4+)"],["trig_fw_haptic","Firmware trigger haptics","without Steam: 0 off · 1 tick · 2 click · 3 strong, when a trigger reaches the point below (v51.4+)"],["trig_fw_point","…at","% of trigger travel (default 85)"],["chime","Power-on chime",""],["drop_scream","Drop: scream chance","% per drop"],["drop_meow","Drop: meow chance","% per drop (scream + meow ≤ 100)"]]],
- ["Power and LED",[["led_brightness","LED brightness","%"],["auto_off","Auto power-off","minutes without input, 0 = never"],["link_lost_off","Off when the Puck / BT host is gone","minutes, 0 = never"]]],
+ ["Power and LED",[["led_brightness","LED brightness","%"],["auto_off","Auto power-off","minutes without input, 0 = never"],["link_lost_off","Off when the Puck / BT host is gone","minutes, 0 = never"],["remap_boot","Remapper at power-on","0 = as it was last (Steam + Menu) · 1 = always off, the controller starts in Steam mode (v51.4+)"]]],
 ];
 function lvBuild(){
   $("#lvCards").innerHTML=LV.map(([t,l])=>`<div class="card"><h3>${t}</h3>${l.map(([n,lab,h])=>row(lab,h,

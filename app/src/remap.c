@@ -1698,7 +1698,8 @@ static void release_all(void)
 
 void remap_set_enabled(bool on)
 {
-	(void)sc26re_cfg_set(SC26RE_CFG_REMAP_ON, on ? 1 : 0, true);
+	/* remap_boot 1: power-on always starts off, so the switch is not saved */
+	(void)sc26re_cfg_set(SC26RE_CFG_REMAP_ON, on ? 1 : 0, sc26re_cfg_get(SC26RE_CFG_REMAP_BOOT) != 1);
 	if(!on)
 	{
 		release_all();
