@@ -38,7 +38,10 @@ LOG_MODULE_REGISTER(puck_interface);
 #define PUCK_FRAME_IDLE_TIMEOUT_MS 1000
 #define PUCK_IDLE_TIMEOUTS_BEFORE_INACTIVE 2
 #define PUCK_THREAD_STACK_SIZE 2048
-#define PUCK_THREAD_PRIORITY 9
+/* v51.4: below the report, radio and input threads. At 9 (the radio's priority) the busy-wait
+ * UART transmit (75 bytes, ~6.5 ms at 115200) and the frame search held the report and radio
+ * threads back while the controller lay on the Puck: the controller lagged. */
+#define PUCK_THREAD_PRIORITY 14
 #define PUCK_OFW_MAGIC 0x69fe17ffu
 
 struct puck_frame_reader
@@ -264,7 +267,10 @@ static bool puck_frame_reader_push(struct puck_frame_reader *reader, uint8_t byt
 	}
 
 	reader->window[reader->used++] = byte;
-	if(reader->used != PUCK_FRAME_SIZE || puck_crc16(0, reader->window, PUCK_FRAME_SIZE) != 0)
+	/* the CRC over the whole window only where a frame can start: byte 1 is the request type
+	 * (0..3 known, up to 7 answered). Checking every byte position cost ~75 x 75 steps per frame, for our own echo too. */
+	if(reader->used != PUCK_FRAME_SIZE || reader->window[1] > 7 ||
+	   puck_crc16(0, reader->window, PUCK_FRAME_SIZE) != 0)
 	{
 		return false;
 	}
