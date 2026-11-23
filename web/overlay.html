@@ -122,7 +122,8 @@ function yawStep(dt) {
 /* ---------- three.js scene (model space: cm, +x right, +y out of the face, +z towards the grips) ---------- */
 const view = $("#view");
 const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: false });
-renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+/* a sharper canvas than 1.5x costs a lot of GPU time for little gain; in the remapper's small box 1.25x */
+renderer.setPixelRatio(Math.min(devicePixelRatio, IN_TAB ? 1.25 : 1.5));
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 view.appendChild(renderer.domElement);
 const scene = new THREE.Scene();
@@ -354,7 +355,7 @@ setInterval(() => { const n = rawN; rawN = 0; if (!devs.length) return;
     if (!devs.length || $("#src").value !== "raw") { rawAng = qNat = null; await new Promise(r => setTimeout(r, 200)); continue; }
     /* at most 250 reads a second: the pad reports keep the model moving in between, and Steam and
      * the remapper page share the channel */
-    const wait = asked + 4 - performance.now(); if (wait > 0) await new Promise(r => setTimeout(r, wait));
+    const wait = asked + (IN_TAB ? 8 : 4) - performance.now(); if (wait > 0) await new Promise(r => setTimeout(r, wait));
     asked = performance.now();
     let b; try { b = await readPath("sc26re/raw"); fails = 0; } catch (e) {
       /* firmware without native reads answers nothing: ask once a second, not hundreds of times */
@@ -583,8 +584,12 @@ function caption(c, text, x, y, size) {
   c.font = `${Math.max(11, size)}px system-ui,Segoe UI,sans-serif`; c.textAlign = "center"; c.textBaseline = "middle";
   c.fillStyle = "rgba(223,231,245,.95)"; c.shadowColor = "#000"; c.shadowBlur = 4; c.fillText(text, x, y); c.shadowBlur = 0;
 }
+let menuDrawn = true;
 function drawMenu(now) {
   if (toastT && now - toastT > 1600) { $("#toast").classList.remove("on"); toastT = 0; }
+  const want = editOn || (menuSt && $("#menuOn").checked && now - menuSeen <= 500);
+  if (!want && !menuDrawn) return;
+  menuDrawn = !!want;
   const cv = $("#menu"), dpr = window.devicePixelRatio || 1, W = innerWidth, H = innerHeight;
   if (cv.width !== Math.round(W * dpr) || cv.height !== Math.round(H * dpr)) { cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr); }
   const c = cv.getContext("2d"); c.setTransform(dpr, 0, 0, dpr, 0, 0); c.clearRect(0, 0, W, H);
@@ -623,10 +628,12 @@ let lastFrame = 0, fpsN = 0, fpsT = performance.now();
 function frame(now) {
   requestAnimationFrame(frame);
   /* frame rate limit: draw only once the next frame is due (a little early, so 60 on a 60 Hz screen stays 60) */
-  const fps = +$("#fps").value;
+  /* inside the remapper (tab or window on top) "as the screen" means at most 60: a 144-240 Hz
+   * screen would spend that much GPU on a preview */
+  const fps = +$("#fps").value || (IN_TAB ? 60 : 0);
   if (fps > 0 && now - lastFrame < 1000 / fps - 1.5) return;
   lastFrame = now; fpsN++;
-  if (now - fpsT >= 1000) { $("#fpsV").textContent = Math.round(fpsN * 1000 / (now - fpsT)) + " fps"; fpsN = 0; fpsT = now; }
+  if (now - fpsT >= 1000) { $("#fpsV").textContent = Math.round(drawN * 1000 / (now - fpsT)) + " fps (only when it moves)"; fpsN = 0; drawN = 0; fpsT = now; }
   const bgv = APP ? "transparent" : $("#bg").value, bgc = bgv === "custom" ? $("#bgCol").value : bgv;
   if (bgv === "transparent") { renderer.setClearColor(0x000000, 0); document.body.style.background = "transparent"; document.documentElement.style.background = "transparent"; }
   else { renderer.setClearColor(bgc, 1); document.body.style.background = bgc; document.documentElement.style.background = ""; }
@@ -646,9 +653,19 @@ function frame(now) {
   const lift = $("#popTrig").checked ? 1.6 : 0;
   camera.position.set(0, lift, dist); camera.lookAt(0, lift, 0);
   $("#view").style.visibility = $("#modelOn").checked ? "" : "hidden";
-  if ($("#modelOn").checked) renderer.render(scene, camera);
+  /* draw only when something changed: the pose, the inputs, a setting, the size; once a second
+   * anyway (settings that arrive without an event). A resting controller then costs ~1 frame/s. */
+  const mq = model.quaternion, sig = [mq.x, mq.y, mq.z, mq.w].map(v => v.toFixed(5)).join() + JSON.stringify(st) + dist + lift + ready + loadGen + renderer.domElement.width + "x" + renderer.domElement.height;
+  if ($("#modelOn").checked && (ovDirty || sig !== lastSig || now - lastDraw > 1000)) {
+    renderer.render(scene, camera); lastSig = sig; lastDraw = now; ovDirty = false; drawN++;
+  }
   drawMenu(now);
 }
+let ovDirty = true, lastSig = "", lastDraw = 0, drawN = 0;
+for (const ev of ["input", "change", "pointerdown", "pointermove", "wheel", "keydown"]) document.addEventListener(ev, () => { ovDirty = true; }, true);
+addEventListener("storage", () => { ovDirty = true; }); addEventListener("message", () => { ovDirty = true; });
+new ResizeObserver(() => { ovDirty = true; }).observe(view);
+
 requestAnimationFrame(frame);
 /* test hook (#debug): turn the controller from the console / a test */
 if (location.hash === "#debug") window.__ov = { st, home(n) { const p = parts.get(n), pop = popOf(n), h = p.rest.clone(); if (pop) h.addScaledVector(pop, p.unit || 1); return h; },
