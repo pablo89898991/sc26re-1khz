@@ -23,6 +23,7 @@
 #include "battery.h"
 #include "controller.h"
 #include "power.h"
+#include "sc26re_cfg.h"
 #include "remap.h"
 #include "haptics.h"
 #include "puck_interface.h"
@@ -73,6 +74,7 @@ static __noinit struct
 } crash_record;
 static struct power_crash_info last_crash;
 static uint32_t power_off_release_mask;
+static uint32_t power_off_ra; /* diagnosis (v51.4 test 21): who asked for the power-off */
 static bool power_off_quiet_request;
 K_SEM_DEFINE(power_off_sem, 0, 1);
 
@@ -267,14 +269,22 @@ int power_reboot_normal(void)
 	return 0;
 }
 
-void power_off_quiet(void)
+__attribute__((noinline)) void power_off_quiet(void)
 {
+	if(power_off_ra == 0U)
+	{
+		power_off_ra = (uint32_t)__builtin_return_address(0);
+	}
 	power_off_quiet_request = true;
 	power_off();
 }
 
-void power_off(void)
+__attribute__((noinline)) void power_off(void)
 {
+	if(power_off_ra == 0U)
+	{
+		power_off_ra = (uint32_t)__builtin_return_address(0);
+	}
 	power_off_after_buttons_released(STEAM_BUTTON_MASK);
 }
 
@@ -288,6 +298,14 @@ static void power_off_thread_entry(void *unused1, void *unused2, void *unused3)
 
 	k_sem_take(&power_off_sem, K_FOREVER);
 	release_mask = power_off_release_mask;
+	{
+		uint32_t up = (uint32_t)(k_uptime_get() / 1000);
+
+		(void)sc26re_cfg_set(SC26RE_CFG_OFF_RA, (int16_t)(uint16_t)(power_off_ra >> 4), true);
+		(void)sc26re_cfg_set(SC26RE_CFG_OFF_UP,
+		                     (int16_t)(uint16_t)(MIN(up, 0x7FFFU) | (power_off_quiet_request ? 0x8000U : 0U)),
+		                     true);
+	}
 
 	int64_t chime_until = 0;
 
@@ -322,8 +340,12 @@ static void power_off_thread_entry(void *unused1, void *unused2, void *unused3)
 K_THREAD_DEFINE(power_off_thread, POWER_OFF_THREAD_STACK_SIZE, power_off_thread_entry, NULL, NULL,
                 NULL, POWER_OFF_THREAD_PRIORITY, 0, 0);
 
-void power_off_after_buttons_released(uint32_t release_mask)
+__attribute__((noinline)) void power_off_after_buttons_released(uint32_t release_mask)
 {
+	if(power_off_ra == 0U)
+	{
+		power_off_ra = (uint32_t)__builtin_return_address(0);
+	}
 	if(!atomic_cas(&power_off_claimed, 0, 1))
 	{
 		LOG_DBG("power-off already in progress");
