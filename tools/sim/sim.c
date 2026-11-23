@@ -466,6 +466,7 @@ int sim_feature(const uint8_t *req, uint8_t *rsp)
 		else if(sc26re_cfg_path(path)) ok = sc26re_cfg_read(path, cur, 60, &len);
 		/* the firmware's other read-only paths (valve_settings.c), sizes as there, plausible values */
 		else if(strcmp(path, "sc26re/host") == 0) { sys_put_le32(600000U, cur); len = 4; ok = true; }
+		else if(strcmp(path, "sc26re/battery") == 0) { static const uint8_t b[12] = { 1, 2, 76, 0xD4, 0x0F, 0xF4, 0x01, 0xF5, 0x00, 1, 0, 3 }; memcpy(cur, b, 12); len = 12; ok = true; }
 		else if(strcmp(path, "sc26re/version") == 0) { sys_put_le32(0xF05501B4U, cur); memcpy(&cur[4], "v51.2", 5); len = 9; ok = true; }
 		else if(strcmp(path, "sc26re/gm_state") == 0) { cur[0] = gm_on_any(); sys_put_le32(16364U, &cur[6]); len = 22; ok = true; }
 		else if(strcmp(path, "sc26re/imu_stats") == 0) { len = 20; ok = true; }

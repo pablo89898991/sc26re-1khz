@@ -55,6 +55,7 @@
       <label class="note" title="Switches the controller's gyro/accelerometer on from this page, the way Steam does, so nothing else has to be open. Switched off again when you close the page."><input type="checkbox" id="imuOn" checked> Gyro on (standalone)</label>
       <label class="note" id="ctlPick" style="display:none">Controller <select id="ctlSel"></select></label>
       <span id="status" class="note">not connected</span>
+      <span id="batt" class="note" hidden style="font-weight:600"></span>
       <span id="bootInfo" class="note"></span>
     </div>
   </div>
@@ -297,6 +298,7 @@
 </div>
 
 <script src="stickcal.js"></script>
+<script src="battery.js"></script>
 <script>
 "use strict";
 const $=s=>document.querySelector(s);
@@ -1262,6 +1264,9 @@ function plot(){
     gyroHist.forEach((p,i)=>{const px=(p.t-t0)/1500*W, py=H/2-p.g[k]/mx*(H/2-10); i?x.lineTo(px,py):x.moveTo(px,py);}); x.stroke(); });
 }
 requestAnimationFrame(draw);
+
+/* battery badge (firmware v51.4+), every 30 s while connected */
+SCB.poll(path=>{ const d=ctl(); if(!d) return Promise.reject(new Error("no controller")); return featRead(d,path); }, x=>SCB.paint($("#batt"),x));
 </script>
 </body>
 </html>

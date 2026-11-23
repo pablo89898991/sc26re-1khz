@@ -7,4 +7,6 @@ contextBridge.exposeInMainWorld("sc26reApp", {
   arrange: () => ipcRenderer.send("arrange"),
   /* the overlay page tells which firmware the connected controller runs (update check) */
   firmware: info => ipcRenderer.send("firmware", info),
+  /* controller battery for the tray icon's tooltip (null: none reported) */
+  battery: info => ipcRenderer.send("battery", info),
 });

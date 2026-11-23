@@ -25,6 +25,7 @@
 </style>
 <script src="actnames.js"></script>
 <script src="overlay_settings.js"></script>
+<script src="battery.js"></script>
 <script type="importmap">
 { "imports": { "three": "./vendor/three/build/three.module.min.js" } }
 </script>
@@ -36,7 +37,7 @@
 <div id="loading">loading the 3D model…</div>
 <div id="ui">
   <h1>SC2 <span>3D Overlay</span></h1>
-  <div class="row"><button class="primary" id="connect">Connect controller</button><span id="status" class="note">not connected</span></div>
+  <div class="row"><button class="primary" id="connect">Connect controller</button><span id="status" class="note">not connected</span><span id="batt" class="note" hidden style="margin-left:8px;font-weight:600"></span></div>
   <div class="row"><button id="arrange" title="sample menus and the 3D controller's area: drag them where you want them, mouse wheel = size">Arrange on screen</button></div>
   <div id="setRows"></div>
   <script>document.getElementById("setRows").innerHTML = OVS.groups.map(g => `<h2 class="ovh">${g.name}</h2>` + OVS.rows(g.g)).join("");</script>
@@ -475,6 +476,11 @@ function parseMenu(b) {
 }
 function toast(text) { const t = $("#toast"); t.style.top = $("#toastY").value + "%"; t.textContent = text; t.classList.add("on"); toastT = performance.now(); }
 /* the overlay app's update check: which firmware the controller runs (once per connection) */
+/* battery: a badge on the page and, in the app, the tray icon's tooltip (firmware v51.4+) */
+SCB.poll(path => devs.length ? readPath(path) : Promise.reject(new Error("no controller")), x => {
+  SCB.paint(document.getElementById("batt"), x);
+  if (window.sc26reApp && sc26reApp.battery) sc26reApp.battery(x ? { pct: x.pct, text: SCB.long(x), charging: x.charging } : null);
+}, 30000);
 (async function versionLoop() {
   if (!window.sc26reApp || !sc26reApp.firmware) return;
   let told = false;

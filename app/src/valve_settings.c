@@ -27,6 +27,7 @@
 #include "hwtest.h"
 #endif
 #include "power.h"
+#include "battery.h"
 
 /* Report meter: stick/grip capacitive thresholds (live via STAGE, saved via COMMIT). */
 #ifndef SC26RE_RELEASE
@@ -627,6 +628,32 @@ bool valve_settings_read(const char *path, uint8_t *buf, size_t capacity, size_t
 			memcpy(&buf[18], c->thread, 10);
 		}
 		*len = 28;
+		return true;
+	}
+	if(strcmp(path, "sc26re/battery") == 0 && capacity >= 12)
+	{
+		/* battery for the report meter / remapper / SC2 Overlay: [0] 1 = fresh, 2 = stale,
+		 * 0 = none, [1] charge state (1 discharging, 2 charging, 3 checking the charger,
+		 * 4 full), [2] level %, [3..4] battery mV, [5..6] charge current mA,
+		 * [7..8] temperature in 0.1 C (int16), [9] charger type, [10] charge done,
+		 * [11] fuel gauge state */
+		struct controller_battery_report b;
+		int err = battery_get_status(&b);
+
+		memset(buf, 0, 12);
+		buf[0] = err == 0 ? 1U : (err == -ESTALE ? 2U : 0U);
+		if(buf[0] != 0U)
+		{
+			buf[1] = b.charge_state;
+			buf[2] = b.level_percent;
+			sys_put_le16(b.battery_mv, &buf[3]);
+			sys_put_le16(b.current_ma, &buf[5]);
+			sys_put_le16((uint16_t)(int16_t)(b.temperature_estimate_mc / 100), &buf[7]);
+			buf[9] = b.charger_type;
+			buf[10] = b.charge_complete ? 1U : 0U;
+			buf[11] = b.fuel_gauge_state;
+		}
+		*len = 12;
 		return true;
 	}
 	if(strcmp(path, "sc26re/awake") == 0 && capacity >= 1)

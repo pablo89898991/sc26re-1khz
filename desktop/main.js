@@ -126,6 +126,8 @@ const openRemap = () => openPage("remap.html");
  * Only reads the public release list (no download, nothing installed): a notification and a tray
  * entry that open the release page. Each new version is announced once. */
 const REPO = "pablo89898991/sc26re-1khz";
+/* controller battery from the overlay page (tray tooltip + menu line); null: none reported */
+let batt = null, lowTold = false;
 const RELEASES = `https://github.com/${REPO}/releases`;
 const upd = { app: null, fw: null, fwHave: undefined, checked: 0, error: "" };
 /* --updates-test: act as app 1.0.0 with a controller on v50, so both notifications show (testing) */
@@ -221,13 +223,14 @@ function buildTray() {
     { label: "Show the overlay", type: "checkbox", checked: conf.shown, accelerator: KEY_SHOW, click: toggleShown },
     { label: "Screen", submenu: displays.map((d, i) => ({ label: `Screen ${i + 1} (${d.size.width} × ${d.size.height})${d.id === screen.getPrimaryDisplay().id ? ", main" : ""}`,
       type: "radio", checked: d.id === cur.id, click: () => { conf.display = d.id; saveConf(); placeOverlay(); } })) },
+    ...(batt ? [{ label: batt.text, enabled: false }] : []),
     ...updateItems(),
     { label: LINUX ? "Start at login" : "Start with Windows", type: "checkbox", checked: getAutostart(),
       click: m => setAutostart(m.checked) },
     { type: "separator" },
     { label: "Quit", click: () => app.quit() },
   ]));
-  tray.setToolTip("SC2 overlay" + (editing ? " (arranging)" : ""));
+  tray.setToolTip("SC2 overlay" + (editing ? " (arranging)" : "") + (batt ? "\n" + batt.text : ""));
 }
 
 /* Command line, for a desktop shortcut or a key binding where global hotkeys are not available (Wayland):
@@ -268,6 +271,14 @@ app.whenReady().then(() => {
     cb(d ? d.deviceId : "");
   });
   ipcMain.on("arrange", () => toggleArrange());
+  ipcMain.on("battery", (e, info) => {
+    const b = info && typeof info.text === "string" ? { pct: +info.pct || 0, text: info.text.slice(0, 120), charging: !!info.charging } : null;
+    /* low battery: once per discharge, below 15 % */
+    if (b && !b.charging && b.pct <= 15 && !lowTold) { lowTold = true; notify("Controller battery low", b.text, null); }
+    if (b && (b.charging || b.pct > 20)) lowTold = false;
+    const changed = JSON.stringify(b) !== JSON.stringify(batt);
+    batt = b; if (changed && tray) buildTray();
+  });
   ipcMain.on("firmware", (e, info) => {
     const rel = UPD_TEST ? "v50" : info && typeof info.release === "string" ? info.release.slice(0, 16) : "";
     if (upd.fwHave !== rel) { upd.fwHave = rel; announce(); buildTray(); }

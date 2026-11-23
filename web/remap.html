@@ -113,6 +113,7 @@
     <div class="brand">SC2 <span class="hz">Remapper</span> <span class="note" id="pagever" title="page version — if it is older than expected, press Ctrl+F5">p.2026-11-21k</span></div>
     <button class="primary" id="connect">Connect controller</button>
     <span id="status" class="chip">not connected</span>
+    <span id="batt" class="chip" hidden></span>
     <span class="grow"></span>
     <button id="onoff" class="sw" title="On the controller: Steam + Menu">Remapper <b>?</b></button>
     <button id="gmOn" class="sw" title="On the controller: Steam + View">Gyro mouse <b>?</b></button>
@@ -290,6 +291,7 @@
 <script src="overlay_settings.js"></script>
 <script src="vdf.js"></script>
 <script src="stickcal.js"></script>
+<script src="battery.js"></script>
 <dialog id="dlg"><div id="editor"></div><div class="bar" style="margin-top:12px;justify-content:flex-end"><button id="dlgClear" class="ghost danger">Clear input</button><button class="primary" id="dlgDone">Done</button></div></dialog>
 <script>
 const $=s=>document.querySelector(s);
@@ -1508,6 +1510,9 @@ $("#tCalTurn").onclick=()=>tool(0xF0,"sc26re/gm_cal_turn","turning…");
 $("#tCalStop").onclick=async()=>{ await tool(0xF0,"sc26re/gm_cal_stop","saved"); setTimeout(gyRead,500); };
 $("#tCalCancel").onclick=()=>tool(0xF0,"sc26re/gm_cal_cancel","cancelled");
 render();
+
+/* battery chip (firmware v51.4+), every 30 s while connected */
+SCB.poll(path=>devs.length?read(path):Promise.reject(new Error("no controller")), x=>SCB.paint($("#batt"),x));
 </script>
 </body>
 </html>
