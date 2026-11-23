@@ -129,5 +129,9 @@ int haptics_play_feedback(uint8_t level, uint8_t channels);
 /* where a haptic goes by a place setting (0 grips, 1 trackpads, 2 both): channels on the trackpads
  * (LEFT_0 / RIGHT_0) are moved or copied to the grips of the same side */
 uint8_t haptics_place_channels(int16_t place, uint8_t pad_channels);
+/* the last host haptic reports, 8 bytes each, oldest first: seq le16, id, side, d1, d2, flags
+ * (1/2 trigger L/R pulled, 4/8 trackpad L/R touched, 16 turning, 128 refused), channels played
+ * (0xFF: none decided) */
+int haptics_host_log(uint8_t *buf, size_t cap);
 /* Xbox 360 output: rumble motors from the game, 0..255 */
 void haptics_xinput_rumble(uint8_t big, uint8_t small);

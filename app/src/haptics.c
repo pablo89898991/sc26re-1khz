@@ -706,6 +706,28 @@ static bool trigger_redirect_pending;
  * trigger's side, one on press and one on release. Only those may move to the grip because of a
  * trigger; every other report type only follows the gyro rule.
  */
+/* host haptic report log for sc26re/haplog (v51.4): the last reports, what the controller made of them */
+#define HL_N 7
+static struct { uint16_t seq; uint8_t id, side, d1, d2, flags, out; } hl[HL_N];
+static uint16_t hl_seq;
+static uint8_t hl_out;
+
+int haptics_host_log(uint8_t *buf, size_t cap)
+{
+	size_t n = 0;
+
+	for(size_t i = 0; i < HL_N && n + 8 <= cap; ++i)
+	{
+		size_t k = (hl_seq + i) % HL_N; /* oldest first */
+
+		sys_put_le16(hl[k].seq, &buf[n]);
+		buf[n + 2] = hl[k].id; buf[n + 3] = hl[k].side; buf[n + 4] = hl[k].d1; buf[n + 5] = hl[k].d2;
+		buf[n + 6] = hl[k].flags; buf[n + 7] = hl[k].out;
+		n += 8;
+	}
+	return (int)n;
+}
+
 static uint8_t haptics_redirect_channels(uint8_t channels, bool trigger_pulse, bool gyro_tick)
 {
 	trigger_redirect_pending = false;
@@ -739,6 +761,7 @@ static uint8_t haptics_redirect_channels(uint8_t channels, bool trigger_pulse, b
 		channels = haptics_place_channels(sc26re_cfg_get(SC26RE_CFG_GYRO_HAPTIC_AT), channels);
 	}
 #endif
+	hl_out = channels;
 	return channels;
 }
 
@@ -1740,7 +1763,9 @@ static int handle_haptic_command(const uint8_t *data, size_t len, bool log)
 		{
 			return 0;
 		}
-		channels = haptics_redirect_channels(haptics_command_channels(data[0]), false, gyro_tick);
+		/* v51.4 test 7: a command aimed at a trackpad while its trigger is pulled counts as a
+		 * trigger haptic too (Steam sends trigger feedback as commands, not only as pulses) */
+		channels = haptics_redirect_channels(haptics_command_channels(data[0]), !gyro_tick, gyro_tick);
 	}
 	if(log)
 	{
@@ -1807,7 +1832,7 @@ static int handle_haptic_lfo_tone(const uint8_t *data, size_t len, bool log)
 		return -EMSGSIZE;
 	}
 
-	channels = haptics_redirect_channels(haptics_command_channels(data[0]), false, false);
+	channels = haptics_redirect_channels(haptics_command_channels(data[0]), true, false);
 	frequency_hz = sys_get_le16(&data[2]);
 	duration_ms = MIN(sys_get_le16(&data[4]), HAPTICS_HOST_MAX_DURATION_MS);
 	if(log)
@@ -1843,7 +1868,7 @@ static int handle_haptic_log_sweep(const uint8_t *data, size_t len, bool log)
 		return -EMSGSIZE;
 	}
 
-	channels = haptics_redirect_channels(haptics_command_channels(data[0]), false, false);
+	channels = haptics_redirect_channels(haptics_command_channels(data[0]), true, false);
 	duration_ms = MIN(sys_get_le16(&data[2]), HAPTICS_HOST_MAX_DURATION_MS);
 	start_frequency_hz = sys_get_le16(&data[4]);
 	end_frequency_hz = sys_get_le16(&data[6]);
@@ -1883,7 +1908,7 @@ static int handle_haptic_script(const uint8_t *data, size_t len, bool log)
 		return -EMSGSIZE;
 	}
 
-	channels = haptics_redirect_channels(haptics_command_channels(data[0]), false, false);
+	channels = haptics_redirect_channels(haptics_command_channels(data[0]), true, false);
 	if(log)
 	{
 		LOG_INF("haptics script side=0x%02x channels=%s script_id=%u gain_db=%d", data[0],
@@ -2176,6 +2201,8 @@ void haptics_debug_quat(struct controller_report *report)
 }
 #endif
 
+static int haptics_dispatch(uint8_t report_id, const uint8_t *data, size_t len, bool log);
+
 int haptics_handle_output_report(uint8_t report_id, const uint8_t *data, size_t len)
 {
 	bool log;
@@ -2201,6 +2228,31 @@ int haptics_handle_output_report(uint8_t report_id, const uint8_t *data, size_t 
 		haptics_log_report(report_id, data, len);
 	}
 
+	{
+		int r;
+		int32_t now = (int32_t)k_uptime_get_32();
+		size_t k = hl_seq % HL_N;
+
+		hl_out = 0xFF;
+		r = haptics_dispatch(report_id, data, len, log);
+		hl[k].seq = ++hl_seq; hl[k].id = report_id;
+		hl[k].side = len > 0 ? data[0] : 0; hl[k].d1 = len > 1 ? data[1] : 0; hl[k].d2 = len > 2 ? data[2] : 0;
+#if CONFIG_IBEX_HAPTICS_TRIGGERS_ON_GRIPS
+		hl[k].flags = ((int32_t)(atomic_get(&trigger_haptic_until_ms[0]) - now) > 0 ? 1 : 0) |
+		              ((int32_t)(atomic_get(&trigger_haptic_until_ms[1]) - now) > 0 ? 2 : 0) |
+		              (atomic_get(&trackpad_touched[0]) ? 4 : 0) | (atomic_get(&trackpad_touched[1]) ? 8 : 0) |
+		              ((int32_t)(atomic_get(&gyro_haptic_until_ms) - now) > 0 ? 16 : 0) | (r ? 128 : 0);
+#else
+		ARG_UNUSED(now);
+		hl[k].flags = r ? 128 : 0;
+#endif
+		hl[k].out = hl_out;
+		return r;
+	}
+}
+
+static int haptics_dispatch(uint8_t report_id, const uint8_t *data, size_t len, bool log)
+{
 	switch(report_id)
 	{
 		case ID_OUT_REPORT_HAPTIC_RUMBLE:

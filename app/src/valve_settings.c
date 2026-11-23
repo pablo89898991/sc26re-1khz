@@ -630,6 +630,11 @@ bool valve_settings_read(const char *path, uint8_t *buf, size_t capacity, size_t
 		*len = 28;
 		return true;
 	}
+	if(strcmp(path, "sc26re/haplog") == 0 && capacity >= 56)
+	{
+		*len = (size_t)haptics_host_log(buf, MIN(capacity, 56));
+		return true;
+	}
 	if(strcmp(path, "sc26re/battery") == 0 && capacity >= 12)
 	{
 		/* battery for the report meter / remapper / SC2 Overlay: [0] 1 = fresh, 2 = stale,
