@@ -190,6 +190,9 @@ uint32_t transport_esb_backend_end_events(void);
 uint32_t transport_esb_backend_crc_ok_events(void);
 uint32_t transport_esb_backend_crc_bad_events(void);
 uint32_t transport_esb_backend_rx_dropped_events(void);
+/* reports replaced by a newer one before the Puck took them / dropped on a full queue */
+uint32_t transport_esb_tx_replaced(void);
+uint32_t transport_esb_tx_full_drops(void);
 bool transport_esb_bond_loaded(void);
 int transport_esb_provision_bond(uint8_t slot, uint32_t proteus_uuid, uint32_t ibex_uuid,
                                  const char *serial);

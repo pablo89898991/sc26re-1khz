@@ -1615,6 +1615,16 @@ uint32_t transport_esb_replies_sent(void)
 	return replies_sent;
 }
 
+uint32_t transport_esb_tx_replaced(void)
+{
+	return tx_replaced;
+}
+
+uint32_t transport_esb_tx_full_drops(void)
+{
+	return tx_full_drops;
+}
+
 uint32_t transport_esb_backend_end_events(void)
 {
 	return valve_esb_backend_end_events();

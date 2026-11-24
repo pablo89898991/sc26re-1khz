@@ -80,6 +80,16 @@ __weak uint32_t transport_esb_replies_sent(void)
 	return 0;
 }
 
+__weak uint32_t transport_esb_tx_replaced(void)
+{
+	return 0;
+}
+
+__weak uint32_t transport_esb_tx_full_drops(void)
+{
+	return 0;
+}
+
 __weak uint32_t transport_esb_backend_end_events(void)
 {
 	return 0;

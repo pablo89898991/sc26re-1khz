@@ -633,6 +633,27 @@ bool valve_settings_read(const char *path, uint8_t *buf, size_t capacity, size_t
 		*len = 28;
 		return true;
 	}
+	if(strcmp(path, "sc26re/link") == 0 && capacity >= 30)
+	{
+		/* Puck radio link (v51.6): [0] connected, [1] channel, then le32 counters since power-on:
+		 * Puck polls, reports delivered (ACKed), frames received, reports replaced before the Puck
+		 * took them, dropped on a full queue, packets with a good CRC, with a bad CRC */
+		const uint32_t c[7] = {
+			transport_esb_polls_received(), transport_esb_replies_sent(),
+			transport_esb_host_frames_received(), transport_esb_tx_replaced(),
+			transport_esb_tx_full_drops(), transport_esb_backend_crc_ok_events(),
+			transport_esb_backend_crc_bad_events(),
+		};
+
+		buf[0] = transport_esb_connected() ? 1U : 0U;
+		buf[1] = transport_esb_channel();
+		for(size_t i = 0; i < 7; ++i)
+		{
+			sys_put_le32(c[i], &buf[2 + 4 * i]);
+		}
+		*len = 30;
+		return true;
+	}
 	if(strcmp(path, "sc26re/boottrace") == 0 && capacity >= 2)
 	{
 		*len = charge_mode_boot_trace(buf, capacity);
