@@ -677,6 +677,7 @@ int main(void)
 			                   imu_band_measure_state() == 1U);
 		}
 		now_ms = k_uptime_get();
+		charge_mode_boot_poll(report_has_activity(&current));
 #if CONFIG_IBEX_RGBW_LED
 		rgbw_led_poll_settings();
 		charge_mode_dock_led_poll();

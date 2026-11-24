@@ -15,6 +15,8 @@ enum charge_mode_result
 };
 
 enum charge_mode_result charge_mode_run_if_needed(void);
+/* main loop, every pass: activity = any input this pass (see charge_mode.c) */
+void charge_mode_boot_poll(bool activity);
 void charge_mode_dock_led_poll(void);
 bool charge_mode_dock_led_active(void);
 void charge_mode_dock_debug(uint8_t out[5]);

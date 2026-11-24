@@ -24,6 +24,9 @@ const struct power_crash_info *power_last_crash(void);
 void power_boot_gpio_latches(uint32_t latches[2]);
 /* diagnosis: Steam held at the very first moment of this start */
 bool power_boot_steam_raw(void);
+/* the next start goes straight to charge-only mode (once) */
+void power_mark_charge_only(void);
+bool power_take_charge_only(void);
 void power_off(void);
 /* power off without the power-off chime (charge-only mode) */
 void power_off_quiet(void);

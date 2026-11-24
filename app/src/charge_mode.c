@@ -5,6 +5,7 @@
 #include <string.h>
 
 #include <zephyr/kernel.h>
+#include <zephyr/sys/reboot.h>
 #include <zephyr/logging/log.h>
 #include <zephyr/sys/util.h>
 #include <zephyr/sys/byteorder.h>
@@ -331,6 +332,31 @@ size_t charge_mode_boot_trace(uint8_t *out, size_t cap)
 	return n;
 }
 
+/* v51.5: a start with no USB and no Puck yet may still be the Puck waking an "off" controller.
+ * If the Puck's frames arrive within the first seconds and nobody has touched the controller,
+ * restart straight into charge-only mode. Any input (Steam included) keeps it running. */
+#define BOOT_DOCK_WINDOW_MS 25000
+static bool boot_dock_armed;
+
+void charge_mode_boot_poll(bool activity)
+{
+	if(!boot_dock_armed)
+	{
+		return;
+	}
+	if(activity || k_uptime_get() > BOOT_DOCK_WINDOW_MS || transport_usb_configured())
+	{
+		boot_dock_armed = false;
+		return;
+	}
+	if(puck_interface_frame_within(1000))
+	{
+		LOG_WRN("woken on the Puck, untouched: restarting into charge-only mode");
+		power_mark_charge_only();
+		sys_reboot(SYS_REBOOT_COLD);
+	}
+}
+
 enum charge_mode_result charge_mode_run_if_needed(void)
 {
 	if(boot_trace_n == 0U)
@@ -346,6 +372,8 @@ enum charge_mode_result charge_mode_run_if_needed(void)
 	bool puck_contact;
 	bool usb_attached;
 
+	bool forced = power_take_charge_only();
+
 	usb_attached = transport_usb_attached();
 	puck_contact = puck_contact_present();
 	if(power_take_continue_wireless() && (usb_attached || puck_contact) &&
@@ -354,13 +382,17 @@ enum charge_mode_result charge_mode_run_if_needed(void)
 		LOG_INF("Continue wireless operation (%s)", usb_attached ? "USB" : "PUCK");
 		return cm_note(1, CHARGE_MODE_POWER_ON_RADIO);
 	}
-	if(!usb_attached && !puck_contact)
+	if(!usb_attached && !puck_contact && !forced)
 	{
+		/* an "off" controller is woken by the charger chip, from the Steam button or from
+		 * the Puck's first power pulse, and both look the same here; the Puck then stays
+		 * silent for ~11 s (measured). Watch the first seconds: see charge_mode_boot_poll */
+		boot_dock_armed = true;
 		return cm_note(2, CHARGE_MODE_SKIPPED);
 	}
 	charge_mode_note_contact();
 
-	if(usb_attached && !puck_contact)
+	if(usb_attached && !puck_contact && !forced)
 	{
 		result = wait_for_usb_or_steam();
 		if(result != CHARGE_MODE_SKIPPED)

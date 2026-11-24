@@ -34,6 +34,9 @@
 
 /* Same retained word as OFW (0x2001ff00 + 0xd4), outside Zephyr RAM and untouched by the bootloader. */
 #define continue_wireless_magic (*(volatile uint32_t *)0x2001ffd4u)
+/* v51.5: "start in charge-only mode" over one reboot, next to the boot guard word (0x2001ffc8) */
+#define CHARGE_ONLY_MAGIC 0xc4a26e01u
+#define charge_only_magic (*(volatile uint32_t *)0x2001ffccu)
 #define POWER_OFF_RELEASE_POLL_MS 20
 #define POWER_OFF_RELEASE_DEBOUNCE_MS 100
 #define POWER_OFF_EXTERNAL_POLL_MS 100
@@ -265,6 +268,19 @@ void power_mark_continue_wireless(void)
 	{
 		continue_wireless_magic = CONTINUE_WIRELESS_MAGIC;
 	}
+}
+
+void power_mark_charge_only(void)
+{
+	charge_only_magic = CHARGE_ONLY_MAGIC;
+}
+
+bool power_take_charge_only(void)
+{
+	bool set = charge_only_magic == CHARGE_ONLY_MAGIC;
+
+	charge_only_magic = 0;
+	return set;
 }
 
 bool power_take_continue_wireless(void)
