@@ -2,6 +2,7 @@
 
 #include <stdbool.h>
 #include <stdint.h>
+#include <string.h>
 
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
@@ -266,8 +267,56 @@ static enum charge_mode_result cm_note(uint8_t why, enum charge_mode_result r)
 	return r;
 }
 
+/* diagnosis (v51.5 test 3): what the controller sees in its first seconds, every 200 ms, one
+ * nibble each: b0 VBUS, b1 Puck UART bytes, b2 a valid Puck frame within 1 s, b3 charger power */
+#define BOOT_TRACE_STEP_MS 200
+#define BOOT_TRACE_SAMPLES 80
+static uint8_t boot_trace[BOOT_TRACE_SAMPLES / 2];
+static uint8_t boot_trace_n, boot_trace_decision_at;
+static void boot_trace_fn(struct k_work *work);
+static K_WORK_DELAYABLE_DEFINE(boot_trace_work, boot_trace_fn);
+
+static void boot_trace_fn(struct k_work *work)
+{
+	struct controller_battery_report b;
+	uint8_t v = 0;
+
+	ARG_UNUSED(work);
+	if(boot_trace_n >= BOOT_TRACE_SAMPLES)
+	{
+		return;
+	}
+	v |= transport_usb_attached() ? 1U : 0U;
+	v |= puck_interface_active() ? 2U : 0U;
+	v |= puck_interface_frame_within(1000) ? 4U : 0U;
+	v |= battery_get_status(&b) == 0 && b.charger_type != 0U ? 8U : 0U;
+	boot_trace[boot_trace_n / 2] |= (uint8_t)(v << ((boot_trace_n & 1U) * 4U));
+	boot_trace_n++;
+	k_work_reschedule(&boot_trace_work, K_MSEC(BOOT_TRACE_STEP_MS));
+}
+
+size_t charge_mode_boot_trace(uint8_t *out, size_t cap)
+{
+	size_t n = MIN(cap, sizeof(boot_trace) + 2U);
+
+	if(n < 2U)
+	{
+		return 0;
+	}
+	out[0] = boot_trace_n;
+	out[1] = boot_trace_decision_at;
+	memcpy(&out[2], boot_trace, n - 2U);
+	return n;
+}
+
 enum charge_mode_result charge_mode_run_if_needed(void)
 {
+	if(boot_trace_n == 0U)
+	{
+		boot_trace_fn(NULL); /* sample 0: the decision's own view */
+	}
+	boot_trace_decision_at = (uint8_t)MIN(k_uptime_get() / 10, 255); /* x10 ms */
+
 	int64_t charge_complete_since_ms = 0;
 	enum charge_mode_result result;
 	bool charge_complete = false;

@@ -633,6 +633,11 @@ bool valve_settings_read(const char *path, uint8_t *buf, size_t capacity, size_t
 		*len = 28;
 		return true;
 	}
+	if(strcmp(path, "sc26re/boottrace") == 0 && capacity >= 2)
+	{
+		*len = charge_mode_boot_trace(buf, capacity);
+		return true;
+	}
 	if(strcmp(path, "sc26re/dock") == 0 && capacity >= 5)
 	{
 		/* [0] LED: on the Puck, [1] Puck link, [2] pilot contact, [3] why the last start went
