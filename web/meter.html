@@ -920,7 +920,6 @@ const LS=[
  ["gyro_avg","Gyro averaging (in the controller)","1 = newest sample only (default), 2 = average of 2 samples 0.5 ms apart: less noise for ~0.25 ms more delay. Try it with the hardware filter at 0 (v48+)"],
  ["gyro_fsr","Gyro range (full scale)","°/s: 250, 500, 1000 or 2000 (default). Lower = finer steps from the sensor, but turns faster than this are cut off (500 is a common choice for gyro aiming) (v48+)"],
  ["imu_pace","IMU read timing (USB)","what starts each gyro/accel read: 0 = start of each USB frame (default), 1 = when the PC has fetched the previous report, 2 = 1 ms timer (v47+, for testing)"],
- ["imu_pace_wl","IMU read timing (Puck)","what starts each gyro/accel read on the Puck: 1 = each Puck poll (default, v51.6+: every poll gets a new sample), 0 = 1 ms timer (before v51.6)"],
  ["imu_i2c_khz","IMU bus speed","kHz, 400 = standard (default) … 800 = faster reads (outside the chip's spec; if the gyro misbehaves set 400) (v47+)"],
  ["gyro_auto_cal","Auto gyro calibration","seconds lying untouched (no hands on grips/sticks/pads) before it recalibrates itself; 0 = off (default 3)"],
  ["gyro_band_soft","Gyro dead bands: hard / soft","0 = hard (outside the band the full value passes — tiny jump at the edge), 1 = soft (starts from 0 at the edge, no jump, slow moves slightly weaker) (v46+)"],
