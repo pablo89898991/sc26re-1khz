@@ -272,7 +272,15 @@ static enum charge_mode_result cm_note(uint8_t why, enum charge_mode_result r)
 #define BOOT_TRACE_STEP_MS 200
 #define BOOT_TRACE_SAMPLES 80
 static uint8_t boot_trace[BOOT_TRACE_SAMPLES / 2];
-static uint8_t boot_trace_n, boot_trace_decision_at;
+static uint8_t boot_steam_decision;
+static uint8_t boot_trace_n, boot_trace_decision_at, boot_steam_init, boot_steam_init_at;
+
+void charge_mode_note_boot_buttons(void)
+{
+	boot_steam_init = steam_pressed() ? 1U : 0U;
+	boot_steam_init_at = (uint8_t)MIN(k_uptime_get() / 10, 255);
+}
+
 static void boot_trace_fn(struct k_work *work);
 static K_WORK_DELAYABLE_DEFINE(boot_trace_work, boot_trace_fn);
 
@@ -297,15 +305,18 @@ static void boot_trace_fn(struct k_work *work)
 
 size_t charge_mode_boot_trace(uint8_t *out, size_t cap)
 {
-	size_t n = MIN(cap, sizeof(boot_trace) + 2U);
+	size_t n = MIN(cap, sizeof(boot_trace) + 5U);
 
-	if(n < 2U)
+	if(n < 5U)
 	{
 		return 0;
 	}
 	out[0] = boot_trace_n;
 	out[1] = boot_trace_decision_at;
-	memcpy(&out[2], boot_trace, n - 2U);
+	out[2] = boot_steam_init;
+	out[3] = boot_steam_init_at;
+	out[4] = boot_steam_decision;
+	memcpy(&out[5], boot_trace, n - 5U);
 	return n;
 }
 
@@ -316,6 +327,7 @@ enum charge_mode_result charge_mode_run_if_needed(void)
 		boot_trace_fn(NULL); /* sample 0: the decision's own view */
 	}
 	boot_trace_decision_at = (uint8_t)MIN(k_uptime_get() / 10, 255); /* x10 ms */
+	boot_steam_decision = steam_pressed() ? 1U : 0U;
 
 	int64_t charge_complete_since_ms = 0;
 	enum charge_mode_result result;

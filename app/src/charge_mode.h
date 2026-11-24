@@ -20,6 +20,8 @@ bool charge_mode_dock_led_active(void);
 void charge_mode_dock_debug(uint8_t out[5]);
 /* diagnosis: [0] samples, [1] decision time x10 ms, then 4-bit samples every 200 ms */
 size_t charge_mode_boot_trace(uint8_t *out, size_t cap);
+/* diagnosis: Steam held right after the hardware came up */
+void charge_mode_note_boot_buttons(void);
 /* the LED colour under the Puck's charge light: read it, or change it (shown once lifted).
  * Outside the Puck they act on the LED directly (v51.4 test 23). */
 struct rgbw_color charge_mode_led_base_get(void);

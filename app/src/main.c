@@ -569,6 +569,7 @@ int main(void)
 	{
 		boot_guard_fatal("hardware init", err);
 	}
+	charge_mode_note_boot_buttons();
 	err = puck_interface_init();
 	if(err)
 	{
