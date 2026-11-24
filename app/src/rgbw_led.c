@@ -74,31 +74,8 @@ int rgbw_led_init(void)
 	return 0;
 }
 
-/* diagnosis (v51.4 test 20): who set the LED last, the caller before a different one, errors */
-static uint32_t dbg_last_ra, dbg_other_ra, dbg_sets, dbg_errs;
-static struct rgbw_color dbg_other_color;
-
-void rgbw_led_debug(uint32_t out[5], struct rgbw_color *other)
+void rgbw_led_set(struct rgbw_color color)
 {
-	out[0] = dbg_last_ra;
-	out[1] = dbg_other_ra;
-	out[2] = dbg_sets;
-	out[3] = dbg_errs;
-	out[4] = ((uint32_t)user_brightness << 8) | indicator_level;
-	*other = dbg_other_color;
-}
-
-__attribute__((noinline)) void rgbw_led_set(struct rgbw_color color)
-{
-	uint32_t ra = (uint32_t)__builtin_return_address(0);
-
-	if(ra != dbg_last_ra)
-	{
-		dbg_other_ra = dbg_last_ra;
-		dbg_other_color = current;
-		dbg_last_ra = ra;
-	}
-	dbg_sets++;
 	current = color;
 
 	if(rgbw_led_set_channel(IBEX_RGBW_RED, current.r) ||
@@ -106,7 +83,6 @@ __attribute__((noinline)) void rgbw_led_set(struct rgbw_color color)
 	   rgbw_led_set_channel(IBEX_RGBW_BLUE, current.b) ||
 	   rgbw_led_set_channel(IBEX_RGBW_WHITE, current.w))
 	{
-		dbg_errs++;
 		LOG_WRN("failed to set one or more LED channels");
 	}
 }

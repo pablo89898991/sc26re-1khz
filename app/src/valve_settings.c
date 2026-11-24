@@ -633,26 +633,6 @@ bool valve_settings_read(const char *path, uint8_t *buf, size_t capacity, size_t
 		*len = 28;
 		return true;
 	}
-	if(strcmp(path, "sc26re/leddbg") == 0 && capacity >= 28)
-	{
-		/* diagnosis (v51.4 test 20): current LED rgbw, the colour before the last caller,
-		 * then le32: last caller, caller before it, sets, errors, brightness/indicator */
-		memset(buf, 0, 28);
-#if CONFIG_IBEX_RGBW_LED
-		struct rgbw_color c = rgbw_led_get(), o;
-		uint32_t d[5];
-
-		rgbw_led_debug(d, &o);
-		buf[0] = c.r; buf[1] = c.g; buf[2] = c.b; buf[3] = c.w;
-		buf[4] = o.r; buf[5] = o.g; buf[6] = o.b; buf[7] = o.w;
-		for(size_t i = 0; i < 5; ++i)
-		{
-			sys_put_le32(d[i], &buf[8 + 4 * i]);
-		}
-#endif
-		*len = 28;
-		return true;
-	}
 	if(strcmp(path, "sc26re/dock") == 0 && capacity >= 5)
 	{
 		/* [0] LED: on the Puck, [1] Puck link, [2] pilot contact, [3] why the last start went
