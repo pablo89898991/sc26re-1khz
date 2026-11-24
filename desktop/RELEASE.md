@@ -13,9 +13,9 @@ Special thanks to **Rhyn0_Rang3r**, our Discord tester, for making the Linux ver
 
 **From 1.2: update notifications.** At start and every 6 hours the app checks this project's releases and tells you when a new **SC2 Overlay** or a new **firmware** is out (tray → *Updates*). Nothing is downloaded or installed by itself.
 
-Firmware for this app: **[sc26re v51.4.1](https://github.com/pablo89898991/sc26re-1khz/releases/tag/v51.4.1)**.
+Firmware for this app: **[sc26re v51.5](https://github.com/pablo89898991/sc26re-1khz/releases/tag/v51.5)**.
 
-A small Windows and Linux app for the **sc26re** firmware (Steam Controller 2026, v51.4.1 recommended):
+A small Windows and Linux app for the **sc26re** firmware (Steam Controller 2026, v51.5 recommended):
 
 - **See-through overlay over your game:** radial menus and touch menus (3 × 3 grids) with the name of each slice and the chosen one lit, the profile's name when it changes, and the 3D controller. It is always on top, and your clicks go through to the game.
 - **Arrange it on screen:** Ctrl+Shift+F10 (or the tray icon) shows sample menus and the 3D controller's area. Drag them where you want them, use the mouse wheel to resize, and press Esc when done. Ctrl+Shift+F9 shows / hides the overlay.
