@@ -2031,6 +2031,27 @@ static bool gyro_cal_auto;
 /* an automatic result this far from the current bias is a slow turn, not drift */
 #define GYRO_AUTO_MAX_CHANGE 0.035f /* rad/s (~2 deg/s) */
 
+/* diagnosis (v51.6 test 4): the calibrated bias, the bias the sensor's fusion reports (the one
+ * subtracted while valid), in mdps; [6] fusion bias valid, [7] bias in use, [8] gyro range (dps) */
+void imu_gbias_debug(int16_t out[9])
+{
+	const float mdps = 57295.78f;
+
+	k_mutex_lock(&imu_io_lock, K_FOREVER);
+	for(size_t i = 0; i < 3; ++i)
+	{
+		out[i] = (int16_t)CLAMP((int32_t)(gyro_bias[i] * mdps), INT16_MIN, INT16_MAX);
+		out[3 + i] = (int16_t)CLAMP((int32_t)(latest_sflp_bias[i] * mdps), INT16_MIN, INT16_MAX);
+	}
+	out[6] = latest_sflp_bias_valid ? 1 : 0;
+	out[7] = use_gyro_bias ? 1 : 0;
+	k_mutex_unlock(&imu_io_lock);
+	if(!remap_gyro_value(SC26RE_CFG_GYRO_FSR, &out[8]))
+	{
+		out[8] = sc26re_cfg_get(SC26RE_CFG_GYRO_FSR);
+	}
+}
+
 bool imu_gyro_cal_is_auto(void)
 {
 	return gyro_cal_auto;

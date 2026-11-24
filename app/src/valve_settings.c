@@ -633,6 +633,18 @@ bool valve_settings_read(const char *path, uint8_t *buf, size_t capacity, size_t
 		*len = 28;
 		return true;
 	}
+	if(strcmp(path, "sc26re/gbias") == 0 && capacity >= 18)
+	{
+		int16_t g[9];
+
+		imu_gbias_debug(g);
+		for(size_t i = 0; i < 9; ++i)
+		{
+			sys_put_le16((uint16_t)g[i], &buf[2 * i]);
+		}
+		*len = 18;
+		return true;
+	}
 	if(strcmp(path, "sc26re/link") == 0 && capacity >= 30)
 	{
 		/* Puck radio link (v51.6): [0] connected, [1] channel, then le32 counters since power-on:
