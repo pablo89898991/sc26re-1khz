@@ -7,6 +7,7 @@
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
 #include <zephyr/sys/util.h>
+#include <zephyr/sys/byteorder.h>
 
 #include "analog.h"
 #include "battery.h"
@@ -317,6 +318,16 @@ size_t charge_mode_boot_trace(uint8_t *out, size_t cap)
 	out[3] = boot_steam_init_at;
 	out[4] = boot_steam_decision;
 	memcpy(&out[5], boot_trace, n - 5U);
+	if(cap >= n + 9U)
+	{
+		uint32_t l[2];
+
+		power_boot_gpio_latches(l);
+		out[n] = power_boot_steam_raw() ? 1U : 0U;
+		sys_put_le32(l[0], &out[n + 1U]);
+		sys_put_le32(l[1], &out[n + 5U]);
+		n += 9U;
+	}
 	return n;
 }
 

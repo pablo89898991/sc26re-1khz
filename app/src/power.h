@@ -22,6 +22,8 @@ struct power_crash_info
 /* the fatal error that caused this boot, or NULL */
 const struct power_crash_info *power_last_crash(void);
 void power_boot_gpio_latches(uint32_t latches[2]);
+/* diagnosis: Steam held at the very first moment of this start */
+bool power_boot_steam_raw(void);
 void power_off(void);
 /* power off without the power-off chime (charge-only mode) */
 void power_off_quiet(void);

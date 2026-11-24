@@ -60,6 +60,7 @@ LOG_MODULE_REGISTER(power);
 #define POWER_OFF_CHIME_MS 420
 static uint32_t boot_reset_reason;
 static uint32_t boot_gpio_latches[2];
+static bool boot_steam_raw; /* diagnosis (v51.5 test 5): Steam held at the very first moment */
 static bool boot_state_captured;
 static atomic_t power_off_claimed;
 #define CRASH_MAGIC 0x5C26C0DEU
@@ -184,6 +185,15 @@ void power_capture_boot_state(void)
 #if defined(NRF_GPIO_LATCH_PRESENT)
 	nrf_gpio_latches_read_and_clear(0, ARRAY_SIZE(boot_gpio_latches), boot_gpio_latches);
 #endif
+	{
+		/* the Steam button (P1.06, active low), before settings take their ~2 s; the GPIO driver
+		 * configures the pin again later */
+		uint32_t pin = NRF_GPIO_PIN_MAP(1, 6);
+
+		nrf_gpio_cfg_input(pin, NRF_GPIO_PIN_PULLUP);
+		k_busy_wait(50);
+		boot_steam_raw = nrf_gpio_pin_read(pin) == 0U;
+	}
 
 	if(crash_record.magic == CRASH_MAGIC)
 	{
@@ -235,6 +245,11 @@ const struct power_crash_info *power_last_crash(void)
 uint32_t power_boot_reset_reason(void)
 {
 	return boot_reset_reason;
+}
+
+bool power_boot_steam_raw(void)
+{
+	return boot_steam_raw;
 }
 
 void power_boot_gpio_latches(uint32_t latches[2])
