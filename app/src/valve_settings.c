@@ -29,6 +29,7 @@
 #include "power.h"
 #include "charge_mode.h"
 #include "rgbw_led.h"
+#include "puck_interface.h"
 #include "battery.h"
 
 /* Report meter: stick/grip capacitive thresholds (live via STAGE, saved via COMMIT). */
@@ -661,6 +662,17 @@ bool valve_settings_read(const char *path, uint8_t *buf, size_t capacity, size_t
 		charge_mode_dock_debug(buf);
 #endif
 		*len = 5;
+		if(capacity >= 17)
+		{
+			/* v51.4 test 24: le32 valid frames, UART bytes received, ms since the last frame */
+			uint32_t f, b, age;
+
+			puck_interface_counters(&f, &b, &age);
+			sys_put_le32(f, &buf[5]);
+			sys_put_le32(b, &buf[9]);
+			sys_put_le32(age, &buf[13]);
+			*len = 17;
+		}
 		return true;
 	}
 	if(strcmp(path, "sc26re/hapdbg") == 0 && capacity >= 48)

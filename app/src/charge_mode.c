@@ -421,10 +421,13 @@ void charge_mode_dock_led_poll(void)
 	}
 	last_step = now;
 
-	if(now - last_sample >= CHARGE_MODE_CONTACT_RESAMPLE_MS || puck_interface_active())
+	/* v51.4 test 24: only valid Puck frames (or the pilot) count; off the Puck stray bytes on the
+	 * open contacts kept the link "up" and the charge light on (measured) */
+	if(now - last_sample >= CHARGE_MODE_CONTACT_RESAMPLE_MS ||
+	   puck_interface_frame_within(DOCK_LED_LOST_MS))
 	{
 		last_sample = now;
-		if(puck_contact_present())
+		if(puck_interface_frame_within(DOCK_LED_LOST_MS) || puck_pilot_present())
 		{
 			last_seen = now;
 		}

@@ -108,8 +108,6 @@ enum sc26re_cfg_id
 	SC26RE_CFG_TRIG_FW_HAPTIC, /* the firmware's own trigger haptics: 0 off, 1 tick, 2 click, 3 strong */
 	SC26RE_CFG_TRIG_FW_POINT,  /* ... played when a trigger reaches this % */
 	SC26RE_CFG_REMAP_BOOT,     /* at power-on: 0 the remapper as it was (Steam + Menu), 1 always off */
-	SC26RE_CFG_OFF_RA,         /* diagnosis: who asked for the last power-off (return address >> 4) */
-	SC26RE_CFG_OFF_UP,         /* diagnosis: uptime of the last power-off in s (bit 15: quiet) */
 	SC26RE_CFG_COUNT,
 };
 

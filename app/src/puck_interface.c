@@ -67,6 +67,10 @@ static atomic_t puck_initialized;
 static atomic_t puck_active;
 static atomic_t puck_frame_seen;
 static atomic_t puck_rx_overflow;
+/* v51.4 test 24: bytes arrive on the open contacts off the Puck (measured), valid frames don't */
+static atomic_t puck_last_frame_ms;
+static atomic_t puck_frames;
+static atomic_t puck_rx_bytes;
 static uint8_t puck_status_sequence;
 static uint8_t puck_feature_request[PUCK_FEATURE_BODY_SIZE];
 static size_t puck_feature_request_len;
@@ -117,6 +121,7 @@ static void puck_uart_isr(const struct device *dev, void *user_data)
 		}
 
 		received = true;
+		atomic_add(&puck_rx_bytes, len);
 		stored = ring_buf_put(&puck_rx_ringbuf, data, (uint32_t)len);
 		if(stored != (uint32_t)len)
 		{
@@ -309,6 +314,8 @@ static int puck_read_frame(struct puck_frame_reader *reader, uint8_t frame[stati
 			if(puck_frame_reader_push(reader, byte, frame))
 			{
 				atomic_set(&puck_frame_seen, 1);
+				atomic_set(&puck_last_frame_ms, (atomic_val_t)(uint32_t)k_uptime_get());
+				atomic_inc(&puck_frames);
 				return 0;
 			}
 		}
@@ -397,6 +404,21 @@ bool puck_interface_active(void)
 	return atomic_get(&puck_active) != 0 && atomic_get(&puck_frame_seen) != 0;
 }
 
+bool puck_interface_frame_within(uint32_t ms)
+{
+	return atomic_get(&puck_frame_seen) != 0 &&
+	       (uint32_t)k_uptime_get() - (uint32_t)atomic_get(&puck_last_frame_ms) < ms;
+}
+
+void puck_interface_counters(uint32_t *frames, uint32_t *rx_bytes, uint32_t *frame_age_ms)
+{
+	*frames = (uint32_t)atomic_get(&puck_frames);
+	*rx_bytes = (uint32_t)atomic_get(&puck_rx_bytes);
+	*frame_age_ms = atomic_get(&puck_frame_seen) != 0
+	                    ? (uint32_t)k_uptime_get() - (uint32_t)atomic_get(&puck_last_frame_ms)
+	                    : UINT32_MAX;
+}
+
 #else
 
 int puck_interface_init(void)
@@ -407,6 +429,19 @@ int puck_interface_init(void)
 bool puck_interface_active(void)
 {
 	return false;
+}
+
+bool puck_interface_frame_within(uint32_t ms)
+{
+	ARG_UNUSED(ms);
+	return false;
+}
+
+void puck_interface_counters(uint32_t *frames, uint32_t *rx_bytes, uint32_t *frame_age_ms)
+{
+	*frames = 0U;
+	*rx_bytes = 0U;
+	*frame_age_ms = UINT32_MAX;
 }
 
 #endif

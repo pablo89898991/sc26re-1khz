@@ -126,8 +126,6 @@ static const struct cfg_desc descs[SC26RE_CFG_COUNT] = {
 	[SC26RE_CFG_TRIG_FW_HAPTIC] = { "trig_fw_haptic", 0, 0, 3, NO_REGISTRY, 1 },
 	[SC26RE_CFG_TRIG_FW_POINT] = { "trig_fw_point", 85, 10, 99, NO_REGISTRY, 1 },
 	[SC26RE_CFG_REMAP_BOOT] = { "remap_boot", 0, 0, 1, NO_REGISTRY, 1 },
-	[SC26RE_CFG_OFF_RA] = { "off_ra", 0, INT16_MIN, INT16_MAX, NO_REGISTRY, 1 },
-	[SC26RE_CFG_OFF_UP] = { "off_up", 0, INT16_MIN, INT16_MAX, NO_REGISTRY, 1 },
 };
 
 static int16_t values[SC26RE_CFG_COUNT];
