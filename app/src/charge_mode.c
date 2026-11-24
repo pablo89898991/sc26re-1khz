@@ -351,27 +351,22 @@ enum charge_mode_result charge_mode_run_if_needed(void)
 #define DOCK_LED_LOST_MS 2000
 #define DOCK_LED_PERIOD_MS 3600U
 
+/* v51.4 test 25: amber between half and full charge-light level, never off (the old fade to
+ * off every 3.6 s read as a blink), the red / green ratio kept so the trough isn't green */
+static const struct rgbw_color dock_led_low = { 13, 10, 0, 0 };
+
 static struct rgbw_color dock_led_breathe(uint32_t t)
 {
 	t %= DOCK_LED_PERIOD_MS;
-	if(t < 200U)
+	if(t < DOCK_LED_PERIOD_MS / 2U)
 	{
-		return (struct rgbw_color){ lerp8(0, led_dim_amber.r, t, 200), lerp8(0, led_dim_amber.g, t, 200), 0, 0 };
+		return (struct rgbw_color){ lerp8(dock_led_low.r, led_peak_amber.r, t, DOCK_LED_PERIOD_MS / 2U),
+		                            lerp8(dock_led_low.g, led_peak_amber.g, t, DOCK_LED_PERIOD_MS / 2U),
+		                            0, 0 };
 	}
-	t -= 200U;
-	if(t < 1600U)
-	{
-		return (struct rgbw_color){ lerp8(led_dim_amber.r, led_peak_amber.r, t, 1600),
-		                            lerp8(led_dim_amber.g, led_peak_amber.g, t, 1600), 0, 0 };
-	}
-	t -= 1600U;
-	if(t < 1600U)
-	{
-		return (struct rgbw_color){ lerp8(led_peak_amber.r, led_dim_amber.r, t, 1600),
-		                            lerp8(led_peak_amber.g, led_dim_amber.g, t, 1600), 0, 0 };
-	}
-	t -= 1600U;
-	return (struct rgbw_color){ lerp8(led_dim_amber.r, 0, t, 200), lerp8(led_dim_amber.g, 0, t, 200), 0, 0 };
+	t -= DOCK_LED_PERIOD_MS / 2U;
+	return (struct rgbw_color){ lerp8(led_peak_amber.r, dock_led_low.r, t, DOCK_LED_PERIOD_MS / 2U),
+	                            lerp8(led_peak_amber.g, dock_led_low.g, t, DOCK_LED_PERIOD_MS / 2U), 0, 0 };
 }
 
 static bool dock_led_docked;
@@ -476,7 +471,7 @@ void charge_mode_dock_led_poll(void)
 		}
 		if(now - full_since < CHARGE_MODE_FULL_LED_MS)
 		{
-			rgbw_led_set(led_peak_amber);
+			rgbw_led_set_unscaled(led_peak_amber);
 		}
 		else
 		{
@@ -486,7 +481,7 @@ void charge_mode_dock_led_poll(void)
 		return;
 	}
 	full_since = 0;
-	rgbw_led_set(dock_led_breathe((uint32_t)(now - docked_since)));
+	rgbw_led_set_unscaled(dock_led_breathe((uint32_t)(now - docked_since)));
 }
 #else
 void charge_mode_dock_led_poll(void)

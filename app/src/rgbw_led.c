@@ -39,11 +39,13 @@ static void rgbw_led_force_pin_off(uint32_t pin)
 	nrf_gpio_cfg_output(pin);
 }
 
+static bool set_unscaled; /* this set ignores the user's LED brightness (Puck charge light) */
+
 static int rgbw_led_set_channel(enum ibex_rgbw_channel channel, uint8_t brightness)
 {
 	uint8_t percent = (uint16_t)brightness * 100U / 255U;
 
-	if(IS_ENABLED(CONFIG_IBEX_LED_USER_BRIGHTNESS))
+	if(IS_ENABLED(CONFIG_IBEX_LED_USER_BRIGHTNESS) && !set_unscaled)
 	{
 		percent = (uint8_t)(((uint16_t)percent * user_brightness + 99U) / 100U);
 		if(brightness != 0U && user_brightness != 0U && percent == 0U)
@@ -107,6 +109,13 @@ __attribute__((noinline)) void rgbw_led_set(struct rgbw_color color)
 		dbg_errs++;
 		LOG_WRN("failed to set one or more LED channels");
 	}
+}
+
+void rgbw_led_set_unscaled(struct rgbw_color color)
+{
+	set_unscaled = true;
+	rgbw_led_set(color);
+	set_unscaled = false;
 }
 
 void rgbw_led_set_indicator_level(uint8_t level)

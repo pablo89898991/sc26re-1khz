@@ -53,3 +53,7 @@ void rgbw_led_set_indicator_level(uint8_t level);
 /* diagnosis: [0] last caller, [1] the different caller before it, [2] sets, [3] channel errors,
  * [4] brightness << 8 | indicator level; *other = the colour before the last caller changed */
 void rgbw_led_debug(uint32_t out[5], struct rgbw_color *other);
+
+/* like rgbw_led_set, without the user's LED brightness: at low brightness the 1 % steps
+ * flatten the Puck's breathing amber into a green-tinted blink (v51.4 test 25) */
+void rgbw_led_set_unscaled(struct rgbw_color color);
