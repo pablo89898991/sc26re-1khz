@@ -44,6 +44,8 @@ void imu_reset(void);
 void imu_keep_on(bool on);
 /* the host fetched a state report: read the gyro/accel for the next one */
 void imu_usb_in_done(void);
+/* a Puck poll arrived: start the next gyro/accel read (Live setting imu_pace_wl 1, v51.6) */
+void imu_esb_poll(void);
 /* USB start of frame */
 void imu_usb_sof(void);
 /* reads, errors, avg read us, max read us, uptime ms (avg/max reset on each call) */

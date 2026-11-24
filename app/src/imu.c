@@ -1442,6 +1442,7 @@ int lsm6dsv16x_gyro_set_odr_raw(const struct device *dev, uint8_t odr);
 int lsm6dsv16x_accel_set_odr_raw(const struct device *dev, uint8_t odr);
 K_SEM_DEFINE(imu_tick_sem, 0, 1);
 static atomic_t imu_last_usb_ticks;
+static atomic_t imu_last_esb_ticks;
 static atomic_t imu_last_usb_ms;
 static atomic_t imu_fast_reads;
 static atomic_t imu_fast_errors;
@@ -1502,6 +1503,20 @@ void imu_usb_in_done(void)
 	imu_usb_event(1);
 }
 
+/* v51.6: on the Puck the 1 ms timer and the Puck's polls (~1100/s) drift against each other, so
+ * now and then two samples land between two polls and the older one is never sent (~7 % of the
+ * gyro samples, measured). Like USB's "report fetched" pacing: each poll starts the next read, so
+ * every poll carries a sample taken after the previous one. */
+void imu_esb_poll(void)
+{
+	if(sc26re_cfg_get(SC26RE_CFG_IMU_PACE_WL) != 1)
+	{
+		return;
+	}
+	atomic_set(&imu_last_esb_ticks, (atomic_val_t)(uint32_t)k_uptime_ticks());
+	imu_tick();
+}
+
 void imu_fast_stats(uint32_t out[5])
 {
 	k_spinlock_key_t key = k_spin_lock(&imu_stats_lock);
@@ -1525,8 +1540,9 @@ static void imu_tick_timer_fn(struct k_timer *timer)
 		imu_tick();
 		return;
 	}
-	/* only when the host is not polling (Puck / Bluetooth / idle USB) */
-	if((uint32_t)k_uptime_ticks() - (uint32_t)atomic_get(&imu_last_usb_ticks) > IMU_USB_GAP_TICKS)
+	/* only when neither the USB host nor the Puck is polling (Bluetooth / idle) */
+	if((uint32_t)k_uptime_ticks() - (uint32_t)atomic_get(&imu_last_usb_ticks) > IMU_USB_GAP_TICKS &&
+	   (uint32_t)k_uptime_ticks() - (uint32_t)atomic_get(&imu_last_esb_ticks) > IMU_USB_GAP_TICKS)
 	{
 		imu_tick();
 	}
@@ -1928,6 +1944,10 @@ static void imu_fast_thread_main(void *arg1, void *arg2, void *arg3)
 }
 #else
 void imu_usb_in_done(void)
+{
+}
+
+void imu_esb_poll(void)
 {
 }
 

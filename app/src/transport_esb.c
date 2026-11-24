@@ -8,6 +8,7 @@
 #include <zephyr/sys/byteorder.h>
 
 #include "controller.h"
+#include "imu.h"
 #include "esb_backend.h"
 #include "haptics.h"
 #include "lizard.h"
@@ -996,6 +997,8 @@ static bool handle_host_poll(const struct valve_esb_payload *payload)
 	uint8_t deferred_feature_response[ESB_FEATURE_REPORT_SIZE];
 	size_t deferred_feature_response_len = 0;
 	bool deferred_feature_response_valid = false;
+
+	imu_esb_poll(); /* the next gyro sample for the next poll (v51.6) */
 
 	/* Keep the management dispatcher safe even if a future caller bypasses the RX check. */
 	if(atomic_get(&session_connected) == 0 || atomic_get(&bond_change_pending) != 0)
