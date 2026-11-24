@@ -36,7 +36,6 @@ LOG_MODULE_REGISTER(analog);
 #define TRIGGER_MODE_SETTING 62
 static uint8_t trigger_mode_dbg;
 #define TRIGGER_CLICK_RELEASE_HYSTERESIS_PERCENT 5
-#define PUCK_PILOT_PRESENT_MIN_MV 2000
 
 #if CONFIG_IBEX_BATTERY
 #define BATTERY_METER_NODE DT_NODELABEL(battery_meter)
@@ -1027,56 +1026,18 @@ static int analog_inputs_put(void)
 	return err;
 }
 
+/* v51.4.1: there is no Puck pilot on this input. Measured on a controller: right stick X reads
+ * the same on and off the Puck (supply on ~1.6 V, off ~0.39 V, like right stick Y), and the
+ * stick held right reads 2.8 V, which this used to take for the Puck (charge light in games).
+ * The Puck is known by its UART frames and the charger's input power instead. */
 int analog_puck_pilot_present(bool *present)
 {
-	const struct adc_dt_spec *channel = &analog_channels[ANALOG_PUCK_PILOT];
-	struct adc_sequence sequence = {
-		.channels = BIT(channel->channel_id),
-		.buffer_size = sizeof(int16_t),
-		.resolution = 12,
-	};
-	int16_t raw;
-	int32_t mv;
-	int disable_err;
-	int err;
-
 	if(present == NULL)
 	{
 		return -EINVAL;
 	}
 	*present = false;
-
-	if(!analog_ready)
-	{
-		return -ENODEV;
-	}
-
-	err = analog_inputs_take();
-	if(err)
-	{
-		return err;
-	}
-
-	sequence.buffer = &raw;
-	err = adc_read(channel->dev, &sequence);
-	if(err)
-	{
-		goto out_disable;
-	}
-
-	mv = raw;
-	err = adc_raw_to_millivolts_dt(channel, &mv);
-	if(err)
-	{
-		goto out_disable;
-	}
-
-	*present = mv >= PUCK_PILOT_PRESENT_MIN_MV;
-	err = 0;
-
-out_disable:
-	disable_err = analog_inputs_put();
-	return err ? err : disable_err;
+	return 0;
 }
 
 int analog_battery_voltage_samples_mv(uint16_t *samples, size_t sample_count)
