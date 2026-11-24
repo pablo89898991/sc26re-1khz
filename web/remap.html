@@ -110,7 +110,7 @@
 <body>
 <div class="top">
   <div class="topin">
-    <div class="brand">SC2 <span class="hz">Remapper</span> <span class="note" id="pagever" title="page version — if it is older than expected, press Ctrl+F5">p.2026-11-23i</span></div>
+    <div class="brand">SC2 <span class="hz">Remapper</span> <span class="note" id="pagever" title="page version — if it is older than expected, press Ctrl+F5">p.2026-11-24a</span></div>
     <button class="primary" id="connect">Connect controller</button>
     <span id="status" class="chip">not connected</span>
     <span id="batt" class="chip" hidden></span>
@@ -426,7 +426,7 @@ const PRESETS=[
 let sel=null; /* number = source, string = analog group "ls"/"rs"/"lp"/"rp" */
 function buildTabs(){ try{ localStorage.setItem("sc26re_prof_names",JSON.stringify(prof.map(nameOf))); }catch(e){}
   if(typeof ovLabels==="function"&&!$("#v_ovl").hidden) ovLabels();
-  if(typeof gyScopeShow==='function'&&document.getElementById('gyScope')&&$("#gyScope").value==="p") setTimeout(gyScopeShow,0); $("#tabs").innerHTML=[0,1,2,3].map(i=>`<button class="tab${i===cur?" on":""}" data-p="${i}">Profile ${i+1}${nameOf(prof[i])?": "+nameOf(prof[i]):""}</button>`).join(""); document.querySelectorAll("#tabs .tab").forEach(b=>b.onclick=()=>{ saveName(); cur=+b.dataset.p; render(); }); }
+  if(typeof gyScopeShow==='function'&&document.getElementById('gyScope')&&$("#gyScope").value==="p") setTimeout(gyScopeShow,0); if(typeof gyFsrWarn==='function') setTimeout(gyFsrWarn,0); $("#tabs").innerHTML=[0,1,2,3].map(i=>`<button class="tab${i===cur?" on":""}" data-p="${i}">Profile ${i+1}${nameOf(prof[i])?": "+nameOf(prof[i]):""}</button>`).join(""); document.querySelectorAll("#tabs .tab").forEach(b=>b.onclick=()=>{ saveName(); cur=+b.dataset.p; render(); }); }
 function nameOf(b){ return new TextDecoder().decode(b.slice(2,16)).replace(/\0.*$/,""); }
 function saveName(){ const b=prof[cur]; b[0]=0xA7; b[1]=PROF_VER; const nm=new TextEncoder().encode($("#pname").value.slice(0,13)); b.fill(0,2,16); b.set(nm.slice(0,13),2); }
 function grpTextO(b,o,g){ return [0,1,2,3].map(i=>ACTNAME(b[o+1+g*4+i])).filter(x=>x).join(" + "); }
@@ -1145,7 +1145,7 @@ const GY=[
  ["gyro_hw_lpf","Hardware filter (in the sensor)","num",[0,8,1],1,"0 off … 8 strongest (default 1)"],
  ["gyro_filter","Smoothing","num",[0,4,1],1,"0 off … 4 strong"],
  ["gyro_deadzone","Dead zone","auto",[0,2000,1],1,"raw units; Steam = follow Steam"],
- ["gyro_fsr","Range (full scale)","sel",[[250,"250 °/s"],[500,"500 °/s"],[1000,"1000 °/s"],[2000,"2000 °/s (default)"]],1,"lower = finer steps from the sensor, faster turns are cut off (500 is common for aiming); can be set per profile"],
+ ["gyro_fsr","Range (full scale)","sel",[[250,"250 °/s"],[500,"500 °/s"],[1000,"1000 °/s"],[2000,"2000 °/s (default)"]],1,"lower = finer steps from the sensor, faster turns are cut off (500 is common for aiming). Global = the normal mode (remapper off) and profiles without their own gyro settings; a profile with its own gyro settings has its own range"],
  ["gyro_odr","Sample rate in the sensor","sel",[[2000,"2000 Hz (default)"],[4000,"4000 Hz"],[8000,"8000 Hz"]],1,"in high-performance mode: 1920 / 3840 / 7680 Hz"],
  ["gyro_mode","Sensor mode","sel",[[0,"High-accuracy ODR (default)"],[1,"High-performance"]],1,"the IMU's operating mode (accel and gyro together): high-accuracy ODR runs at exactly 2000 / 4000 / 8000 Hz, high-performance at 1920 / 3840 / 7680 Hz. Compare noise with the report meter's “Measure 5 s at rest” (v51.1+)"],
  ["gyro_auto_cal","Auto calibration","num",[0,30,1],1,"seconds lying untouched before it recalibrates; 0 off"],
@@ -1208,7 +1208,7 @@ const one=(n,hint)=>row(GYI[n][1],hint===undefined?GYI[n][5]:hint,ctlHtml(n));
 const CARDS=()=>[
  `<div class="card"><h3>Gyro sensor</h3>
    ${one("gyro_hw_lpf","0 off … 8 strongest; 1 = default")}${one("gyro_filter","0 off … 4 strong (adds delay)")}
-   ${one("gyro_deadzone")}${one("gyro_fsr","")}${one("gyro_odr","")}${one("gyro_mode","")}</div>`,
+   ${one("gyro_deadzone")}${one("gyro_fsr","")}<p class="note warn" id="gyFsrWarn" hidden></p>${one("gyro_odr","")}${one("gyro_mode","")}</div>`,
  `<div class="card"><h3>Gyro calibration</h3>
    ${one("gyro_auto_cal")}${one("gyro_chord_mode","")}${one("gyro_band_soft","soft = no jump at the edge")}
    ${row("Dead bands","°/s, 0 and 0 = off",bandRows([["band:x","Pitch"],["band:z","Yaw"],["band:y","Roll"]]))}
@@ -1242,6 +1242,14 @@ const CARDS=()=>[
 ];
 function gyBuild(){ $("#gyCards").innerHTML=CARDS().join(""); }
 const gyEl=id=>document.getElementById(id);
+/* a profile with its own gyro range different from the global one (v51.6 page): the sensor switches
+   range with the remapper, and a calibration measured at one range can be off at the other */
+let gyGlobFsr=null;
+function gyFsrWarn(){ const el=document.getElementById("gyFsrWarn"); if(!el) return;
+  const diff=[]; if(gyGlobFsr) for(let i=0;i<4;i++){ const b=prof[i]; if(!b||!(b[17]&2)) continue; const f=new DataView(b.buffer).getInt16(124,true);
+    if([250,500,1000,2000].includes(f)&&f!==gyGlobFsr) diff.push(`profile ${i+1}${nameOf(b)?" “"+nameOf(b)+"”":""}: ${f} °/s`); }
+  el.hidden=!diff.length;
+  if(diff.length) el.innerHTML=`⚠ Different gyro range with the remapper on — ${diff.join(", ")}; normal mode (global): ${gyGlobFsr} °/s. The sensor switches range with the remapper, and the drift calibration made at one range may not fit the other (the gyro drifts again). Use the same range in both (Profile scope → Range → Put in profile → Save to controller), or calibrate again after switching.`; }
 async function gyRead(){
   try{
     if(await cfgGet("gm_enabled")===null){ $("#gyStatus").innerHTML='<span class="err">needs sc26re v49+</span>'; return; }
@@ -1256,6 +1264,7 @@ async function gyRead(){
       if(kind==="auto"){ const au=v===-32768; gyEl("ga_"+n).checked=au; gyEl("g_"+n).disabled=au; gyEl("g_"+n).value=au?"":v; gyEl("ga_"+n).onchange=e=>{ gyEl("g_"+n).disabled=e.target.checked; }; continue; }
       gyEl("g_"+n).value=scale!==1?(v/scale).toFixed(2):String(v);
     }
+    gyGlobFsr=await cfgGet("gyro_fsr"); gyFsrWarn();
     await gmOnRefresh();
     $("#gyStatus").innerHTML='<span class="ok">read</span>';
   }catch(e){ $("#gyStatus").innerHTML=`<span class="err">${e.message}</span>`; }
@@ -1274,6 +1283,7 @@ async function gyWrite(save){
       else{ const raw=+gyEl("g_"+n).value; if(gyEl("g_"+n).value==="") continue; v=Math.round(raw*(scale||1)); }
       await put(n,v,save);
     }
+    if(gyEl("g_gyro_fsr")&&gyEl("g_gyro_fsr").value!=="") { gyGlobFsr=+gyEl("g_gyro_fsr").value; gyFsrWarn(); }
     $("#gyStatus").innerHTML=`<span class="ok">${save?"saved":"applied until power-off"}</span>`;
   }catch(e){ $("#gyStatus").innerHTML=`<span class="err">${e.message}</span>`; }
 }
@@ -1416,13 +1426,13 @@ function gyScopeShow(){ const p=gyScope()==="p", b=prof[cur];
   $("#gyPflags").hidden=!p; $("#gySave").hidden=p; $("#gyApply").textContent=p?"Put in profile":"Apply"; $("#gyOwn").checked=(b[17]&2)!==0; $("#gyAuto").checked=(b[17]&4)!==0;
   $("#gyScopeNote").innerHTML=p?`Profile ${cur+1}${nameOf(b)?" “"+nameOf(b)+"”":""}: its own gyro range, gyro mouse / joystick, activation, ratchet and quick turns (greyed settings are global). <b>Apply</b> puts the values in the profile — then <b>Save to controller</b> on “Buttons &amp; profiles”.`
     :`Global: used by every profile that has no gyro settings of its own (and when the remapper is off) — the same settings as in the report meter. <b>Apply</b> = until power-off, <b>Save</b> = kept.`;
-  gyInputs(p); if(p){ if(b[17]&2) gyFromProfile(); } }
+  gyInputs(p); if(p){ if(b[17]&2) gyFromProfile(); } gyFsrWarn(); }
 $("#gyScope").onchange=async()=>{ if(gyScope()==="g") await gyRead(); gyScopeShow(); };
 $("#gyOwn").onchange=e=>{ const b=prof[cur]; if(e.target.checked&&!(b[17]&2)) gyToProfile(); b[17]=(b[17]&~2)|(e.target.checked?2:0); setDirty(); gyScopeShow(); };
 $("#gyAuto").onchange=e=>{ const b=prof[cur]; b[17]=(b[17]&~4)|(e.target.checked?4:0); setDirty(); };
 { const r=$("#gyRead").onclick, a=$("#gyApply").onclick, s2=$("#gySave").onclick;
   $("#gyRead").onclick=()=>gyScope()==="p"?(gyFromProfile(),$("#gyStatus").innerHTML='<span class="ok">profile values shown</span>'):r();
-  const toP=()=>{ const b=prof[cur]; gyToProfile(); b[17]|=2; $("#gyOwn").checked=true; setDirty(); $("#gyStatus").innerHTML='<span class="ok">in the profile — press Save to controller</span>'; };
+  const toP=()=>{ const b=prof[cur]; gyToProfile(); b[17]|=2; $("#gyOwn").checked=true; setDirty(); gyFsrWarn(); $("#gyStatus").innerHTML='<span class="ok">in the profile — press Save to controller</span>'; };
   $("#gyApply").onclick=()=>gyScope()==="p"?toP():a(); $("#gySave").onclick=()=>gyScope()==="p"?toP():s2(); }
 
 /* ---- output monitor: what the remapper is sending right now ---- */
