@@ -56,6 +56,7 @@
       <label class="note" id="ctlPick" style="display:none">Controller <select id="ctlSel"></select></label>
       <span id="status" class="note">not connected</span>
       <span id="batt" class="note" hidden style="font-weight:600"></span>
+      <span id="linkq" class="note" hidden title="Puck radio link (firmware v51.6+), last second"></span>
       <span id="bootInfo" class="note"></span>
     </div>
   </div>
@@ -1163,6 +1164,7 @@ let reportCount=0;
 function onReport(e){
   reportCount++;
   const id=e.reportId, dv=e.data, t=e.timeStamp||performance.now();
+  if(id===0x42) linkPc++;
   if(id===0x42){ devRate.set(e.device,(devRate.get(e.device)||0)+1); if(!ctlManual && (!ctlDev||!devRate.get(ctlDev))) ctlDev=e.device; } /* the interface the controller's state arrives on */
   const st=idStats[id]||(idStats[id]={n:0,len:dv.byteLength,times:[]}); st.n++; st.len=dv.byteLength; st.times.push(t);
   if(st.times.length>4000) st.times.splice(0,st.times.length-4000);
@@ -1274,6 +1276,31 @@ function plot(){
 requestAnimationFrame(draw);
 
 /* battery badge (firmware v51.4+), every 15 s while connected */
+/* Puck radio link (v51.6+: sc26re/link): counters since power-on, shown per second. Over a cable or
+   with older firmware (no answer / empty answer) the line stays hidden. */
+let linkPc=0, linkPrev=null, linkBusy=false;
+setInterval(async()=>{
+  const el=$("#linkq"), d=ctl();
+  if(linkBusy) return;
+  if(!d || d.productId===0x1302){ el.hidden=true; linkPrev=null; linkPc=0; return; }
+  linkBusy=true;
+  try{
+    const b=await featRead(d,"sc26re/link"); const t=performance.now(), pc=linkPc;
+    if(!b || b.length<30){ el.hidden=true; return; }
+    const u=o=>(b[o]|b[o+1]<<8|b[o+2]<<16|b[o+3]<<24)>>>0;
+    const c={conn:b[0],ch:b[1],polls:u(2),deliv:u(6),repl:u(14),drop:u(18),ok:u(22),bad:u(26),pc,t};
+    if(linkPrev && c.deliv>=linkPrev.deliv){
+      const dt=(t-linkPrev.t)/1000, r=k=>(c[k]-linkPrev[k])/dt;
+      const radio=r("ok")+r("bad"), badPct=radio>0?100*r("bad")/radio:0, toPc=(pc-linkPrev.pc)/dt;
+      el.hidden=false;
+      el.textContent=c.conn?`📶 ch ${c.ch} · ${Math.round(r("deliv"))}/s sent · ${Math.round(toPc)}/s here · radio errors ${badPct.toFixed(badPct<1?1:0)} %`:"📶 Puck: not connected";
+      el.title=`Puck radio link, last second (firmware v51.6+)\nchannel ${c.ch}\nPuck polls: ${Math.round(r("polls"))}/s\nreports sent to the Puck (acknowledged): ${Math.round(r("deliv"))}/s\nreports that reached this page: ${Math.round(toPc)}/s (the Puck also carries other reports; Steam, if open, gets them too)\nreports replaced by a newer one before the Puck asked: ${Math.round(r("repl"))}/s (not lost input: the newest state is sent)\nreports dropped on a full queue: ${Math.round(r("drop"))}/s\nradio packets with a bad checksum: ${badPct.toFixed(2)} %`;
+      el.style.color=!c.conn||badPct>5?"#ff6b6b":badPct>1?"#ffcc66":"";
+    }
+    linkPrev=c;
+  }catch(e){}
+  finally{ linkBusy=false; }
+},1000);
 SCB.poll(path=>{ const d=ctl(); if(!d) return Promise.reject(new Error("no controller")); return featRead(d,path); }, x=>SCB.paint($("#batt"),x));
 </script>
 </body>
