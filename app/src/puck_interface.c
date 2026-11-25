@@ -131,7 +131,8 @@ static void puck_uart_isr(const struct device *dev, void *user_data)
 
 	if(received)
 	{
-		atomic_set(&puck_active, 1);
+		/* not "active" yet: stray bytes on the open contacts are not a Puck. Only a
+		 * valid frame (puck_thread_entry) sets puck_active. */
 		k_sem_give(&puck_rx_ready);
 	}
 }
@@ -401,7 +402,9 @@ int puck_interface_init(void)
 
 bool puck_interface_active(void)
 {
-	return atomic_get(&puck_active) != 0 && atomic_get(&puck_frame_seen) != 0;
+	/* a valid, CRC-checked Puck frame within the last 2 s; puck_frame_seen alone stays set
+	 * until reboot, so it cannot tell a Puck from stray bytes after lifting the controller */
+	return atomic_get(&puck_active) != 0 && puck_interface_frame_within(2000U);
 }
 
 bool puck_interface_frame_within(uint32_t ms)

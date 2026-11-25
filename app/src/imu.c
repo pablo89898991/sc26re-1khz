@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: AGPL-3.0-or-later */
 #include <errno.h>
 #include <math.h>
+#include <stdio.h>
 #include <string.h>
 
 #include <zephyr/device.h>
@@ -29,6 +30,7 @@
 #include "sc26re_cfg.h"
 #include "calibration.h"
 #include "imu_bias.h"
+#include "imu_bias_slots.h"
 #include "gyro_mouse.h"
 #include "remap.h"
 #include "sdl/controller_constants.h"
@@ -91,6 +93,15 @@ static bool use_gyro_bias_dirty;
 static bool gyro_threshold_dirty;
 
 static float gyro_bias[3];
+/*
+ * One calibration per gyro range. The zero-rate offset is not the same at 250 and at 2000 dps,
+ * and the remapper profile can switch the range: slots 1..4 = FS_G code (250/500/1000/2000).
+ * A range that was never calibrated keeps the bias in use until it is.
+ */
+#define GYRO_SLOT_COUNT IMU_BIAS_SLOT_COUNT
+#define IMU_GYRO_BIAS_SLOT_PATH_FMT "cal/sensors/gyroscope/bias_fs%u"
+static struct imu_bias_slots gyro_slots;
+static atomic_t gyro_slot = ATOMIC_INIT(4);
 static float staged_gyro_bias[3];
 static float gyro_bias_candidate[3];
 static void gyro_cal_sample(const float gyro[3]);
@@ -779,6 +790,17 @@ static void load_persisted_settings(void)
 	else
 	{
 		memcpy(gyro_bias_candidate, gyro_bias, sizeof(gyro_bias_candidate));
+	}
+	for(unsigned int slot = 1; slot < GYRO_SLOT_COUNT; ++slot)
+	{
+		char slot_path[40];
+
+		snprintf(slot_path, sizeof(slot_path), IMU_GYRO_BIAS_SLOT_PATH_FMT, slot);
+		if(load_setting_exact(slot_path, loaded_bias, sizeof(loaded_bias)) &&
+		   imu_gyro_bias_valid(loaded_bias))
+		{
+			imu_bias_slots_store(&gyro_slots, slot, loaded_bias);
+		}
 	}
 	if(load_setting_exact(IMU_MODE_PATH, &loaded_mode, sizeof(loaded_mode)))
 	{
@@ -1653,6 +1675,27 @@ static int imu_reg_read(uint8_t reg, uint8_t *buf, size_t len)
 }
 #endif
 
+/* gyro range changed (or first applied): switch to that range's calibration if it has one, and
+ * re-seed the sensor fusion with it so the reports don't keep a bias estimate made at the other
+ * range */
+static void gyro_reseed_handler(struct k_work *work)
+{
+	unsigned int slot = (unsigned int)atomic_get(&gyro_slot);
+
+	ARG_UNUSED(work);
+	k_mutex_lock(&imu_io_lock, K_FOREVER);
+	if(imu_bias_slots_select(&gyro_slots, slot, gyro_bias))
+	{
+		memcpy(gyro_bias_candidate, gyro_bias, sizeof(gyro_bias_candidate));
+		memcpy(staged_gyro_bias, gyro_bias, sizeof(staged_gyro_bias));
+	}
+	memcpy(latest_sflp_bias, gyro_bias, sizeof(latest_sflp_bias));
+	last_sflp_bias_update_us = 0;
+	k_mutex_unlock(&imu_io_lock);
+	(void)program_gyro_bias();
+}
+static K_WORK_DEFINE(gyro_reseed_work, gyro_reseed_handler);
+
 static void imu_fast_thread_main(void *arg1, void *arg2, void *arg3)
 {
 	/* LSM6DSV16X sensitivities: gyro 4.375 mdps/LSB at +-125 dps, doubling per step;
@@ -1757,13 +1800,17 @@ static void imu_fast_thread_main(void *arg1, void *arg2, void *arg3)
 			{
 				fsr = sc26re_cfg_get(SC26RE_CFG_GYRO_FSR);
 			}
-			uint8_t code = fsr <= 250 ? 1U : fsr <= 500 ? 2U : fsr <= 1000 ? 3U : 4U;
+			uint8_t code = imu_bias_slot_for_fsr(fsr);
 
 			if(fsr != applied_fsr &&
 			   i2c_reg_update_byte_dt(&imu_i2c, IMU_REG_CTRL6, 0x0FU, code) == 0)
 			{
 				applied_fsr = fsr;
 				gyro_rad_per_lsb = 0.0f;
+				atomic_set(&gyro_slot, code);
+				/* the reports subtract the sensor fusion's running bias estimate, which was
+				 * settled at the old range; use this range's calibration */
+				k_work_submit(&gyro_reseed_work);
 			}
 		}
 		if(gyro_rad_per_lsb == 0.0f)
@@ -2237,6 +2284,7 @@ static atomic_t gyro_bias_program_err;
 static int imu_save_gyro_bias(const float bias_in[3], bool persist)
 {
 	float saved_bias[ARRAY_SIZE(gyro_bias)];
+	unsigned int slot;
 	int err;
 
 	k_mutex_lock(&imu_settings_mutex, K_FOREVER);
@@ -2249,6 +2297,8 @@ static int imu_save_gyro_bias(const float bias_in[3], bool persist)
 #endif
 	memcpy(staged_gyro_bias, gyro_bias, sizeof(staged_gyro_bias));
 	memcpy(saved_bias, gyro_bias, sizeof(saved_bias));
+	slot = (unsigned int)atomic_get(&gyro_slot);
+	imu_bias_slots_store(&gyro_slots, slot, gyro_bias);
 	gyro_bias_dirty = false;
 	last_sflp_bias_update_us = 0;
 	k_mutex_unlock(&imu_io_lock);
@@ -2279,8 +2329,15 @@ static int imu_save_gyro_bias(const float bias_in[3], bool persist)
 		k_mutex_unlock(&imu_settings_mutex);
 		return err;
 	}
+	if(slot < GYRO_SLOT_COUNT)
+	{
+		char slot_path[40];
+
+		snprintf(slot_path, sizeof(slot_path), IMU_GYRO_BIAS_SLOT_PATH_FMT, slot);
+		(void)settings_save_one(slot_path, saved_bias, sizeof(saved_bias));
+	}
 	k_mutex_unlock(&imu_settings_mutex);
-	LOG_INF("saved gyro biases");
+	LOG_INF("saved gyro biases (range slot %u)", slot);
 	return 0;
 }
 
@@ -2299,6 +2356,14 @@ int imu_reset_gyro_calibration(void)
 		return -ENOTSUP;
 	}
 	(void)settings_delete(IMU_GYRO_BIAS_PATH);
+	for(unsigned int slot = 1; slot < GYRO_SLOT_COUNT; ++slot)
+	{
+		char slot_path[40];
+
+		snprintf(slot_path, sizeof(slot_path), IMU_GYRO_BIAS_SLOT_PATH_FMT, slot);
+		(void)settings_delete(slot_path);
+	}
+	imu_bias_slots_clear(&gyro_slots);
 	(void)calibration_import_imu_from_valve_storage();
 	if(settings_load_one(IMU_GYRO_BIAS_PATH, bias, sizeof(bias)) != (ssize_t)sizeof(bias))
 	{
@@ -2448,6 +2513,11 @@ int imu_settings_stage(const char *path, const uint8_t *value, size_t len)
 		memcpy(staged_gyro_bias, received_bias, sizeof(staged_gyro_bias));
 		memcpy(gyro_bias, staged_gyro_bias, sizeof(gyro_bias));
 		memcpy(gyro_bias_candidate, gyro_bias, sizeof(gyro_bias_candidate));
+		{
+			unsigned int slot = (unsigned int)atomic_get(&gyro_slot);
+
+			imu_bias_slots_store(&gyro_slots, slot, gyro_bias);
+		}
 		gyro_bias_dirty = true;
 		last_sflp_bias_update_us = 0;
 		k_mutex_unlock(&imu_io_lock);
