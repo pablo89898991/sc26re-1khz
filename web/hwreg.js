@@ -46,7 +46,7 @@
   async function state() {
     await rd('sc26re/imumode'); await sleep(80);
     const b = await rd('sc26re/imumode'), v = new DataView(b.buffer, b.byteOffset);
-    return { ctrl2: b[11], ctrl6: b[15], haodr: b[18], ndps: v.getUint32(6, true), fixes: v.getUint16(44, true), mode: b[27] };
+    return { ctrl2: b[11], ctrl6: b[15], ctrl8: b[17], haodr: b[18], ndps: v.getUint32(6, true), fixes: v.getUint16(44, true), mode: b[27] };
   }
   // what the sensor must look like for the settings (and the profile's own range, when it has one)
   async function check(name, R) {
@@ -58,6 +58,7 @@
     if (s.ndps !== want) P.push(`conversion ${s.ndps / 1e6} mdps, set range needs ${want / 1e6}`);
     if ((s.ctrl2 & 15) !== ODR[odr]) P.push(`gyro ODR code ${s.ctrl2 & 15}, set ${ODR[odr]} (${odr} Hz)`);
     if (((s.ctrl2 >> 4) & 7) !== (mode ? 0 : 1)) P.push(`gyro mode bits ${(s.ctrl2 >> 4) & 7}, mode ${mode}`);
+    if (HWREG.accelFs != null && (s.ctrl8 & 3) !== HWREG.accelFs) P.push(`accel range code ${s.ctrl8 & 3}, want ${HWREG.accelFs} (0 = 2 g, 1 = 4 g)`);
     R.push({ name, ok: !P.length, problems: P, fixes: s.fixes }); window.HWREG.progress = R;
   }
   let profFsr = {};
@@ -108,5 +109,5 @@
     const bad = R.filter(r => !r.ok);
     return { checks: R.length, failed: bad.length, bad, fixesFirst: R[0].fixes, fixesLast: R[R.length - 1].fixes };
   }
-  window.HWREG = { run, connect, rd, snd, get, set, state };
+  window.HWREG = { run, connect, rd, snd, get, set, state, accelFs: 1 }; // v51.8+: the accelerometer at +-4 g
 })();

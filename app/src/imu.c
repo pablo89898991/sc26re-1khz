@@ -1116,6 +1116,8 @@ static void imu_free_fall_update(const float accel[3])
 }
 #endif
 
+static volatile float imu_accel_wide[3];
+
 /* accel sample (m/s^2, sensor frame) -> report fields */
 static void process_accel(const float accel[3], struct controller_report *report)
 {
@@ -1128,6 +1130,26 @@ static void process_accel(const float accel[3], struct controller_report *report
 	oriented[1] = accel_axis_to_report(accel[1]);
 	oriented[2] = accel_axis_to_report(accel[2]);
 	apply_orientation_i16(oriented);
+	{
+		/* the remapper's accelerometer: report units and axes, but not cut at the report's
+		 * +-2 g (a jolt goes past it; the sensor runs at +-4 g) */
+		float u[3];
+
+		for(size_t i = 0; i < 3; ++i)
+		{
+			u[i] = accel[i] * 1000000.0f / ((float)SENSOR_G / 1000000.0f * IMU_ACCEL_UG_PER_REPORT_UNIT);
+		}
+		for(size_t row = 0; row < 3; ++row)
+		{
+			float v = 0.0f;
+
+			for(size_t col = 0; col < 3; ++col)
+			{
+				v += (float)mounting_matrix[row * 3 + col] * u[col];
+			}
+			imu_accel_wide[row] = v;
+		}
+	}
 	report->accel_x = oriented[0];
 	report->accel_y = oriented[1];
 	report->accel_z = oriented[2];
@@ -1724,32 +1746,22 @@ static K_WORK_DEFINE(gyro_reseed_work, gyro_reseed_handler);
 static atomic_t imu_dbg_req;
 static struct
 {
-	int16_t raw[3];
 	uint32_t ndps_per_lsb;
 	uint8_t regs[9];
-	uint32_t feeds;
-	uint32_t dt_sum_us;
-	float abs_deg[3];
-	uint32_t last_dt_us;
-	uint16_t fs_fixes;
 	uint8_t fs_seen;
+	uint16_t fs_fixes;
 } imu_dbg;
 
 void imu_mode_debug(uint8_t out[48])
 {
+	/* layout kept from v51.7 (web/hwreg.js): 0 raw gyro (no longer kept: 0), 6 conversion ndps/LSB,
+	 * 10 CTRL1..CTRL8 + HAODR_CFG, 19..26 0, 27 sensor mode, 28..43 0, 44 range repairs, 46 the
+	 * range code found */
 	atomic_set(&imu_dbg_req, 1);
 	memset(out, 0, 48);
-	for(size_t i = 0; i < 3; ++i)
-	{
-		sys_put_le16((uint16_t)imu_dbg.raw[i], &out[2 * i]);
-		sys_put_le32((uint32_t)(imu_dbg.abs_deg[i] * 10.0f), &out[28 + 4 * i]);
-	}
 	sys_put_le32(imu_dbg.ndps_per_lsb, &out[6]);
 	memcpy(&out[10], imu_dbg.regs, sizeof(imu_dbg.regs));
-	sys_put_le32(imu_dbg.feeds, &out[19]);
-	sys_put_le32(imu_dbg.dt_sum_us, &out[23]);
 	out[27] = (uint8_t)sc26re_cfg_get(SC26RE_CFG_GYRO_MODE);
-	sys_put_le32(imu_dbg.last_dt_us, &out[40]);
 	sys_put_le16(imu_dbg.fs_fixes, &out[44]);
 	out[46] = imu_dbg.fs_seen;
 }
@@ -1974,10 +1986,6 @@ static void imu_fast_thread_main(void *arg1, void *arg2, void *arg3)
 		}
 		atomic_inc(&imu_fast_reads);
 		atomic_set(&imu_last_read_ms, (atomic_val_t)k_uptime_get_32());
-		for(size_t i = 0; i < 3; ++i)
-		{
-			imu_dbg.raw[i] = (int16_t)sys_get_le16(&raw[2 * i]);
-		}
 		imu_dbg.ndps_per_lsb = (uint32_t)(gyro_rad_per_lsb * (180.0f / 3.14159265f) * 1e9f);
 		if(atomic_cas(&imu_dbg_req, 1, 0))
 		{
@@ -2029,16 +2037,6 @@ static void imu_fast_thread_main(void *arg1, void *arg2, void *arg3)
 			 * switched off a gyro activation by stick touch, grip or a back button */
 			gyro_mouse_feed(gm_dps, gm_have_state ? remap_raw_buttons() : 0U,
 			                gm_last_us ? (float)(now_us - gm_last_us) * 1e-6f : 0.001f);
-			if(gm_last_us)
-			{
-				imu_dbg.feeds++;
-				imu_dbg.last_dt_us = now_us - gm_last_us;
-				imu_dbg.dt_sum_us += now_us - gm_last_us;
-				for(size_t i = 0; i < 3; ++i)
-				{
-					imu_dbg.abs_deg[i] += fabsf(gm_dps[i]) * (float)(now_us - gm_last_us) * 1e-6f;
-				}
-			}
 			gm_last_us = now_us;
 		}
 		if(transport_usb_state_reports_allowed() && imu_paces_usb() &&
@@ -2108,9 +2106,6 @@ bool imu_paces_usb(void)
 }
 #endif
 
-/* the accelerometer as read for the pad report, before the gyro mouse hides it (remapper) */
-static volatile int16_t imu_last_accel[3];
-
 int imu_read_report(struct controller_report *report)
 {
 	bool enabled;
@@ -2127,18 +2122,15 @@ int imu_read_report(struct controller_report *report)
 	}
 
 	load_cached_imu_report(report);
-	imu_last_accel[0] = report->accel_x;
-	imu_last_accel[1] = report->accel_y;
-	imu_last_accel[2] = report->accel_z;
 	hide_motion_if_mouse(report);
 	return 0;
 }
 
-bool imu_accel(int16_t a[3])
+bool imu_accel(float a[3])
 {
-	a[0] = imu_last_accel[0];
-	a[1] = imu_last_accel[1];
-	a[2] = imu_last_accel[2];
+	a[0] = imu_accel_wide[0];
+	a[1] = imu_accel_wide[1];
+	a[2] = imu_accel_wide[2];
 	return *(volatile uint16_t *)&imu_mode != SETTING_GYRO_MODE_OFF;
 }
 

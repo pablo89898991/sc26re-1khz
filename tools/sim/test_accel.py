@@ -2,8 +2,11 @@
 import struct, math
 from simlib import *
 
-def acc_blob(stick=0, flags=0, sens=0, dz=0, btn=0, bsens=0):
-    return struct.pack("<BBHHBBH", stick, flags, sens, dz, btn, 0, bsens) + bytes(22)
+def acc_blob(stick=0, flags=0, sens=0, dz=0, btn=0, bsens=0, gsens=0, gest=None):
+    g = bytearray(14)
+    for k, acts in (gest or {}).items():
+        for j, a in enumerate(acts): g[2 * k + j] = a
+    return struct.pack("<BBHHBBHH", stick, flags, sens, dz, btn, 0, bsens, gsens) + bytes(g) + bytes(6)
 
 def put_acc(s, slot, blob):
     for o in range(0, len(blob), 40):
@@ -126,6 +129,66 @@ s.lib.sim_gm_set(0); e = kb.run(20, **tilt(fwd=30)); check("gyro off: pressed", 
 s = fresh(acc_blob(btn=1), bprof()); check("IMU kept on for tilt buttons", s.lib.sim_imu_forced() & 2)
 s = fresh(acc_blob(stick=1, btn=1), bprof()); kb = KB(s); e = kb.run(20, **tilt(fwd=25))
 check("stick and buttons together", e.down("w") and near(s.out["lsy"], int(32767 * 25 / 45)), (s.out["lsy"],))
+
+# ---- gestures: jolts along the controller's axes (x right, y forward, z up), 100 % = 1.5 g
+# (scale-free: the firmware measures in units of its gravity average; 1 g = 8192 here so 3 g fits the report)
+G = 8192
+FWD, BACK, LEFT, RIGHT, UP, DOWN, SHAKE = range(7)
+GK = {FWD: "w", BACK: "s", LEFT: "a", RIGHT: "d", UP: "e", DOWN: "q", SHAKE: "x"}
+def gblob(**kw): return acc_blob(gest={k: (key(v),) for k, v in GK.items()}, **kw)
+def gfresh(blob):
+    s = Sim(); s.use(Profile()); put_acc(s, 0, blob); s.run(600, ax=0, ay=0, az=G); return s
+def jab(s, axis, g, ms=30):
+    """a jolt of g (gravity units) along axis, then the stop: the same the other way"""
+    base = dict(ax=0, ay=0, az=G); a = dict(base); a[axis] += int(g * G)
+    b = dict(base); b[axis] -= int(g * G)
+    k = s.run(ms, **a).kbd() + s.run(ms, **b).kbd() + s.run(500, **base).kbd()
+    return k
+def taps(k):
+    out, prev = [], ()
+    for st in k:
+        for c in st:
+            if c not in prev: out.append(c)
+        prev = st
+    return out
+inv = {key(v): v for v in GK.values()}
+for axis, g, want, name in (("ay", 2.0, "w", "forward"), ("ay", -2.0, "s", "back"), ("ax", 2.0, "d", "right"),
+                            ("ax", -2.0, "a", "left"), ("az", 2.0, "e", "up"), ("az", -2.0, "q", "down")):
+    s = gfresh(gblob()); t = [inv.get(c, c) for c in taps(jab(s, axis, g))]
+    check("gesture %s: only %s, once (the stop is not a gesture)" % (name, want), t == [want], t)
+s = gfresh(gblob()); t = taps(jab(s, "ay", 1.2)); check("1.2 g at 100 %: nothing", t == [], t)
+s = gfresh(gblob(gsens=200)); t = [inv.get(c, c) for c in taps(jab(s, "ay", 1.0))]; check("200 %: 1 g fires", t == ["w"], t)
+s = gfresh(gblob(gsens=50)); t = taps(jab(s, "ay", 2.0)); check("50 %: 2 g is not enough", t == [], t)
+# the tap is short
+s = gfresh(gblob()); k = jab(s, "ay", 2.0)
+s2 = gfresh(gblob()); held = 0
+for ms, kw in ((30, dict(ax=0, ay=int(2 * G), az=G)), (30, dict(ax=0, ay=-int(2 * G), az=G))) + tuple((1, dict(ax=0, ay=0, az=G)) for _ in range(300)):
+    s2.run(ms, **kw); kb = s2.run(0).kbd() if False else None
+check("tap: pressed then let go", taps(k) == [key("w")] and (not k or key("w") not in k[-1]), k[-3:])
+# shake: back and forth
+s = gfresh(gblob()); ev = []
+for i in range(8):
+    a = dict(ax=int((2 if i % 2 == 0 else -2) * G), ay=0, az=G)
+    ev += s.run(60, **a).kbd()
+ev += s.run(500, ax=0, ay=0, az=G).kbd()
+t = [inv.get(c, c) for c in taps(ev)]
+check("shake: fires, and at most the first jolt's direction", "x" in t and len([x for x in t if x != "x"]) <= 1, t)
+s = gfresh(acc_blob(gest={RIGHT: (key("d"),)})); ev = []
+for i in range(8):
+    ev += s.run(60, ax=int((2 if i % 2 == 0 else -2) * G), ay=0, az=G).kbd()
+t = [inv.get(c, c) for c in taps(ev)]; check("shaking with only Right bound: Right once", t == ["d"], t)
+# two actions on one gesture
+s = gfresh(acc_blob(gest={FWD: (0xE1, key("w"))})); k = jab(s, "ay", 2.0)
+check("two actions: shift + w together", any(0xE1 in st and key("w") in st for st in k), k)
+# paused while the gyro is on
+s = gfresh(gblob(flags=0x80)); s.lib.sim_gm_set(1); t = taps(jab(s, "ay", 2.0)); check("paused while the gyro is on", t == [], t)
+s.lib.sim_gm_set(0); s.run(600, ax=0, ay=0, az=G); t = taps(jab(s, "ay", 2.0)); check("gyro off: works again", t == [key("w")], t)
+s = gfresh(gblob()); check("IMU kept on for gestures", s.lib.sim_imu_forced() & 2)
+s = gfresh(acc_blob()); check("nothing bound: IMU not forced", not (s.lib.sim_imu_forced() & 2))
+# a slow tilt is not a gesture
+s = gfresh(gblob()); ev = []
+for d in range(0, 61, 2): ev += s.run(30, **tilt(fwd=d)).kbd()
+check("slow tilt: no gesture", taps(ev) == [], taps(ev))
 
 print("\n%d passed, %d failed" % (ok, fail))
 raise SystemExit(1 if fail else 0)

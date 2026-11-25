@@ -40,10 +40,12 @@
 
 /* accelerometer (v51.8), defined with its storage further down */
 static int active_index(void);
-static void acc_process(int i, const struct controller_report *rs);
+static void acc_process(int i, const struct controller_report *rs, float dt);
 static bool acc_ref_ok;
 static float acc_joy[2][2];
 static uint8_t acc_dirs; /* tilt -> buttons this pass, the gyro_dirs bits */
+static struct remap_accel accs[REMAP_PROFILES];
+static uint32_t gest_until[REMAP_ACC_GESTURES]; /* k_uptime_get_32() until which a gesture taps */
 
 LOG_MODULE_REGISTER(remap, LOG_LEVEL_INF);
 
@@ -2490,7 +2492,7 @@ void remap_process(struct controller_report *r, float dt)
 			release_all();
 			shutdown_state = 2U;
 		}
-		acc_process(-1, NULL);
+		acc_process(-1, NULL, 0.0f);
 		flush_outputs();
 		return;
 	}
@@ -2506,7 +2508,7 @@ void remap_process(struct controller_report *r, float dt)
 				release_all();
 				was_on = false;
 			}
-			acc_process(-1, NULL);
+			acc_process(-1, NULL, 0.0f);
 			flush_outputs();
 			return;
 		}
@@ -2525,7 +2527,7 @@ void remap_process(struct controller_report *r, float dt)
 	{
 		/* empty profile: nothing mapped, and nothing left held from before */
 		release_all(); /* sends nothing when nothing is held */
-		acc_process(-1, NULL);
+		acc_process(-1, NULL, 0.0f);
 		flush_outputs();
 		return;
 	}
@@ -3060,7 +3062,7 @@ void remap_process(struct controller_report *r, float dt)
 
 		rs = raw_state;
 		k_spin_unlock(&raw_lock, key);
-		acc_process(active_index(), &rs);
+		acc_process(active_index(), &rs, dt);
 		gyro_dirs |= acc_dirs;
 	}
 	PERF_MARK(5);
@@ -3517,6 +3519,20 @@ void remap_process(struct controller_report *r, float dt)
 			mr->step++;
 		}
 	}
+	/* accelerometer gestures (v51.8): their actions, tapped */
+	{
+		int gi = active_index();
+
+		for(int k = 0; gi >= 0 && k < REMAP_ACC_GESTURES; ++k)
+		{
+			if((int32_t)(k_uptime_get_32() - gest_until[k]) < 0)
+			{
+				out_src = -1;
+				out_action(accs[gi].gest[k][0], keys, &nk, &mods, &pad);
+				out_action(accs[gi].gest[k][1], keys, &nk, &mods, &pad);
+			}
+		}
+	}
 	/* analog output actions: full stick deflection / full trigger */
 	if(stick_out)
 	{
@@ -3720,7 +3736,15 @@ void remap_process(struct controller_report *r, float dt)
 #define CRV_PREFIX "sc26re/crv/"
 BUILD_ASSERT(sizeof(struct remap_curves) == 68, "curve layout (web/remap.html)");
 static struct remap_curves curves[REMAP_CURVE_SLOTS];
-static struct remap_curves crv_staging;
+/* the curves' and the accelerometer's staging copy share one buffer: a page uploads one at a time;
+ * a stage of the other kind takes it over (the half-staged one is dropped) */
+static union
+{
+	struct remap_curves crv;
+	struct remap_accel acc;
+} blob_staging;
+#define crv_staging (blob_staging.crv)
+#define acc_staging (blob_staging.acc)
 static int8_t crv_staging_s = -1;
 
 static int active_index(void)
@@ -3809,8 +3833,6 @@ static int crv_parse(const char *path, int *slot, int *off)
 /* ---- accelerometer (v51.8): sc26re/acc/<profile>[/<offset hex>] ---- */
 #define ACC_PREFIX "sc26re/acc/"
 BUILD_ASSERT(sizeof(struct remap_accel) == 32, "accelerometer layout (web/remap.html)");
-static struct remap_accel accs[REMAP_PROFILES];
-static struct remap_accel acc_staging;
 static int8_t acc_staging_s = -1;
 static float acc_ref[3];
 static bool acc_ref_ok;
@@ -3848,13 +3870,125 @@ static float acc_axis(float deg, float full, float dz)
 	return deg < 0.0f ? -v : v;
 }
 
+static bool acc_gestures_bound(const struct remap_accel *c)
+{
+	for(int k = 0; k < REMAP_ACC_GESTURES; ++k)
+	{
+		if(c->gest[k][0] != 0U || c->gest[k][1] != 0U)
+		{
+			return true;
+		}
+	}
+	return false;
+}
+
+/* gestures: jolts along the controller's axes (x right, y forward, z up), gravity taken out
+ * by a slow average, measured in units of that gravity (so 1.0 = 1 g whatever the sensor's
+ * scale). The first jolt over the threshold fires its direction, then 0.35 s of nothing (the
+ * stop at the end of a jab is a jolt the other way). Back-and-forth jolts: a shake. */
+static float gest_grav[3];
+static bool gest_grav_ok;
+static uint32_t gest_quiet_until;
+static int8_t gest_last_sign;   /* shake: the last jolt over the threshold, +-(axis + 1) */
+static uint8_t gest_count;
+static uint32_t gest_first_ms, gest_dir_ms;
+static bool gest_armed = true;  /* shake: the jolt dropped below half the threshold since */
+
+static void gestures(const struct remap_accel *c, const float a[3], float dt, uint32_t now)
+{
+	float lin[3], g, thr, best = 0.0f;
+	int axis = 0;
+
+	if(!gest_grav_ok)
+	{
+		memcpy(gest_grav, a, sizeof(gest_grav));
+		gest_grav_ok = true;
+		return;
+	}
+	for(int k = 0; k < 3; ++k)
+	{
+		gest_grav[k] += (a[k] - gest_grav[k]) * MIN(dt / 0.25f, 1.0f);
+	}
+	g = sqrtf(gest_grav[0] * gest_grav[0] + gest_grav[1] * gest_grav[1] + gest_grav[2] * gest_grav[2]);
+	if(g < 1000.0f)
+	{
+		return;
+	}
+	for(int k = 0; k < 3; ++k)
+	{
+		lin[k] = (a[k] - gest_grav[k]) / g;
+		if(fabsf(lin[k]) > fabsf(best))
+		{
+			best = lin[k];
+			axis = k;
+		}
+	}
+	thr = REMAP_ACC_GEST_G * 100.0f / (float)(c->gest_sens ? c->gest_sens : 100U);
+	/* shake: jolts over the threshold that change direction */
+	if(fabsf(best) < thr * 0.5f)
+	{
+		gest_armed = true;
+	}
+	if((int32_t)(now - gest_first_ms) > 800)
+	{
+		gest_count = 0U;
+	}
+	if(fabsf(best) > thr)
+	{
+		int8_t sg = (int8_t)(best > 0.0f ? axis + 1 : -(axis + 1));
+		bool counts = gest_armed || sg != gest_last_sign; /* a straight flip counts too */
+
+		gest_armed = false;
+		if(counts && (gest_count == 0U || sg != gest_last_sign))
+		{
+			if(gest_count == 0U)
+			{
+				gest_first_ms = now;
+			}
+			gest_count++;
+			gest_last_sign = sg;
+		}
+		if(gest_count >= 4U)
+		{
+			gest_count = 0U;
+			if(c->gest[REMAP_GEST_SHAKE][0] || c->gest[REMAP_GEST_SHAKE][1])
+			{
+				gest_until[REMAP_GEST_SHAKE] = now + REMAP_ACC_GEST_MS;
+			}
+			gest_quiet_until = now + 600;
+		}
+	}
+	if((int32_t)(now - gest_quiet_until) < 0 || fabsf(best) <= thr)
+	{
+		return;
+	}
+	/* a jolt soon after the last one: shaking, not a gesture of its own */
+	if((int32_t)(now - gest_dir_ms) < 700)
+	{
+		gest_dir_ms = now;
+		gest_quiet_until = now + 350;
+		return;
+	}
+	{
+		static const uint8_t dir[3][2] = {
+			{ REMAP_GEST_RIGHT, REMAP_GEST_LEFT },
+			{ REMAP_GEST_FORWARD, REMAP_GEST_BACK },
+			{ REMAP_GEST_UP, REMAP_GEST_DOWN },
+		};
+		int k = dir[axis][best > 0.0f ? 0 : 1];
+
+		gest_until[k] = now + REMAP_ACC_GEST_MS;
+		gest_dir_ms = now;
+		gest_quiet_until = now + 350;
+	}
+}
+
 /* this pass: the accelerometer's outputs for profile i (-1 = remapper off) */
-static void acc_process(int i, const struct controller_report *rs)
+static void acc_process(int i, const struct controller_report *rs, float dt)
 {
 	const struct remap_accel *c = i >= 0 ? &accs[i] : NULL;
-	bool want = c != NULL && (c->stick != REMAP_ACC_STICK_OFF || c->btn != 0U);
+	bool want = c != NULL && (c->stick != REMAP_ACC_STICK_OFF || c->btn != 0U || acc_gestures_bound(c));
 	static bool wanted;
-	int16_t raw[3];
 	float a[3], m, fwd, side, full, dz, x, y;
 
 	memset(acc_joy, 0, sizeof(acc_joy));
@@ -3865,28 +3999,30 @@ static void acc_process(int i, const struct controller_report *rs)
 		imu_force_reason(IMU_FORCE_ACCEL, want);
 		wanted = want;
 		acc_ref_ok = false;
+		gest_grav_ok = false;
 	}
 	if(!want || ((c->flags & REMAP_ACC_GYRO_PAUSE) && gyro_mouse_active()))
 	{
+		gest_grav_ok = false; /* the slow gravity average starts again afterwards */
 		return;
 	}
 #ifdef CONFIG_IBEX_HWTEST
 	if(hwtest_running())
 	{
-		raw[0] = rs->accel_x;
-		raw[1] = rs->accel_y;
-		raw[2] = rs->accel_z;
+		a[0] = (float)rs->accel_x;
+		a[1] = (float)rs->accel_y;
+		a[2] = (float)rs->accel_z;
 	}
 	else
 #endif
-	if(!imu_accel(raw))
+	if(!imu_accel(a))
 	{
 		return;
 	}
 	ARG_UNUSED(rs);
-	for(int k = 0; k < 3; ++k)
+	if(acc_gestures_bound(c))
 	{
-		a[k] = (float)raw[k];
+		gestures(c, a, dt, k_uptime_get_32());
 	}
 	m = sqrtf(a[0] * a[0] + a[1] * a[1] + a[2] * a[2]);
 	if(m < 1000.0f)
@@ -4122,6 +4258,7 @@ int remap_stage(const char *path, const uint8_t *value, size_t len)
 		{
 			crv_staging = curves[p];
 			crv_staging_s = (int8_t)p;
+			acc_staging_s = -1;
 		}
 		memcpy((uint8_t *)&crv_staging + o, value, MIN(len, sizeof(crv_staging) - (size_t)o));
 		return 0;
@@ -4136,6 +4273,7 @@ int remap_stage(const char *path, const uint8_t *value, size_t len)
 		{
 			acc_staging = accs[p];
 			acc_staging_s = (int8_t)p;
+			crv_staging_s = -1;
 		}
 		memcpy((uint8_t *)&acc_staging + o, value, MIN(len, sizeof(acc_staging) - (size_t)o));
 		return 0;

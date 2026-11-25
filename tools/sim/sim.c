@@ -24,7 +24,7 @@ static int16_t sim_raw_accel[3];
 static uint8_t sim_imu_force;
 void imu_force_reason(uint8_t reason, bool on) { sim_imu_force = on ? (sim_imu_force | reason) : (sim_imu_force & ~reason); }
 int sim_imu_forced(void) { return sim_imu_force; }
-bool imu_accel(int16_t a[3]) { a[0] = sim_raw_accel[0]; a[1] = sim_raw_accel[1]; a[2] = sim_raw_accel[2]; return true; }
+bool imu_accel(float a[3]) { a[0] = sim_raw_accel[0]; a[1] = sim_raw_accel[1]; a[2] = sim_raw_accel[2]; return true; }
 int64_t k_uptime_get(void) { return now_ms; }
 uint32_t k_uptime_get_32(void) { return (uint32_t)now_ms; }
 

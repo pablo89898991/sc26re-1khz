@@ -289,6 +289,14 @@ struct remap_curves
 }; /* 68 bytes, no padding (web/remap.html) */
 
 /* accelerometer (v51.8), per profile and kept apart from it (sc26re/acc/<profile>) */
+#define REMAP_ACC_GESTURES 7
+#define REMAP_GEST_FORWARD 0 /* jolts along the controller's axes: forward (away from you) / back, */
+#define REMAP_GEST_BACK 1    /* left / right, up / down */
+#define REMAP_GEST_LEFT 2
+#define REMAP_GEST_RIGHT 3
+#define REMAP_GEST_UP 4
+#define REMAP_GEST_DOWN 5
+#define REMAP_GEST_SHAKE 6   /* 4 jolts back and forth within 0.8 s */
 #define REMAP_ACC_STICK_OFF 0
 #define REMAP_ACC_STICK_LEFT 1
 #define REMAP_ACC_STICK_RIGHT 2
@@ -307,9 +315,14 @@ struct remap_accel
 	                  * 0 off, 1 4-way (the bigger tilt), 2 8-way (diagonals hold two) */
 	uint8_t reserved1;
 	uint16_t btn_sens; /* tilt -> buttons: % (0 = 100): a direction at REMAP_ACC_BTN_DEG * 100 / sens */
-	uint8_t reserved[22];
+	uint16_t gest_sens; /* gestures: % (0 = 100): a jolt of REMAP_ACC_GEST_G * 100 / sens g fires */
+	uint8_t gest[REMAP_ACC_GESTURES][2]; /* gestures: up to 2 actions each (0 = none), tapped for
+	                                      * REMAP_ACC_GEST_MS: REMAP_GEST_* order */
+	uint8_t reserved[6];
 }; /* 32 bytes (web/remap.html) */
 #define REMAP_ACC_BTN_DEG 20.0f
+#define REMAP_ACC_GEST_G 1.5f   /* g of jolt (gravity taken out) at 100 % */
+#define REMAP_ACC_GEST_MS 80    /* a gesture taps its actions this long */
 
 extern const uint8_t remap_shift_src[REMAP_SHIFT_SRC_COUNT];
 

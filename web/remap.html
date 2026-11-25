@@ -116,7 +116,7 @@
 <body>
 <div class="top">
   <div class="topin">
-    <div class="brand">SC2 <span class="hz">Remapper</span> <span class="note" id="pagever" title="page version — if it is older than expected, press Ctrl+F5">p.2026-11-25c</span></div>
+    <div class="brand">SC2 <span class="hz">Remapper</span> <span class="note" id="pagever" title="page version — if it is older than expected, press Ctrl+F5">p.2026-11-25d</span></div>
     <button class="primary" id="connect">Connect controller</button>
     <span id="status" class="chip">not connected</span>
     <span id="batt" class="chip" hidden></span>
@@ -1065,8 +1065,10 @@ async function crvReadAll(){ try{ for(const sl of [0,1,2,3,CRV_G]){ const d=awai
 /* ---- accelerometer (firmware v51.8+), per profile in sc26re/acc/<profile>, 32 bytes: stick (0 off, 1 left,
    2 right), flags (1 invert X, 2 invert Y, 4 swap, 0x80 off while the gyro is on), sens % (u16, 0 = 100: full
    deflection at 45° × 100 / sens), dead zone (u16, 0.01 % of full), tilt buttons (u8 at 6: 0 off, 1 4-way, 2 8-way),
-   their sens % (u16 at 8, 0 = 100: a direction at 20° × 100 / sens) */
-const ACC_SIZE=32, ACC_FULL=45, ACC_BTN=20;
+   their sens % (u16 at 8, 0 = 100: a direction at 20° × 100 / sens), gestures: sens % (u16 at 10, 0 = 100: a jolt of
+   1.5 g × 100 / sens), 7 × 2 actions at 12 (jab forward, back, left, right, up, down, shake) */
+const ACC_SIZE=32, ACC_FULL=45, ACC_BTN=20, ACC_GEST_G=1.5, ACC_GEST_MS=80;
+const ACC_GESTS=["Jab forward","Pull back","Jab left","Jab right","Jolt up","Jolt down","Shake"];
 const acc=[0,1,2,3].map(()=>new Uint8Array(ACC_SIZE)); let fwAcc=null;
 const accDV=p=>new DataView(acc[p].buffer);
 async function accRead(p){ const out=new Uint8Array(ACC_SIZE);
@@ -1091,6 +1093,10 @@ function accHtml(p){ if(!fwAcc) return "";
   h+=`<div class="row2"><label>Tilt presses</label><select id="acbt"><option value="0">nothing</option><option value="1">4 directions (the bigger tilt)</option><option value="2">8 directions (diagonals hold two)</option></select><small>the Tilt forward / back / left / right bindings — the same ones as the gyro’s tilt mode</small></div>`;
   if(bt){ h+=`<div class="row2"><label>Sensitivity</label><input type="number" id="acbs" class="num" min="10" max="1000" step="1" value="${bs}" style="width:90px"> <span class="note">%</span><small id="acbsN">a direction at ${(ACC_BTN*100/bs).toFixed(1)}° of tilt (100 % = ${ACC_BTN}°), let go 3° before</small></div>`;
     if(prof[p][GYX]!==1) h+=`<div class="subs">${[[66,"Tilt forward"],[67,"Tilt back"],[68,"Tilt left"],[69,"Tilt right"]].map(([x,n])=>`<div class="item" data-sub="${x}"><span class="k">${n}</span><span class="b${grpText(prof[p],x,0)?"":" none"}">${bindText(x)}</span></div>`).join("")}</div>`; }
+  const gs=v.getUint16(10,true)||100;
+  h+=`<div class="row2"><label>Gestures</label><span class="note">a quick jolt of the controller taps its actions (${ACC_GEST_MS} ms)</span><small>a jab and its stop count once; 4 jolts back and forth within 0.8 s are a shake</small></div>
+    <div class="row2"><label>Sensitivity</label><input type="number" id="acgs" class="num" min="10" max="1000" step="1" value="${gs}" style="width:90px"> <span class="note">%</span><small id="acgsN">fires at a jolt of ${(ACC_GEST_G*100/gs).toFixed(2)} g (100 % = ${ACC_GEST_G} g)</small></div>
+    ${ACC_GESTS.map((n,k)=>`<div class="grp"><span>${n}</span><select data-ga="${k}:0">${OPTS}</select><select data-ga="${k}:1">${OPTS}</select></div>`).join("")}`;
   h+=`<div class="row2"><label></label><label class="note"><input type="checkbox" class="acf" data-f="128"${fl&128?" checked":""}> off while the gyro mouse / joystick is on</label></div>
     <p class="note wrap">The centre is how you hold the controller when the profile becomes active (switch profiles or turn the remapper off and on to centre it again). It does not drift: it comes from gravity. While something here is on, the motion sensor stays on.</p>`;
   return h; }
@@ -1101,6 +1107,12 @@ function accWire(p){ if(!fwAcc||!$("#acst")) return; const v=accDV(p);
   $("#acbt").value=String(acc[p][6]);
   $("#acbt").onchange=e=>{ const was=acc[p][6]; acc[p][6]=+e.target.value; if(!was&&acc[p][6]&&!v.getUint16(8,true)){ v.setUint16(8,100,true); if(!acc[p][0]) acc[p][1]|=128; } setDirty(); render(); };
   if($("#acbs")) $("#acbs").onchange=e=>{ const x=Math.max(10,Math.min(1000,Math.round(+e.target.value||100))); e.target.value=x; v.setUint16(8,x,true); $("#acbsN").textContent=`a direction at ${(ACC_BTN*100/x).toFixed(1)}° of tilt (100 % = ${ACC_BTN}°), let go 3° before`; setDirty(); };
+  $("#acgs").onchange=e=>{ const x=Math.max(10,Math.min(1000,Math.round(+e.target.value||100))); e.target.value=x; v.setUint16(10,x,true); $("#acgsN").textContent=`fires at a jolt of ${(ACC_GEST_G*100/x).toFixed(2)} g (100 % = ${ACC_GEST_G} g)`; setDirty(); };
+  document.querySelectorAll("[data-ga]").forEach(x=>{ const [k,j]=x.dataset.ga.split(":").map(Number);
+    /* a gesture taps: profile switches, layers and macros are not offered */
+    [...x.options].forEach(o=>{ const n=+o.value; if(n>=0xC0&&n<0xD0) o.remove(); });
+    x.value=String(acc[p][12+2*k+j]); if(x.value==="") x.value="0";
+    x.onchange=()=>{ const was=acc[p].slice(12,26).some(b=>b); acc[p][12+2*k+j]=+x.value; if(!was&&+x.value){ if(!v.getUint16(10,true)) v.setUint16(10,100,true); if(!acc[p][0]&&!acc[p][6]) acc[p][1]|=128; } setDirty(); }; });
   if($("#acdz")) $("#acdz").onchange=e=>{ const x=Math.max(0,Math.min(90,+e.target.value||0)); e.target.value=x; v.setUint16(4,Math.round(x*100),true); setDirty(); };
   document.querySelectorAll(".acf").forEach(c=>c.onchange=()=>{ const f=+c.dataset.f; acc[p][1]=(acc[p][1]&~f)|(c.checked?f:0); setDirty(); }); }
 

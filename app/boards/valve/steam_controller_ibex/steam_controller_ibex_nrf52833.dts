@@ -342,7 +342,7 @@
 	imu: lsm6dsv16x@6a {
 		compatible = "st,lsm6dsv16x";
 		reg = <0x6a>;
-		accel-range = <LSM6DSV16X_DT_FS_2G>;
+		accel-range = <LSM6DSV16X_DT_FS_4G>; /* +-4 g: accelerometer gestures (v51.8); the report keeps +-2 g */
 		/* 2 kHz in the sensor; app/src/imu.c reads gyro+accel from the output
 		 * registers once per USB frame. The FIFO carries only the SFLP words. */
 		accel-odr = <LSM6DSVXXX_DT_ODR_HA01_AT_2000Hz>;
