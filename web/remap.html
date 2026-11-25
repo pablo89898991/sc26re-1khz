@@ -1050,10 +1050,14 @@ function crvWire(id,s,k,changed){ const box=document.getElementById(id); if(!box
 async function crvRead(slot){ const sl=slot===CRV_G?"g":String(slot), out=new Uint8Array(CRV_SIZE);
   for(let o=0;o<CRV_SIZE;){ const d=await read(`sc26re/crv/${sl}/${o.toString(16)}`); if(!d||!d.length) return null; out.set(d.slice(0,CRV_SIZE-o),o); o+=d.length; }
   return out; }
+/* measured on hardware over the Puck: a piece sent right after a setting was saved (the controller busy
+   writing flash) is lost about 1 time in 7, so read back and send again until it matches */
 async function crvWrite(slot){ const sl=slot===CRV_G?"g":String(slot), b=crv[slot];
-  for(let o=0;o<CRV_SIZE;o+=CH) await send(`sc26re/crv/${sl}/${o.toString(16)}`,0xEE,Array.from(b.slice(o,Math.min(o+CH,CRV_SIZE))));
-  await send(`sc26re/crv/${sl}`,0xEF);
-  const back=await crvRead(slot); return !!back&&back.every((v,i)=>v===b[i]); }
+  for(let attempt=0;attempt<4;attempt++){
+    for(let o=0;o<CRV_SIZE;o+=CH) await send(`sc26re/crv/${sl}/${o.toString(16)}`,0xEE,Array.from(b.slice(o,Math.min(o+CH,CRV_SIZE))));
+    await send(`sc26re/crv/${sl}`,0xEF);
+    const back=await crvRead(slot); if(back&&back.every((v,i)=>v===b[i])) return true; }
+  return false; }
 async function crvReadAll(){ try{ for(const sl of [0,1,2,3,CRV_G]){ const d=await crvRead(sl); if(!d){ fwCrv=false; return; } crv[sl].set(d); } fwCrv=true; crvDirtyG=false; }catch(e){ fwCrv=false; } }
 
 async function readProfile(p){ const b=new Uint8Array(PROF_SIZE);
