@@ -1760,6 +1760,7 @@ static void imu_fast_thread_main(void *arg1, void *arg2, void *arg3)
 	 * accel 0.061 mg/LSB at +-2 g, doubling per step */
 	static const uint8_t gyro_fs_shift[16] = { 0, 1, 2, 3, 4, 0, 0, 0, 0, 0, 0, 0, 5, 0, 0, 0 };
 	float gyro_rad_per_lsb = 0.0f;
+	uint8_t gyro_code_set = 0U; /* FS_G code this loop put in the sensor (0 = not yet) */
 	float accel_ms2_per_lsb = 0.0f;
 	int16_t applied_lpf = INT16_MIN;
 	float gm_dps[3];
@@ -1864,27 +1865,43 @@ static void imu_fast_thread_main(void *arg1, void *arg2, void *arg3)
 			   i2c_reg_update_byte_dt(&imu_i2c, IMU_REG_CTRL6, 0x0FU, code) == 0)
 			{
 				applied_fsr = fsr;
+				gyro_code_set = code;
 				gyro_rad_per_lsb = 0.0f;
 				atomic_set(&gyro_slot, code);
 				/* the reports subtract the sensor fusion's running bias estimate, which was
 				 * settled at the old range; use this range's calibration */
 				k_work_submit(&gyro_reseed_work);
 			}
-			/* the range in the sensor can change behind this loop's back (with a saved
-			 * high-performance mode it came up at the driver's 2000 dps while the conversion
-			 * still assumed the set range: the gyro mouse moved ~15 times too little). Check
-			 * it every 100 ms and put it back, with the conversion read again. */
-			static uint8_t fs_check;
+			/* the range in the sensor can change behind this loop's back: the driver's
+			 * sensor fusion set-up (a gyro bias write at every stream restart, e.g. after
+			 * the gyro page's Save) goes through 125 dps for a moment. Reading the
+			 * conversion back from the sensor at such a moment left it at 125 dps while the
+			 * sensor ran at 250: the gyro at half speed until a calibration (v51.7, measured:
+			 * CTRL6 = 1, conversion 4.375 mdps). The conversion now comes from the code set
+			 * here, never from a read-back; every 100 ms, with nothing else using the bus,
+			 * a range found different twice in a row is put back. */
+			static uint8_t fs_check, fs_bad;
 
 			if(applied_fsr == fsr && ++fs_check >= 100U)
 			{
 				fs_check = 0;
-				if(i2c_reg_read_byte_dt(&imu_i2c, IMU_REG_CTRL6, &reg) == 0 && (reg & 0x0FU) != code &&
-				   i2c_reg_update_byte_dt(&imu_i2c, IMU_REG_CTRL6, 0x0FU, code) == 0)
+				if(k_mutex_lock(&imu_io_lock, K_NO_WAIT) == 0)
 				{
-					gyro_rad_per_lsb = 0.0f;
-					imu_dbg.fs_fixes++;
-					imu_dbg.fs_seen = reg;
+					if(i2c_reg_read_byte_dt(&imu_i2c, IMU_REG_CTRL6, &reg) == 0)
+					{
+						if((reg & 0x0FU) == code)
+						{
+							fs_bad = 0U;
+						}
+						else if(++fs_bad >= 2U &&
+						        i2c_reg_update_byte_dt(&imu_i2c, IMU_REG_CTRL6, 0x0FU, code) == 0)
+						{
+							fs_bad = 0U;
+							imu_dbg.fs_fixes++;
+							imu_dbg.fs_seen = reg;
+						}
+					}
+					k_mutex_unlock(&imu_io_lock);
 				}
 			}
 		}
@@ -1895,7 +1912,10 @@ static void imu_fast_thread_main(void *arg1, void *arg2, void *arg3)
 				atomic_inc(&imu_fast_errors);
 				continue;
 			}
-			gyro_rad_per_lsb = 0.004375f * (float)(1U << gyro_fs_shift[reg & 0x0FU]) *
+			/* the range set here (see the full scale check above); the read-back only
+			 * before this loop has set one */
+			gyro_rad_per_lsb = 0.004375f *
+			                   (float)(1U << gyro_fs_shift[gyro_code_set ? gyro_code_set : (reg & 0x0FU)]) *
 			                   (3.14159265f / 180.0f);
 			if(i2c_reg_read_byte_dt(&imu_i2c, IMU_REG_CTRL8, &reg) != 0)
 			{
