@@ -61,3 +61,5 @@ void imu_debug_note_scan_us(uint32_t us);
 void imu_raw_read(int16_t quat[4], int16_t accel[3]);
 /* diagnosis: calibrated / fusion bias (mdps), valid, in use, gyro udps per LSB */
 void imu_gbias_debug(int16_t out[9]);
+/* diagnosis: sensor mode, raw gyro, gyro mouse feed (sc26re/imumode) */
+void imu_mode_debug(uint8_t out[48]);

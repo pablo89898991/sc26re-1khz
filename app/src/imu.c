@@ -1696,6 +1696,37 @@ static void gyro_reseed_handler(struct k_work *work)
 }
 static K_WORK_DEFINE(gyro_reseed_work, gyro_reseed_handler);
 
+/* diagnosis (v51.7 test 1, sensor mode): the last raw gyro sample, the conversion, the mode
+ * registers (CTRL1..CTRL8, HAODR_CFG) and how much the gyro mouse was fed */
+static atomic_t imu_dbg_req;
+static struct
+{
+	int16_t raw[3];
+	uint32_t ndps_per_lsb;
+	uint8_t regs[9];
+	uint32_t feeds;
+	uint32_t dt_sum_us;
+	float abs_deg[3];
+	uint32_t last_dt_us;
+} imu_dbg;
+
+void imu_mode_debug(uint8_t out[48])
+{
+	atomic_set(&imu_dbg_req, 1);
+	memset(out, 0, 48);
+	for(size_t i = 0; i < 3; ++i)
+	{
+		sys_put_le16((uint16_t)imu_dbg.raw[i], &out[2 * i]);
+		sys_put_le32((uint32_t)(imu_dbg.abs_deg[i] * 10.0f), &out[28 + 4 * i]);
+	}
+	sys_put_le32(imu_dbg.ndps_per_lsb, &out[6]);
+	memcpy(&out[10], imu_dbg.regs, sizeof(imu_dbg.regs));
+	sys_put_le32(imu_dbg.feeds, &out[19]);
+	sys_put_le32(imu_dbg.dt_sum_us, &out[23]);
+	out[27] = (uint8_t)sc26re_cfg_get(SC26RE_CFG_GYRO_MODE);
+	sys_put_le32(imu_dbg.last_dt_us, &out[40]);
+}
+
 static void imu_fast_thread_main(void *arg1, void *arg2, void *arg3)
 {
 	/* LSM6DSV16X sensitivities: gyro 4.375 mdps/LSB at +-125 dps, doubling per step;
@@ -1879,6 +1910,16 @@ static void imu_fast_thread_main(void *arg1, void *arg2, void *arg3)
 		}
 		atomic_inc(&imu_fast_reads);
 		atomic_set(&imu_last_read_ms, (atomic_val_t)k_uptime_get_32());
+		for(size_t i = 0; i < 3; ++i)
+		{
+			imu_dbg.raw[i] = (int16_t)sys_get_le16(&raw[2 * i]);
+		}
+		imu_dbg.ndps_per_lsb = (uint32_t)(gyro_rad_per_lsb * (180.0f / 3.14159265f) * 1e9f);
+		if(atomic_cas(&imu_dbg_req, 1, 0))
+		{
+			(void)imu_reg_read(IMU_REG_CTRL1, imu_dbg.regs, 8);
+			(void)imu_reg_read(IMU_REG_HAODR_CFG, &imu_dbg.regs[8], 1);
+		}
 		avg2 = sc26re_cfg_get(SC26RE_CFG_GYRO_AVG) >= 2;
 		for(size_t i = 0; i < 3; ++i)
 		{
@@ -1924,6 +1965,16 @@ static void imu_fast_thread_main(void *arg1, void *arg2, void *arg3)
 			 * switched off a gyro activation by stick touch, grip or a back button */
 			gyro_mouse_feed(gm_dps, gm_have_state ? remap_raw_buttons() : 0U,
 			                gm_last_us ? (float)(now_us - gm_last_us) * 1e-6f : 0.001f);
+			if(gm_last_us)
+			{
+				imu_dbg.feeds++;
+				imu_dbg.last_dt_us = now_us - gm_last_us;
+				imu_dbg.dt_sum_us += now_us - gm_last_us;
+				for(size_t i = 0; i < 3; ++i)
+				{
+					imu_dbg.abs_deg[i] += fabsf(gm_dps[i]) * (float)(now_us - gm_last_us) * 1e-6f;
+				}
+			}
 			gm_last_us = now_us;
 		}
 		if(transport_usb_state_reports_allowed() && imu_paces_usb() &&
