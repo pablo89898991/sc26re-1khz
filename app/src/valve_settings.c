@@ -633,13 +633,13 @@ bool valve_settings_read(const char *path, uint8_t *buf, size_t capacity, size_t
 		*len = 28;
 		return true;
 	}
-	if(strcmp(path, "sc26re/imumode") == 0 && capacity >= 44)
+	if(strcmp(path, "sc26re/imumode") == 0 && capacity >= 47)
 	{
 		uint8_t d[48];
 
 		imu_mode_debug(d);
-		memcpy(buf, d, 44);
-		*len = 44;
+		memcpy(buf, d, 47);
+		*len = 47;
 		return true;
 	}
 	if(strcmp(path, "sc26re/gbias") == 0 && capacity >= 18)

@@ -1708,6 +1708,8 @@ static struct
 	uint32_t dt_sum_us;
 	float abs_deg[3];
 	uint32_t last_dt_us;
+	uint16_t fs_fixes;
+	uint8_t fs_seen;
 } imu_dbg;
 
 void imu_mode_debug(uint8_t out[48])
@@ -1725,6 +1727,8 @@ void imu_mode_debug(uint8_t out[48])
 	sys_put_le32(imu_dbg.dt_sum_us, &out[23]);
 	out[27] = (uint8_t)sc26re_cfg_get(SC26RE_CFG_GYRO_MODE);
 	sys_put_le32(imu_dbg.last_dt_us, &out[40]);
+	sys_put_le16(imu_dbg.fs_fixes, &out[44]);
+	out[46] = imu_dbg.fs_seen;
 }
 
 static void imu_fast_thread_main(void *arg1, void *arg2, void *arg3)
@@ -1842,6 +1846,23 @@ static void imu_fast_thread_main(void *arg1, void *arg2, void *arg3)
 				/* the reports subtract the sensor fusion's running bias estimate, which was
 				 * settled at the old range; use this range's calibration */
 				k_work_submit(&gyro_reseed_work);
+			}
+			/* the range in the sensor can change behind this loop's back (with a saved
+			 * high-performance mode it came up at the driver's 2000 dps while the conversion
+			 * still assumed the set range: the gyro mouse moved ~15 times too little). Check
+			 * it every 100 ms and put it back, with the conversion read again. */
+			static uint8_t fs_check;
+
+			if(applied_fsr == fsr && ++fs_check >= 100U)
+			{
+				fs_check = 0;
+				if(i2c_reg_read_byte_dt(&imu_i2c, IMU_REG_CTRL6, &reg) == 0 && (reg & 0x0FU) != code &&
+				   i2c_reg_update_byte_dt(&imu_i2c, IMU_REG_CTRL6, 0x0FU, code) == 0)
+				{
+					gyro_rad_per_lsb = 0.0f;
+					imu_dbg.fs_fixes++;
+					imu_dbg.fs_seen = reg;
+				}
 			}
 		}
 		if(gyro_rad_per_lsb == 0.0f)
