@@ -43,6 +43,7 @@ static int active_index(void);
 static void acc_process(int i, const struct controller_report *rs);
 static bool acc_ref_ok;
 static float acc_joy[2][2];
+static uint8_t acc_dirs; /* tilt -> buttons this pass, the gyro_dirs bits */
 
 LOG_MODULE_REGISTER(remap, LOG_LEVEL_INF);
 
@@ -3052,6 +3053,16 @@ void remap_process(struct controller_report *r, float dt)
 			region_pos[4][1] = gyro_reg[1];
 		}
 	}
+	/* accelerometer (v51.8): tilt -> stick (added to the stick below) and tilt -> the tilt sources */
+	{
+		struct controller_report rs;
+		k_spinlock_key_t key = k_spin_lock(&raw_lock);
+
+		rs = raw_state;
+		k_spin_unlock(&raw_lock, key);
+		acc_process(active_index(), &rs);
+		gyro_dirs |= acc_dirs;
+	}
 	PERF_MARK(5);
 	/* triggers: soft pull point with a little hysteresis */
 	uint8_t xtrig_an[2] = { 0U, 0U };
@@ -3403,15 +3414,6 @@ void remap_process(struct controller_report *r, float dt)
 	}
 
 	PERF_MARK(7);
-	/* accelerometer (v51.8): tilt -> stick, added to the stick below */
-	{
-		struct controller_report rs;
-		k_spinlock_key_t key = k_spin_lock(&raw_lock);
-
-		rs = raw_state;
-		k_spin_unlock(&raw_lock, key);
-		acc_process(active_index(), &rs);
-	}
 	/* sticks: mouse / scroll, or to Steam with the dead zones applied */
 	for(int i = 0; i < 2; ++i)
 	{
@@ -3812,7 +3814,6 @@ static struct remap_accel acc_staging;
 static int8_t acc_staging_s = -1;
 static float acc_ref[3];
 static bool acc_ref_ok;
-static float acc_joy[2][2]; /* tilt -> stick, this pass */
 
 static int acc_parse(const char *path, int *slot, int *off)
 {
@@ -3851,12 +3852,13 @@ static float acc_axis(float deg, float full, float dz)
 static void acc_process(int i, const struct controller_report *rs)
 {
 	const struct remap_accel *c = i >= 0 ? &accs[i] : NULL;
-	bool want = c != NULL && c->stick != REMAP_ACC_STICK_OFF;
+	bool want = c != NULL && (c->stick != REMAP_ACC_STICK_OFF || c->btn != 0U);
 	static bool wanted;
 	int16_t raw[3];
 	float a[3], m, fwd, side, full, dz, x, y;
 
 	memset(acc_joy, 0, sizeof(acc_joy));
+	acc_dirs = 0U;
 	if(want != wanted)
 	{
 		/* the IMU stays on for the accelerometer bindings, with or without Steam */
@@ -3902,6 +3904,30 @@ static void acc_process(int i, const struct controller_report *rs)
 		acc_ref_ok = true;
 	}
 	tilt_angles(acc_ref, a, &fwd, &side);
+	if(c->btn != 0U)
+	{
+		/* tilt -> the 4 tilt sources, as the gyro tilt mode: a direction already on stays
+		 * until 3 degrees back (half way for a small threshold) */
+		static uint8_t last;
+		float on = REMAP_ACC_BTN_DEG * 100.0f / (float)(c->btn_sens ? c->btn_sens : 100U);
+		float off = on - MIN(3.0f, on * 0.5f);
+		uint8_t d = 0U;
+
+		if(fwd > ((last & 1U) ? off : on)) d |= 1U;
+		if(fwd < -((last & 2U) ? off : on)) d |= 2U;
+		if(side < -((last & 4U) ? off : on)) d |= 4U;
+		if(side > ((last & 8U) ? off : on)) d |= 8U;
+		if(c->btn == 1U && (d & 3U) && (d & 12U))
+		{
+			d &= fabsf(fwd) >= fabsf(side) ? 3U : 12U;
+		}
+		last = d;
+		acc_dirs = d;
+	}
+	if(c->stick == REMAP_ACC_STICK_OFF)
+	{
+		return;
+	}
 	full = REMAP_ACC_FULL_DEG * 100.0f / (float)(c->sens ? c->sens : 100U);
 	dz = (float)c->dz * 0.0001f;
 	x = acc_axis((c->flags & REMAP_ACC_SWAP) ? fwd : side, full, dz);

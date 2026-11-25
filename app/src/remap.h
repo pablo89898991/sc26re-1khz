@@ -303,8 +303,13 @@ struct remap_accel
 	uint8_t flags;   /* REMAP_ACC_* */
 	uint16_t sens;   /* tilt -> stick: % (0 = 100): full deflection at REMAP_ACC_FULL_DEG * 100 / sens */
 	uint16_t dz;     /* tilt -> stick: dead zone, 0.01 % of full deflection */
-	uint8_t reserved[26];
+	uint8_t btn;     /* tilt -> the 4 tilt sources (bindings "Tilt forward / back / left / right"):
+	                  * 0 off, 1 4-way (the bigger tilt), 2 8-way (diagonals hold two) */
+	uint8_t reserved1;
+	uint16_t btn_sens; /* tilt -> buttons: % (0 = 100): a direction at REMAP_ACC_BTN_DEG * 100 / sens */
+	uint8_t reserved[22];
 }; /* 32 bytes (web/remap.html) */
+#define REMAP_ACC_BTN_DEG 20.0f
 
 extern const uint8_t remap_shift_src[REMAP_SHIFT_SRC_COUNT];
 

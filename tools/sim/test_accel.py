@@ -2,8 +2,8 @@
 import struct, math
 from simlib import *
 
-def acc_blob(stick=0, flags=0, sens=0, dz=0):
-    return struct.pack("<BBHH", stick, flags, sens, dz) + bytes(26)
+def acc_blob(stick=0, flags=0, sens=0, dz=0, btn=0, bsens=0):
+    return struct.pack("<BBHHBBH", stick, flags, sens, dz, btn, 0, bsens) + bytes(22)
 
 def put_acc(s, slot, blob):
     for o in range(0, len(blob), 40):
@@ -91,6 +91,41 @@ check("without the flag: works while the gyro is on", near(s.out["lsx"], 16384),
 # another profile without it
 s = fresh(acc_blob(1)); s.upload(1, Profile()); s.cfg("remap_profile", 1); s.run(5, **tilt(side=22.5))
 check("other profile: nothing", s.out["lsx"] == 0, s.out["lsx"])
+
+# ---- tilt -> buttons (the 4 tilt sources), 100 % = 20 degrees
+def bprof():
+    p = Profile()
+    for s_, k in (("GYRO_UP", "w"), ("GYRO_DOWN", "s"), ("GYRO_LEFT", "a"), ("GYRO_RIGHT", "d")): p.bind(s_, key(k))
+    return p
+class KB:
+    """keys held at the PC, from the keyboard reports"""
+    def __init__(self, s): self.s, self.now = s, ()
+    def run(self, ms, **kw):
+        k = self.s.run(ms, **kw).kbd()
+        if k: self.now = k[-1]
+        return self
+    def down(self, c): return key(c) in self.now
+s = fresh(acc_blob(btn=1), bprof()); kb = KB(s)
+e = kb.run(20, **tilt(fwd=25)); check("forward 25 deg: Tilt forward pressed", e.down("w"), e)
+e = kb.run(20, **tilt(fwd=18.5)); check("hysteresis: 18.5 deg still held", e.down("w"), e)
+e = kb.run(20, **tilt(fwd=16)); check("back under 17 deg: released", not e.down("w"), e)
+e = kb.run(20, **tilt(side=-25)); check("left 25 deg: Tilt left", e.down("a"), e)
+kb.run(20, **tilt())
+e = kb.run(20, **tilt(fwd=25, side=30)); check("4-way: only the bigger tilt (right)", e.down("d") and not e.down("w"), e)
+kb.run(20, **tilt())
+s = fresh(acc_blob(btn=2), bprof()); kb = KB(s)
+e = kb.run(20, **tilt(fwd=25, side=30)); check("8-way: both", e.down("d") and e.down("w"), e)
+s = fresh(acc_blob(btn=1, bsens=200), bprof()); kb = KB(s)
+e = kb.run(20, **tilt(fwd=12)); check("200 %: 12 deg is enough", e.down("w"), e)
+s = fresh(acc_blob(btn=1, bsens=50), bprof()); kb = KB(s)
+e = kb.run(20, **tilt(fwd=30)); check("50 %: 30 deg not enough", not e.down("w"), e)
+e = kb.run(20, **tilt(fwd=45)); check("50 %: 45 deg is", e.down("w"), e)
+s = fresh(acc_blob(btn=1, flags=0x80), bprof()); kb = KB(s); s.lib.sim_gm_set(1)
+e = kb.run(20, **tilt(fwd=30)); check("buttons paused while the gyro is on", not e.down("w"), e)
+s.lib.sim_gm_set(0); e = kb.run(20, **tilt(fwd=30)); check("gyro off: pressed", e.down("w"), e)
+s = fresh(acc_blob(btn=1), bprof()); check("IMU kept on for tilt buttons", s.lib.sim_imu_forced() & 2)
+s = fresh(acc_blob(stick=1, btn=1), bprof()); kb = KB(s); e = kb.run(20, **tilt(fwd=25))
+check("stick and buttons together", e.down("w") and near(s.out["lsy"], int(32767 * 25 / 45)), (s.out["lsy"],))
 
 print("\n%d passed, %d failed" % (ok, fail))
 raise SystemExit(1 if fail else 0)
