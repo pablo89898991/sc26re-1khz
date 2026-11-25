@@ -38,6 +38,12 @@
 #include "charge_mode.h"
 #include "sc26re_cfg.h"
 
+/* accelerometer (v51.8), defined with its storage further down */
+static int active_index(void);
+static void acc_process(int i, const struct controller_report *rs);
+static bool acc_ref_ok;
+static float acc_joy[2][2];
+
 LOG_MODULE_REGISTER(remap, LOG_LEVEL_INF);
 
 static uint16_t prof_hold_ms = 250;
@@ -2483,6 +2489,7 @@ void remap_process(struct controller_report *r, float dt)
 			release_all();
 			shutdown_state = 2U;
 		}
+		acc_process(-1, NULL);
 		flush_outputs();
 		return;
 	}
@@ -2498,11 +2505,13 @@ void remap_process(struct controller_report *r, float dt)
 				release_all();
 				was_on = false;
 			}
+			acc_process(-1, NULL);
 			flush_outputs();
 			return;
 		}
 		if(!was_on)
 		{
+			acc_ref_ok = false; /* accelerometer tilt: centred where the controller is now */
 			/* just turned on: lizard mode (or anything else) may have left keys
 			 * or a click held at the PC: send our full state once */
 			kbd_valid = false;
@@ -2515,6 +2524,7 @@ void remap_process(struct controller_report *r, float dt)
 	{
 		/* empty profile: nothing mapped, and nothing left held from before */
 		release_all(); /* sends nothing when nothing is held */
+		acc_process(-1, NULL);
 		flush_outputs();
 		return;
 	}
@@ -2536,6 +2546,7 @@ void remap_process(struct controller_report *r, float dt)
 				switch_hide = raw & (BIT(30) - 1U);
 			}
 			tilt_ref_ok = false; /* gyro tilt: centred where the controller is now */
+			acc_ref_ok = false;  /* accelerometer tilt too */
 			gyro_reg[0] = gyro_reg[1] = 0.0f;
 			last_active = p;
 		}
@@ -3392,6 +3403,15 @@ void remap_process(struct controller_report *r, float dt)
 	}
 
 	PERF_MARK(7);
+	/* accelerometer (v51.8): tilt -> stick, added to the stick below */
+	{
+		struct controller_report rs;
+		k_spinlock_key_t key = k_spin_lock(&raw_lock);
+
+		rs = raw_state;
+		k_spin_unlock(&raw_lock, key);
+		acc_process(active_index(), &rs);
+	}
 	/* sticks: mouse / scroll, or to Steam with the dead zones applied */
 	for(int i = 0; i < 2; ++i)
 	{
@@ -3426,8 +3446,8 @@ void remap_process(struct controller_report *r, float dt)
 			}
 			x = y = 0;
 		}
-		x = (int16_t)CLAMP((int32_t)x + (int32_t)lroundf(pad_joy[i][0] * 32767.0f), -32767, 32767);
-		y = (int16_t)CLAMP((int32_t)y + (int32_t)lroundf(pad_joy[i][1] * 32767.0f), -32767, 32767);
+		x = (int16_t)CLAMP((int32_t)x + (int32_t)lroundf((pad_joy[i][0] + acc_joy[i][0]) * 32767.0f), -32767, 32767);
+		y = (int16_t)CLAMP((int32_t)y + (int32_t)lroundf((pad_joy[i][1] + acc_joy[i][1]) * 32767.0f), -32767, 32767);
 		if(i)
 		{
 			r->stick_right_x = x;
@@ -3743,14 +3763,15 @@ bool remap_curve_gyro(int which, const uint16_t **pt, float *mouse_max)
 	return true;
 }
 
-static int crv_parse(const char *path, int *slot, int *off)
+/* <prefix><slot>[/<offset hex>]: slot 0..3, or g (global) where allowed */
+static int blob_parse(const char *path, const char *prefix, bool global, size_t size, int *slot, int *off)
 {
-	if(strncmp(path, CRV_PREFIX, strlen(CRV_PREFIX)) != 0)
+	if(strncmp(path, prefix, strlen(prefix)) != 0)
 	{
 		return -1;
 	}
-	path += strlen(CRV_PREFIX);
-	if(path[0] == 'g')
+	path += strlen(prefix);
+	if(path[0] == 'g' && global)
 	{
 		*slot = REMAP_PROFILES;
 	}
@@ -3766,7 +3787,7 @@ static int crv_parse(const char *path, int *slot, int *off)
 	if(path[1] == '/')
 	{
 		*off = (int)strtol(&path[2], NULL, 16);
-		if(*off < 0 || *off >= (int)sizeof(struct remap_curves))
+		if(*off < 0 || *off >= (int)size)
 		{
 			return -1;
 		}
@@ -3776,6 +3797,125 @@ static int crv_parse(const char *path, int *slot, int *off)
 		return -1;
 	}
 	return 0;
+}
+
+static int crv_parse(const char *path, int *slot, int *off)
+{
+	return blob_parse(path, CRV_PREFIX, true, sizeof(struct remap_curves), slot, off);
+}
+
+/* ---- accelerometer (v51.8): sc26re/acc/<profile>[/<offset hex>] ---- */
+#define ACC_PREFIX "sc26re/acc/"
+BUILD_ASSERT(sizeof(struct remap_accel) == 32, "accelerometer layout (web/remap.html)");
+static struct remap_accel accs[REMAP_PROFILES];
+static struct remap_accel acc_staging;
+static int8_t acc_staging_s = -1;
+static float acc_ref[3];
+static bool acc_ref_ok;
+static float acc_joy[2][2]; /* tilt -> stick, this pass */
+
+static int acc_parse(const char *path, int *slot, int *off)
+{
+	return blob_parse(path, ACC_PREFIX, false, sizeof(struct remap_accel), slot, off);
+}
+
+static int acc_load_cb(const char *key, size_t len, settings_read_cb read_cb, void *cb_arg, void *param)
+{
+	ARG_UNUSED(param);
+	if(key == NULL || key[1] != '\0' || len != sizeof(struct remap_accel) || key[0] < '0' ||
+	   key[0] >= '0' + REMAP_PROFILES)
+	{
+		return 0;
+	}
+	(void)read_cb(cb_arg, &accs[key[0] - '0'], len);
+	return 0;
+}
+
+/* tilt of the gravity vector since the reference (degrees): forward and sideways, as the gyro
+ * tilt directions */
+static void tilt_angles(const float ref[3], const float a[3], float *fwd, float *side)
+{
+	*fwd = atan2f(ref[1] * a[2] - ref[2] * a[1], ref[1] * a[1] + ref[2] * a[2]) * 57.29578f;
+	*side = -atan2f(ref[2] * a[0] - ref[0] * a[2], ref[2] * a[2] + ref[0] * a[0]) * 57.29578f;
+}
+
+static float acc_axis(float deg, float full, float dz)
+{
+	float v = fabsf(deg) / full;
+
+	v = dz < 1.0f ? CLAMP((v - dz) / (1.0f - dz), 0.0f, 1.0f) : 0.0f;
+	return deg < 0.0f ? -v : v;
+}
+
+/* this pass: the accelerometer's outputs for profile i (-1 = remapper off) */
+static void acc_process(int i, const struct controller_report *rs)
+{
+	const struct remap_accel *c = i >= 0 ? &accs[i] : NULL;
+	bool want = c != NULL && c->stick != REMAP_ACC_STICK_OFF;
+	static bool wanted;
+	int16_t raw[3];
+	float a[3], m, fwd, side, full, dz, x, y;
+
+	memset(acc_joy, 0, sizeof(acc_joy));
+	if(want != wanted)
+	{
+		/* the IMU stays on for the accelerometer bindings, with or without Steam */
+		imu_force_reason(IMU_FORCE_ACCEL, want);
+		wanted = want;
+		acc_ref_ok = false;
+	}
+	if(!want || ((c->flags & REMAP_ACC_GYRO_PAUSE) && gyro_mouse_active()))
+	{
+		return;
+	}
+#ifdef CONFIG_IBEX_HWTEST
+	if(hwtest_running())
+	{
+		raw[0] = rs->accel_x;
+		raw[1] = rs->accel_y;
+		raw[2] = rs->accel_z;
+	}
+	else
+#endif
+	if(!imu_accel(raw))
+	{
+		return;
+	}
+	ARG_UNUSED(rs);
+	for(int k = 0; k < 3; ++k)
+	{
+		a[k] = (float)raw[k];
+	}
+	m = sqrtf(a[0] * a[0] + a[1] * a[1] + a[2] * a[2]);
+	if(m < 1000.0f)
+	{
+		return; /* no sample yet */
+	}
+	for(int k = 0; k < 3; ++k)
+	{
+		a[k] /= m;
+	}
+	if(!acc_ref_ok)
+	{
+		/* neutral: how the controller is held when the profile becomes active */
+		memcpy(acc_ref, a, sizeof(acc_ref));
+		acc_ref_ok = true;
+	}
+	tilt_angles(acc_ref, a, &fwd, &side);
+	full = REMAP_ACC_FULL_DEG * 100.0f / (float)(c->sens ? c->sens : 100U);
+	dz = (float)c->dz * 0.0001f;
+	x = acc_axis((c->flags & REMAP_ACC_SWAP) ? fwd : side, full, dz);
+	y = acc_axis((c->flags & REMAP_ACC_SWAP) ? side : fwd, full, dz);
+	if(c->flags & REMAP_ACC_INV_X)
+	{
+		x = -x;
+	}
+	if(c->flags & REMAP_ACC_INV_Y)
+	{
+		y = -y;
+	}
+	acc_joy[c->stick == REMAP_ACC_STICK_RIGHT ? 1 : 0][0] = x;
+	acc_joy[c->stick == REMAP_ACC_STICK_RIGHT ? 1 : 0][1] = y;
 }
 
 static int crv_load_cb(const char *key, size_t len, settings_read_cb read_cb, void *cb_arg, void *param)
@@ -3837,7 +3977,7 @@ bool remap_path(const char *path)
 {
 	int p, o;
 
-	return parse_path(path, &p, &o) == 0 || crv_parse(path, &p, &o) == 0;
+	return parse_path(path, &p, &o) == 0 || crv_parse(path, &p, &o) == 0 || acc_parse(path, &p, &o) == 0;
 }
 
 bool remap_read(const char *path, uint8_t *buf, size_t capacity, size_t *len)
@@ -3853,6 +3993,17 @@ bool remap_read(const char *path, uint8_t *buf, size_t capacity, size_t *len)
 		}
 		n = MIN(MIN((size_t)CHUNK, capacity), sizeof(struct remap_curves) - (size_t)o);
 		memcpy(buf, (const uint8_t *)&curves[p] + o, n);
+		*len = n;
+		return true;
+	}
+	if(acc_parse(path, &p, &o) == 0)
+	{
+		if(o < 0)
+		{
+			return false;
+		}
+		n = MIN(MIN((size_t)CHUNK, capacity), sizeof(struct remap_accel) - (size_t)o);
+		memcpy(buf, (const uint8_t *)&accs[p] + o, n);
 		*len = n;
 		return true;
 	}
@@ -3913,6 +4064,7 @@ uint8_t *remap_hwtest_buffer(size_t *size)
 void remap_hwtest_started(void)
 {
 	tilt_ref_ok = false; /* gyro tilt / region centred on the script's first motion sample, not the desk */
+	acc_ref_ok = false;
 	gyro_reg[0] = gyro_reg[1] = 0.0f;
 }
 
@@ -3946,6 +4098,20 @@ int remap_stage(const char *path, const uint8_t *value, size_t len)
 			crv_staging_s = (int8_t)p;
 		}
 		memcpy((uint8_t *)&crv_staging + o, value, MIN(len, sizeof(crv_staging) - (size_t)o));
+		return 0;
+	}
+	if(acc_parse(path, &p, &o) == 0)
+	{
+		if(o < 0)
+		{
+			return -EINVAL;
+		}
+		if(acc_staging_s != p)
+		{
+			acc_staging = accs[p];
+			acc_staging_s = (int8_t)p;
+		}
+		memcpy((uint8_t *)&acc_staging + o, value, MIN(len, sizeof(acc_staging) - (size_t)o));
 		return 0;
 	}
 	if(parse_path(path, &p, &o) != 0 || o < 0)
@@ -3982,6 +4148,17 @@ int remap_commit(const char *path)
 		}
 		snprintf(key, sizeof(key), "user/crv/%c", p < REMAP_PROFILES ? '0' + p : 'g');
 		return settings_save_one(key, &curves[p], sizeof(curves[p]));
+	}
+	if(acc_parse(path, &p, &o) == 0)
+	{
+		if(acc_staging_s == p)
+		{
+			accs[p] = acc_staging;
+			acc_staging_s = -1;
+			acc_ref_ok = false;
+		}
+		snprintf(key, sizeof(key), "user/acc/%c", '0' + p);
+		return settings_save_one(key, &accs[p], sizeof(accs[p]));
 	}
 	if(parse_path(path, &p, &o) != 0)
 	{
@@ -4057,6 +4234,7 @@ void remap_init(void)
 	}
 	(void)settings_load_subtree_direct("user/remap", load_cb, NULL);
 	(void)settings_load_subtree_direct("user/crv", crv_load_cb, NULL);
+	(void)settings_load_subtree_direct("user/acc", acc_load_cb, NULL);
 }
 
 #ifdef SC26RE_SIM

@@ -116,7 +116,7 @@
 <body>
 <div class="top">
   <div class="topin">
-    <div class="brand">SC2 <span class="hz">Remapper</span> <span class="note" id="pagever" title="page version — if it is older than expected, press Ctrl+F5">p.2026-11-25a</span></div>
+    <div class="brand">SC2 <span class="hz">Remapper</span> <span class="note" id="pagever" title="page version — if it is older than expected, press Ctrl+F5">p.2026-11-25b</span></div>
     <button class="primary" id="connect">Connect controller</button>
     <span id="status" class="chip">not connected</span>
     <span id="batt" class="chip" hidden></span>
@@ -610,6 +610,7 @@ function editor(){
         <label class="note"><input type="checkbox" class="gaf" data-f="2"${af&2?" checked":""}> Left stick pushed</label> <label class="note"><input type="checkbox" class="gaf" data-f="4"${af&4?" checked":""}> Right stick pushed</label></div>
         <div class="row2"><label>Needs</label><select id="gaall"><option value="0">any one of them</option><option value="1">all of them</option></select><small>how they act (hold to turn on / off, toggle) is the “… mode” setting of the gyro; none ticked = the single “Gyro moves the mouse with” button (firmware v51 test 62+)</small></div>`;
     }
+    h+=accHtml(cur);
     ed.innerHTML=h;
     { const setM=f=>{ let am=(b[GYX+9]|b[GYX+10]<<8|b[GYX+11]<<16|b[GYX+12]<<24)>>>0; am=f(am)>>>0; b[GYX+9]=am&255; b[GYX+10]=am>>>8&255; b[GYX+11]=am>>>16&255; b[GYX+12]=am>>>24; setDirty(); };
       ed.querySelectorAll(".gab").forEach(e=>e.onchange=()=>setM(am=>e.checked?am|(1<<+e.dataset.b):am&~(1<<+e.dataset.b)));
@@ -620,6 +621,7 @@ function editor(){
     wireSl("gtdz",v=>{ b[GYX+2]=Math.round(v); }); if($("#gt8")) $("#gt8").onchange=e=>{ b[GYX+3]=e.target.checked?1:0; setDirty(); };
     ["grgx","grgy","grgw","grgh"].forEach((id,k)=>wireSl(id,v=>{ if(!(b[GYX+4]|b[GYX+5]|b[GYX+6]|b[GYX+7])){ b[GYX+4]=50; b[GYX+5]=50; b[GYX+6]=100; b[GYX+7]=100; } b[GYX+4+k]=Math.round(v); }));
     wireSl("grdeg",v=>{ b[GYX+8]=Math.round(v); });
+    accWire(cur);
     ed.querySelectorAll("[data-sub]").forEach(e=>e.onclick=()=>openSel(e.dataset.sub));
     return;
   }
@@ -1060,6 +1062,40 @@ async function crvWrite(slot){ const sl=slot===CRV_G?"g":String(slot), b=crv[slo
   return false; }
 async function crvReadAll(){ try{ for(const sl of [0,1,2,3,CRV_G]){ const d=await crvRead(sl); if(!d){ fwCrv=false; return; } crv[sl].set(d); } fwCrv=true; crvDirtyG=false; }catch(e){ fwCrv=false; } }
 
+/* ---- accelerometer (firmware v51.8+), per profile in sc26re/acc/<profile>, 32 bytes: stick (0 off, 1 left,
+   2 right), flags (1 invert X, 2 invert Y, 4 swap, 0x80 off while the gyro is on), sens % (u16, 0 = 100: full
+   deflection at 45° × 100 / sens), dead zone (u16, 0.01 % of full) */
+const ACC_SIZE=32, ACC_FULL=45;
+const acc=[0,1,2,3].map(()=>new Uint8Array(ACC_SIZE)); let fwAcc=null;
+const accDV=p=>new DataView(acc[p].buffer);
+async function accRead(p){ const out=new Uint8Array(ACC_SIZE);
+  for(let o=0;o<ACC_SIZE;){ const d=await read(`sc26re/acc/${p}/${o.toString(16)}`); if(!d||!d.length) return null; out.set(d.slice(0,ACC_SIZE-o),o); o+=d.length; }
+  return out; }
+async function accWrite(p){ const b=acc[p];
+  for(let attempt=0;attempt<4;attempt++){
+    for(let o=0;o<ACC_SIZE;o+=CH) await send(`sc26re/acc/${p}/${o.toString(16)}`,0xEE,Array.from(b.slice(o,Math.min(o+CH,ACC_SIZE))));
+    await send(`sc26re/acc/${p}`,0xEF);
+    const back=await accRead(p); if(back&&back.every((v,i)=>v===b[i])) return true; }
+  return false; }
+async function accReadAll(){ try{ for(let p=0;p<4;p++){ const d=await accRead(p); if(!d){ fwAcc=false; return; } acc[p].set(d); } fwAcc=true; }catch(e){ fwAcc=false; } }
+/* the accelerometer part of the profile's gyro editor */
+function accHtml(p){ if(!fwAcc) return "";
+  const v=accDV(p), st=acc[p][0], fl=acc[p][1], sens=v.getUint16(2,true)||100, dz=v.getUint16(4,true)/100;
+  let h=`<div class="sect" style="margin-left:0">Accelerometer</div>
+    <div class="row2"><label>Tilt moves</label><select id="acst"><option value="0">nothing</option><option value="1">the left stick</option><option value="2">the right stick</option></select><small>tilting the controller pushes that stick (to Steam), on top of the stick itself — lean, steer</small></div>`;
+  if(st){ h+=`<div class="row2"><label>Sensitivity</label><input type="number" id="acsens" class="num" min="10" max="1000" step="1" value="${sens}" style="width:90px"> <span class="note">%</span><small id="acsensN">full deflection at ${(ACC_FULL*100/sens).toFixed(1)}° of tilt (100 % = ${ACC_FULL}°)</small></div>
+    <div class="row2"><label>Dead zone</label><input type="number" id="acdz" class="num" min="0" max="90" step="0.5" value="${dz}" style="width:90px"> <span class="note">%</span><small>of the full deflection, tilt below it does nothing</small></div>
+    <div class="row2"><label>Axes</label><span><label class="note"><input type="checkbox" class="acf" data-f="1"${fl&1?" checked":""}> invert X</label> <label class="note"><input type="checkbox" class="acf" data-f="2"${fl&2?" checked":""}> invert Y</label> <label class="note"><input type="checkbox" class="acf" data-f="4"${fl&4?" checked":""}> swap — forward tilt on X</label></span><small>by default sideways tilt is X, forward tilt is up</small></div>`; }
+  h+=`<div class="row2"><label></label><label class="note"><input type="checkbox" class="acf" data-f="128"${fl&128?" checked":""}> off while the gyro mouse / joystick is on</label></div>
+    <p class="note wrap">The centre is how you hold the controller when the profile becomes active (switch profiles or turn the remapper off and on to centre it again). It does not drift: it comes from gravity. While something here is on, the motion sensor stays on.</p>`;
+  return h; }
+function accWire(p){ if(!fwAcc||!$("#acst")) return; const v=accDV(p);
+  $("#acst").value=String(acc[p][0]);
+  $("#acst").onchange=e=>{ const was=acc[p][0]; acc[p][0]=+e.target.value; if(!was&&acc[p][0]&&!v.getUint16(2,true)){ v.setUint16(2,100,true); acc[p][1]|=128; } setDirty(); render(); };
+  if($("#acsens")) $("#acsens").onchange=e=>{ const x=Math.max(10,Math.min(1000,Math.round(+e.target.value||100))); e.target.value=x; v.setUint16(2,x,true); $("#acsensN").textContent=`full deflection at ${(ACC_FULL*100/x).toFixed(1)}° of tilt (100 % = ${ACC_FULL}°)`; setDirty(); };
+  if($("#acdz")) $("#acdz").onchange=e=>{ const x=Math.max(0,Math.min(90,+e.target.value||0)); e.target.value=x; v.setUint16(4,Math.round(x*100),true); setDirty(); };
+  document.querySelectorAll(".acf").forEach(c=>c.onchange=()=>{ const f=+c.dataset.f; acc[p][1]=(acc[p][1]&~f)|(c.checked?f:0); setDirty(); }); }
+
 async function readProfile(p){ const b=new Uint8Array(PROF_SIZE);
   for(let o=0;o<PROF_SIZE;o+=CH){
     if(o>=V6_SIZE&&b[1]===6) break; /* older firmware: a v6 profile, nothing after it */
@@ -1071,7 +1107,7 @@ async function readAll(){
   bulk++;
   try{ $("#pstatus").textContent="reading…";
     for(let p=0;p<4;p++){ const b=await readProfile(p); prof[p]=b[0]===0xA7&&b[1]===PROF_VER?b:emptyProfile(); }
-    await crvReadAll(); if(typeof gyCrvRender==="function") gyCrvRender();
+    await crvReadAll(); if(typeof gyCrvRender==="function") gyCrvRender(); await accReadAll();
     fwV7=null;
     setDirty(false); render(); $("#pstatus").innerHTML='<span class="ok">profiles loaded from the controller</span>';
   }catch(e){ $("#pstatus").innerHTML=`<span class="err">${e.message}</span>`; }
@@ -1087,6 +1123,7 @@ async function saveSlot(p){ const b=prof[p];
   const back=await readProfile(p);
   /* the profile's response curves (firmware v51.7+) */
   if(fwCrv&&!await crvWrite(p)) return false;
+  if(fwAcc&&!await accWrite(p)) return false;
   return back.every((v,i)=>v===b[i]); }
 $("#write").onclick=async()=>{
   bulk++;
@@ -1201,8 +1238,8 @@ $("#vexport").onclick=()=>{ collect(); saveName(); const r=SteamVDF.exportVDF(pr
   const a=document.createElement("a"); a.href=URL.createObjectURL(new Blob([r.text],{type:"text/plain"})); a.download="sc26re_controller_config.vdf"; a.click();
   $("#pstatus").innerHTML=`<span class="ok">exported 4 profiles as a Steam Input configuration</span>`+(r.dropped.length?` <span class="warn">— no Steam equivalent, left out: ${esc(r.dropped.join(", "))}</span>`:""); };
 $("#clear").onclick=()=>{ if(confirm(`Clear profile ${cur+1}? (Save to controller afterwards.)`)){ prof[cur]=emptyProfile(); sel=null; setDirty(); render(); } };
-$("#export").onclick=()=>{ collect(); const j=JSON.stringify({sc2remap:1,name:nameOf(prof[cur]),data:Array.from(prof[cur]),...(crv[cur].some(v=>v)?{curves:Array.from(crv[cur])}:{})}); const a=document.createElement("a"); a.href=URL.createObjectURL(new Blob([j],{type:"application/json"})); a.download=`sc2-remap-${(nameOf(prof[cur])||"profile"+(cur+1)).replace(/\W+/g,"_")}.json`; a.click(); };
-$("#import").onchange=async e=>{ const f=e.target.files[0]; if(!f) return; try{ const j=JSON.parse(await f.text()); if(!j.data||(j.data.length!==PROF_SIZE&&j.data.length!==V7_SIZE&&j.data.length!==V6_SIZE)) throw new Error("not a profile file for this version"); prof[cur]=upgradeProfile(new Uint8Array(j.data)); crv[cur].fill(0); if(Array.isArray(j.curves)&&j.curves.length===CRV_SIZE) crv[cur].set(j.curves); setDirty(); render(); $("#pstatus").innerHTML='<span class="ok">imported — press Save to controller</span>'; }catch(err){ $("#pstatus").innerHTML=`<span class="err">${err.message}</span>`; } e.target.value=""; };
+$("#export").onclick=()=>{ collect(); const j=JSON.stringify({sc2remap:1,name:nameOf(prof[cur]),data:Array.from(prof[cur]),...(crv[cur].some(v=>v)?{curves:Array.from(crv[cur])}:{}),...(acc[cur].some(v=>v)?{accel:Array.from(acc[cur])}:{})}); const a=document.createElement("a"); a.href=URL.createObjectURL(new Blob([j],{type:"application/json"})); a.download=`sc2-remap-${(nameOf(prof[cur])||"profile"+(cur+1)).replace(/\W+/g,"_")}.json`; a.click(); };
+$("#import").onchange=async e=>{ const f=e.target.files[0]; if(!f) return; try{ const j=JSON.parse(await f.text()); if(!j.data||(j.data.length!==PROF_SIZE&&j.data.length!==V7_SIZE&&j.data.length!==V6_SIZE)) throw new Error("not a profile file for this version"); prof[cur]=upgradeProfile(new Uint8Array(j.data)); crv[cur].fill(0); if(Array.isArray(j.curves)&&j.curves.length===CRV_SIZE) crv[cur].set(j.curves); acc[cur].fill(0); if(Array.isArray(j.accel)&&j.accel.length===ACC_SIZE) acc[cur].set(j.accel); setDirty(); render(); $("#pstatus").innerHTML='<span class="ok">imported — press Save to controller</span>'; }catch(err){ $("#pstatus").innerHTML=`<span class="err">${err.message}</span>`; } e.target.value=""; };
 
 /* ---- gyro + gyro as mouse settings (sc26re cfg values, same as the report meter) ---- */
 const BTNOPTS=[[-1,"— none —"],[0,"A"],[1,"B"],[2,"X"],[3,"Y"],[19,"LB"],[9,"RB"],[27,"LT click"],[23,"RT click"],[17,"L4"],[18,"L5"],[7,"R4"],[8,"R5"],[15,"L3"],[5,"R3"],[6,"Menu"],[14,"View"],[13,"D-pad up"],[10,"D-pad down"],[12,"D-pad left"],[11,"D-pad right"],[26,"Left pad click"],[22,"Right pad click"],[25,"Left pad touch"],[21,"Right pad touch"],[24,"Left stick touch"],[20,"Right stick touch"],[29,"Left grip touch"],[28,"Right grip touch"]];

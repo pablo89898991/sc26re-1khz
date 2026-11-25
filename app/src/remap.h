@@ -288,6 +288,24 @@ struct remap_curves
 	uint16_t pt[4][8];   /* per curve 4 points x, y (0..32767) */
 }; /* 68 bytes, no padding (web/remap.html) */
 
+/* accelerometer (v51.8), per profile and kept apart from it (sc26re/acc/<profile>) */
+#define REMAP_ACC_STICK_OFF 0
+#define REMAP_ACC_STICK_LEFT 1
+#define REMAP_ACC_STICK_RIGHT 2
+#define REMAP_ACC_INV_X 0x01U      /* tilt -> stick: X the other way */
+#define REMAP_ACC_INV_Y 0x02U
+#define REMAP_ACC_SWAP 0x04U       /* forward tilt on X, sideways on Y */
+#define REMAP_ACC_GYRO_PAUSE 0x80U /* nothing from the accelerometer while the gyro mouse / joystick is on */
+#define REMAP_ACC_FULL_DEG 45.0f   /* tilt for full deflection at 100 % */
+struct remap_accel
+{
+	uint8_t stick;   /* tilt -> stick: REMAP_ACC_STICK_* */
+	uint8_t flags;   /* REMAP_ACC_* */
+	uint16_t sens;   /* tilt -> stick: % (0 = 100): full deflection at REMAP_ACC_FULL_DEG * 100 / sens */
+	uint16_t dz;     /* tilt -> stick: dead zone, 0.01 % of full deflection */
+	uint8_t reserved[26];
+}; /* 32 bytes (web/remap.html) */
+
 extern const uint8_t remap_shift_src[REMAP_SHIFT_SRC_COUNT];
 
 void remap_init(void);

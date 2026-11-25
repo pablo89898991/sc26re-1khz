@@ -619,22 +619,34 @@ static void set_motion_trigger_enabled(bool enabled)
  */
 static void apply_mode(uint16_t mode);
 static bool imu_forced_on;
+static uint8_t imu_force_mask; /* IMU_FORCE_*: who needs the IMU without a host asking */
 
-void imu_force_on(bool on)
+void imu_force_reason(uint8_t reason, bool on)
 {
 	int16_t host_mode = SETTING_GYRO_MODE_OFF;
+	uint8_t m = on ? (uint8_t)(imu_force_mask | reason) : (uint8_t)(imu_force_mask & ~reason);
 
+	if(m == imu_force_mask)
+	{
+		return;
+	}
+	imu_force_mask = m;
 	(void)ibex_setting_get(IBEX_SETTING_IMU_MODE, &host_mode);
-	if(on && !imu_forced_on && host_mode == SETTING_GYRO_MODE_OFF)
+	if(m != 0U && !imu_forced_on && host_mode == SETTING_GYRO_MODE_OFF)
 	{
 		imu_forced_on = true;
 		apply_mode(SETTING_GYRO_MODE_SEND_RAW_ACCEL | SETTING_GYRO_MODE_SEND_RAW_GYRO);
 	}
-	else if(!on && imu_forced_on)
+	else if(m == 0U && imu_forced_on)
 	{
 		imu_forced_on = false;
 		apply_mode((uint16_t)host_mode);
 	}
+}
+
+void imu_force_on(bool on)
+{
+	imu_force_reason(IMU_FORCE_CAL, on);
 }
 
 void imu_keep_on(bool on)
@@ -681,7 +693,18 @@ static void setting_changed(uint8_t id, int16_t value)
 {
 	if(id == IBEX_SETTING_IMU_MODE)
 	{
-		apply_mode((uint16_t)value);
+		/* a host switching the IMU off while something here needs it (accelerometer bindings,
+		 * a calibration): it stays on, and goes off when that lets go */
+		if(value == SETTING_GYRO_MODE_OFF && imu_force_mask != 0U)
+		{
+			imu_forced_on = true;
+			apply_mode(SETTING_GYRO_MODE_SEND_RAW_ACCEL | SETTING_GYRO_MODE_SEND_RAW_GYRO);
+		}
+		else
+		{
+			imu_forced_on = false;
+			apply_mode((uint16_t)value);
+		}
 	}
 	else if(id == IBEX_SETTING_IMU_USE_BIAS)
 	{
@@ -2065,6 +2088,9 @@ bool imu_paces_usb(void)
 }
 #endif
 
+/* the accelerometer as read for the pad report, before the gyro mouse hides it (remapper) */
+static volatile int16_t imu_last_accel[3];
+
 int imu_read_report(struct controller_report *report)
 {
 	bool enabled;
@@ -2081,8 +2107,19 @@ int imu_read_report(struct controller_report *report)
 	}
 
 	load_cached_imu_report(report);
+	imu_last_accel[0] = report->accel_x;
+	imu_last_accel[1] = report->accel_y;
+	imu_last_accel[2] = report->accel_z;
 	hide_motion_if_mouse(report);
 	return 0;
+}
+
+bool imu_accel(int16_t a[3])
+{
+	a[0] = imu_last_accel[0];
+	a[1] = imu_last_accel[1];
+	a[2] = imu_last_accel[2];
+	return *(volatile uint16_t *)&imu_mode != SETTING_GYRO_MODE_OFF;
 }
 
 /*

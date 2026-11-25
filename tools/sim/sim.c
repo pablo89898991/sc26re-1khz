@@ -19,6 +19,12 @@ static struct imu_raw_orient sim_raw_orient = { .q = { 1, 0, 0, 0 } }; /* imu.c 
 static double sim_truth[3];      /* the gyro integrated by the test bench, never read by firmware code */
 static double sim_truth_q[4] = { 1, 0, 0, 0 }; /* and the orientation it gives (w, x, y, z, body frame) */
 static int16_t sim_raw_accel[3];
+/* imu.c: the IMU kept on for the remapper's accelerometer, and the accel it reads (also while the
+ * gyro mouse hides it from the pad report) */
+static uint8_t sim_imu_force;
+void imu_force_reason(uint8_t reason, bool on) { sim_imu_force = on ? (sim_imu_force | reason) : (sim_imu_force & ~reason); }
+int sim_imu_forced(void) { return sim_imu_force; }
+bool imu_accel(int16_t a[3]) { a[0] = sim_raw_accel[0]; a[1] = sim_raw_accel[1]; a[2] = sim_raw_accel[2]; return true; }
 int64_t k_uptime_get(void) { return now_ms; }
 uint32_t k_uptime_get_32(void) { return (uint32_t)now_ms; }
 
@@ -252,6 +258,10 @@ void sim_dock(int on)
 void sim_led_set(int r, int g, int b) { rgbw_led_set((struct rgbw_color){ r, g, b, 0 }); }
 int sim_led_get(void) { return led.r << 16 | led.g << 8 | led.b; }
 static bool gm_on;
+#ifndef WITH_GM
+bool gyro_mouse_active(void) { return gm_on; }
+void sim_gm_set(int on) { gm_on = on != 0; }
+#endif
 #ifndef WITH_GM
 void gyro_mouse_set_enabled(bool on) { gm_on = on; (void)sc26re_cfg_set(SC26RE_CFG_GM_ENABLED, on ? 1 : 0, false); ev("G %d", on); } /* as gyro_mouse.c */
 int32_t gyro_mouse_counts_per_360(void) { return 16364; }

@@ -24,6 +24,13 @@ uint8_t imu_gyro_cal_state(void);
 bool imu_gyro_cal_is_auto(void);
 /* stream the IMU during a calibration even when the host has it off */
 void imu_force_on(bool on);
+/* keep the IMU on for a reason of its own (several can hold it together) */
+#define IMU_FORCE_CAL 0x01U   /* gyro calibration by button chord */
+#define IMU_FORCE_ACCEL 0x02U /* the remapper's accelerometer bindings */
+void imu_force_reason(uint8_t reason, bool on);
+/* the last accelerometer sample as read for the pad report, also while the gyro mouse hides it;
+ * false = the IMU is off */
+bool imu_accel(int16_t a[3]);
 
 /* resting gyro band measurement (dead zones bypassed): 0 idle 1 running 2 done 3 moved */
 void imu_band_measure_start(uint32_t samples);
