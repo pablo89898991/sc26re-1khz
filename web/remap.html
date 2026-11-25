@@ -6,6 +6,12 @@
 <link rel="manifest" href="manifest.webmanifest"><script>if("serviceWorker" in navigator&&location.protocol!=="file:"&&!window.sc26reApp)navigator.serviceWorker.register("sw.js").catch(()=>{});</script>
 <title>SC2 Remapper</title>
 <style>
+  .crvbox{display:flex;gap:14px;flex-wrap:wrap;align-items:flex-start;margin:4px 0 8px}
+  .crvbox svg{background:#0b111c;border:1px solid var(--edge);border-radius:8px;touch-action:none;cursor:crosshair;flex:none}
+  .crvbox svg circle{fill:#ffd36b;stroke:#0b111c;stroke-width:2;cursor:grab}
+  .crvbox svg circle.on{fill:#fff}
+  .crvpts{display:grid;grid-template-columns:auto auto auto auto auto;gap:4px 6px;align-items:center;font-size:13px}
+  .crvpts input{width:74px}
 /* only the inputs on the picture take clicks: the outline and live dots are drawn over the bumpers */
 #pic svg > :not(.hit){pointer-events:none}
 
@@ -110,7 +116,7 @@
 <body>
 <div class="top">
   <div class="topin">
-    <div class="brand">SC2 <span class="hz">Remapper</span> <span class="note" id="pagever" title="page version — if it is older than expected, press Ctrl+F5">p.2026-11-24a</span></div>
+    <div class="brand">SC2 <span class="hz">Remapper</span> <span class="note" id="pagever" title="page version — if it is older than expected, press Ctrl+F5">p.2026-11-25a</span></div>
     <button class="primary" id="connect">Connect controller</button>
     <span id="status" class="chip">not connected</span>
     <span id="batt" class="chip" hidden></span>
@@ -660,6 +666,8 @@ function editor(){
     const an=sel, g=GRP_OF_AN[an], o=aOff(an), m=b[o], pad=isPad(an), subs=subSources(an), j=an==="lp"?0:1;
     $("#dlgClear").style.display="none";
     const P=k=>U16(o+k)/100, sp=U16(o+6), cv=U16(o+10)/100;
+    /* custom 4-point curve of the stick (firmware v51.7+): one per stick, every mode and layer */
+    const cside=!pad&&(an==="ls"||an==="rs")?(an==="ls"?0:1):-1, crvMode=cside>=0&&!!fwCrv&&(m===0||m===12||m===3), ccust=crvMode&&crvOn(cur,cside);
     let h="";
     if(pad&&m!==0){
       const av=b[o+1]&0x10?16:b[o+1]&1;
@@ -672,7 +680,7 @@ function editor(){
       h+=pct("dzi",P(2),0,90,"Inner dead zone",m===12?"":"0 = Steam’s own");
       h+=pct("dzo",P(4),0,50,"Outer dead zone","full deflection is reached this much earlier");
       h+=pct("anti",P(14),0,90,"Anti dead zone","smallest deflection Steam sees once out of the dead zone");
-      h+=slider("crv",cv||1,0.5,4,0.05,"Response curve","×","1.0 linear · above = finer near the centre · below = faster start");
+      if(!ccust) h+=slider("crv",cv||1,0.5,4,0.05,"Response curve","×","1.0 linear · above = finer near the centre · below = faster start");
     }
     if(pad&&(m===6||m===12)){
       if(m===6) h+=`<div class="row2"><label>Drives</label><select id="aoth"><option value="0">the ${j?"right":"left"} stick</option><option value="4">the ${j?"left":"right"} stick</option></select><small>added to that stick in the pad report</small></div>`;
@@ -708,7 +716,9 @@ function editor(){
     if(m===1||m===2||m===5||(m===4&&pad)||(m===3&&!pad)||(m===4&&!pad))
       h+=pct("dzi",P(2),0,90,pad?"Dead zone (centre)":"Dead zone",m===1||m===2?"how far before a direction fires":pad?"finger inside it = nothing":"");
     if(m===3) h+=slider("asp",sp,pad?50:50,pad?20000:10000,10,"Sensitivity",pad?"counts / swipe":"counts / s",pad?"mouse counts for a swipe across the whole pad":"mouse counts per second at full tilt");
-    if(m===3&&!pad) h+=slider("crv",cv||2,0.5,4,0.05,"Response curve","×","2.0 default · 1.0 linear");
+    if(m===3&&!pad&&!ccust) h+=slider("crv",cv||2,0.5,4,0.05,"Response curve","×","2.0 default · 1.0 linear");
+    if(crvMode){ h+=`<div class="row2"><label>Response</label><select id="crvmode"><option value="0">curve exponent (slider)</option><option value="1">custom curve — 4 points (as in Steam)</option></select><small>${ccust?`one curve for the ${cside?"right":"left"} stick, in every mode and layer of this profile`:""}</small></div>`;
+      if(ccust) h+=crvHtml("crvS",cur,cside,"stick deflection",m===3?"cursor speed":"to the game"); }
     if(m===4&&!pad) h+=slider("asp",sp/100,0.1,50,0.1,"Speed","notches / s","at full tilt");
     if(m===4&&pad) h+=slider("asp",sp,5,180,1,"Step","°","degrees of circle per scroll step");
     if(pad&&[1,2,5,9,10].includes(m)) h+=`<div class="row2"><label>Zone haptics</label><select id="ahap">${HAPT.map(([v,n])=>`<option value="${v}">${n}</option>`).join("")}</select><small>felt every time the finger moves into another ${m===9?"zone":m===5?"gate":"direction"} — so you know where you are without looking</small></div>`;
@@ -748,7 +758,7 @@ function editor(){
       h+=`<div class="row2"><label>Orientation</label><span><label class="note"><input type="checkbox" id="invx"${b[o+1]&0x20?" checked":""}> invert X</label> <label class="note"><input type="checkbox" id="invy"${b[o+1]&0x40?" checked":""}> invert Y</label></span></div>`;
       h+=slider("rot",((b[o+9]<<24)>>24),-90,90,1,"Rotation","°","turns the input (e.g. a trackpad under an angle)");
     }
-    if(!pad&&(m===0||m===3)) h+=`<div class="row2"><label>Curve presets</label><span>${[["Linear",1],["Wide",0.8],["Aggressive",0.6],["Relaxed",1.5],["Precise",2]].map(([n,v])=>`<button class="ghost cpre" data-v="${v}">${n}</button>`).join(" ")}</span></div>`;
+    if(!pad&&(m===0||m===3)&&!ccust) h+=`<div class="row2"><label>Curve presets</label><span>${[["Linear",1],["Wide",0.8],["Aggressive",0.6],["Relaxed",1.5],["Precise",2]].map(([n,v])=>`<button class="ghost cpre" data-v="${v}">${n}</button>`).join(" ")}</span></div>`;
     if(!(pad&&(m===0||m===11))&&m!==13&&!(!pad&&(m===11||m===10))) h+=pct("ring",P(12),0,100,"Outer ring",`its binding (“Outer ring” below) fires ${b[o+1]&2?"inside":"beyond"} this radius; 0 = off`)+
       `<div class="row2"><label></label><label class="note"><input type="checkbox" id="rinv"${b[o+1]&2?" checked":""}> invert — fire inside the radius (inner ring, e.g. walk)</label></div>`+
       (!pad&&(m===1||m===2)?`<div class="row2"><label></label><label class="note" title="The stick reaches the ring after its direction key is already down. Some games sprint only when Shift comes before W: with this the direction is let go for one moment when the ring comes on and pressed again together with it."><input type="checkbox" id="rfirst"${b[o+1]&8?" checked":""}> ring key first — when the ring comes on, press the direction again after it (sprint in games that want Shift before W)</label></div>`:"");
@@ -790,6 +800,7 @@ function editor(){
     if($("#invx")) $("#invx").onchange=e=>{ b[o+1]=(b[o+1]&~0x20)|(e.target.checked?0x20:0); setDirty(); };
     if($("#invy")) $("#invy").onchange=e=>{ b[o+1]=(b[o+1]&~0x40)|(e.target.checked?0x40:0); setDirty(); };
     ed.querySelectorAll(".cpre").forEach(x=>x.onclick=()=>{ setU16(o+10,Math.round(+x.dataset.v*100)); setDirty(); render(); });
+    if($("#crvmode")){ $("#crvmode").value=ccust?"1":"0"; $("#crvmode").onchange=e=>{ crvSetOn(cur,cside,e.target.value==="1"); setDirty(); render(); }; crvWire("crvS",cur,cside,()=>setDirty()); }
     if($("#asp")) wireSl("asp",v=>setU16(o+6,Math.round(m===4&&!pad?v*100:v)));
     ["gl","gr","gt","gb"].forEach((id,k)=>wireSl(id,v=>{ setS16(22+j*8+k*2,Math.round(v*100)||1); const sv=$(".gridsvg"); if(sv) sv.outerHTML=gridSvg(j); }));
     if($("#aoth")){ $("#aoth").value=String(b[o+1]&4); $("#aoth").onchange=e=>{ b[o+1]=(b[o+1]&~4)|+e.target.value; setDirty(); }; }
@@ -994,6 +1005,57 @@ $("#xiguide").onchange=async e=>{ try{ await cfgSet("xi_guide",e.target.checked?
 $("#padout").onchange=async e=>{ try{ if(padOutBoot===null) padOutBoot=padOutNow; await cfgSet("pad_out",+e.target.value); padOutNow=+e.target.value; updXbWarn(); alert("Saved. Turn the controller off and on (hold Steam, or Steam + Y) for the new pad output to take effect."); }catch(err){ $("#pstatus").innerHTML=`<span class="err">${err.message}</span>`; } };
 $("#activeProf").onchange=async e=>{ try{ await cfgSet("remap_profile",+e.target.value); }catch(err){ $("#pstatus").innerHTML=`<span class="err">${err.message}</span>`; } };
 
+/* ---- custom response curves (firmware v51.7+): Steam's 4-point “Custom” response, kept apart from the
+   profiles in sc26re/crv/<slot> (0..3 profiles, g global): byte 0 on bits (0 left stick, 1 right stick,
+   2 gyro mouse, 3 gyro joystick), 2 gyro mouse range °/s (int16, 0 = 360), 4.. 4 curves × 4 points x, y (u16, 0..32767) */
+const CRV_SIZE=68, CRV_G=4, CRV_DEF=[6554,6554,13107,13107,19661,19661,26214,26214];
+const crv=[0,1,2,3,4].map(()=>new Uint8Array(CRV_SIZE)); let fwCrv=null, crvDirtyG=false;
+const crvDV=s=>new DataView(crv[s].buffer);
+const crvOn=(s,k)=>((crv[s][0]>>k)&1)===1;
+function crvSetOn(s,k,on){ crv[s][0]=(crv[s][0]&~(1<<k))|(on?1<<k:0); if(on&&crvPts(s,k).every(v=>!v)) crvSetPts(s,k,CRV_DEF); }
+const crvPts=(s,k)=>[0,1,2,3,4,5,6,7].map(i=>crvDV(s).getUint16(4+16*k+2*i,true));
+function crvSetPts(s,k,pts){ pts.forEach((v,i)=>crvDV(s).setUint16(4+16*k+2*i,Math.max(0,Math.min(32767,Math.round(v))),true)); }
+const crvMax=s=>crvDV(s).getInt16(2,true)||360;
+const crvPresets=[["Linear",1],["Wide",0.7],["Aggressive",0.5],["Relaxed",1.5],["Precise",2]];
+const crvPow=e=>[0.2,0.4,0.6,0.8].flatMap(x=>[x*32767,Math.pow(x,e)*32767]);
+/* the same line as the firmware (app/src/curve.h): (0,0), the points by x, (1,1) */
+function crvLine(pts){ const p=[[0,0]]; for(let i=0;i<4;i++) p.push([pts[2*i]/32767,pts[2*i+1]/32767]); p.sort((a,b)=>a[0]-b[0]); p.push([1,1]); return p; }
+const CW=200;
+function crvSvg(id,pts){ const P=crvLine(pts), X=v=>(v*CW).toFixed(1), Y=v=>(CW-v*CW).toFixed(1);
+  let g=""; for(let i=1;i<8;i++){ const q=(i*CW/8).toFixed(1); g+=`<line x1="${q}" y1="0" x2="${q}" y2="${CW}" stroke="#1d2a40"/><line x1="0" y1="${q}" x2="${CW}" y2="${q}" stroke="#1d2a40"/>`; }
+  return `<svg id="${id}_svg" width="${CW}" height="${CW}" viewBox="-8 -8 ${CW+16} ${CW+16}">${g}<line x1="0" y1="${CW}" x2="${CW}" y2="0" stroke="#2b3850" stroke-dasharray="4 4"/>
+    <polyline points="${P.map(([x,y])=>X(x)+","+Y(y)).join(" ")}" fill="none" stroke="#ffd36b" stroke-width="2.5"/>
+    ${[0,1,2,3].map(i=>`<circle data-i="${i}" r="7" cx="${X(pts[2*i]/32767)}" cy="${Y(pts[2*i+1]/32767)}"/>`).join("")}</svg>`; }
+/* editor for curve k of slot s: picture with 4 draggable points, exact X / Y boxes, presets */
+function crvHtml(id,s,k,xname,yname){ const pts=crvPts(s,k);
+  return `<div class="crvbox" id="${id}">${crvSvg(id,pts)}<div><div class="crvpts"><span></span><span class="note">X <small>${xname}</small></span><span></span><span class="note">Y <small>${yname}</small></span><span></span>
+    ${[0,1,2,3].map(i=>`<span class="note">Point ${i+1}</span><input type="number" min="0" max="32767" step="1" id="${id}_x${i}" value="${pts[2*i]}"><span class="note">${(pts[2*i]/327.67).toFixed(0)} %</span><input type="number" min="0" max="32767" step="1" id="${id}_y${i}" value="${pts[2*i+1]}"><span class="note">${(pts[2*i+1]/327.67).toFixed(0)} %</span>`).join("")}</div>
+    <div class="note" style="margin-top:6px">${crvPresets.map(([n,e])=>`<button class="ghost" data-crvp="${e}">${n}</button>`).join(" ")}</div>
+    <p class="note" style="margin:6px 0 0;max-width:330px">The line runs from the bottom left through the 4 points to the top right; the dashed diagonal is 1:1. Drag a point or type its value (0–32767, as in Steam).</p></div></div>`; }
+function crvWire(id,s,k,changed){ const box=document.getElementById(id); if(!box) return;
+  const redraw=()=>{ const pts=crvPts(s,k), sv=document.getElementById(id+"_svg"); sv.outerHTML=crvSvg(id,pts); [0,1,2,3].forEach(i=>{ const ex=document.getElementById(`${id}_x${i}`), ey=document.getElementById(`${id}_y${i}`); if(document.activeElement!==ex) ex.value=pts[2*i]; if(document.activeElement!==ey) ey.value=pts[2*i+1]; ex.nextElementSibling.textContent=(pts[2*i]/327.67).toFixed(0)+" %"; ey.nextElementSibling.textContent=(pts[2*i+1]/327.67).toFixed(0)+" %"; }); dragWire(); };
+  const set=(i,x,y)=>{ const pts=crvPts(s,k); if(x!==null) pts[2*i]=x; if(y!==null) pts[2*i+1]=y; crvSetPts(s,k,pts); changed(); redraw(); };
+  [0,1,2,3].forEach(i=>{ document.getElementById(`${id}_x${i}`).onchange=e=>set(i,Math.max(0,Math.min(32767,+e.target.value||0)),null);
+    document.getElementById(`${id}_y${i}`).onchange=e=>set(i,null,Math.max(0,Math.min(32767,+e.target.value||0))); });
+  box.querySelectorAll("[data-crvp]").forEach(b=>b.onclick=()=>{ crvSetPts(s,k,crvPow(+b.dataset.crvp)); changed(); redraw(); });
+  function dragWire(){ const sv=document.getElementById(id+"_svg"); let drag=-1;
+    const val=e=>{ const r=sv.getBoundingClientRect(), sc=(CW+16)/r.width; return [((e.clientX-r.left)*sc-8)/CW*32767,(CW-((e.clientY-r.top)*sc-8))/CW*32767].map(v=>Math.max(0,Math.min(32767,Math.round(v)))); };
+    sv.onpointerdown=e=>{ const t=e.target.closest("circle"); if(!t) return; drag=+t.dataset.i; t.classList.add("on"); sv.setPointerCapture(e.pointerId); e.preventDefault(); };
+    sv.onpointermove=e=>{ if(drag<0) return; const [x,y]=val(e), pts=crvPts(s,k); pts[2*drag]=x; pts[2*drag+1]=y; crvSetPts(s,k,pts);
+      const c=sv.querySelector(`circle[data-i="${drag}"]`); c.setAttribute("cx",(x/32767*CW).toFixed(1)); c.setAttribute("cy",(CW-y/32767*CW).toFixed(1));
+      sv.querySelector("polyline").setAttribute("points",crvLine(pts).map(([a,b])=>(a*CW).toFixed(1)+","+(CW-b*CW).toFixed(1)).join(" "));
+      document.getElementById(`${id}_x${drag}`).value=x; document.getElementById(`${id}_y${drag}`).value=y; };
+    sv.onpointerup=sv.onpointercancel=()=>{ if(drag<0) return; drag=-1; changed(); redraw(); }; }
+  dragWire(); }
+async function crvRead(slot){ const sl=slot===CRV_G?"g":String(slot), out=new Uint8Array(CRV_SIZE);
+  for(let o=0;o<CRV_SIZE;){ const d=await read(`sc26re/crv/${sl}/${o.toString(16)}`); if(!d||!d.length) return null; out.set(d.slice(0,CRV_SIZE-o),o); o+=d.length; }
+  return out; }
+async function crvWrite(slot){ const sl=slot===CRV_G?"g":String(slot), b=crv[slot];
+  for(let o=0;o<CRV_SIZE;o+=CH) await send(`sc26re/crv/${sl}/${o.toString(16)}`,0xEE,Array.from(b.slice(o,Math.min(o+CH,CRV_SIZE))));
+  await send(`sc26re/crv/${sl}`,0xEF);
+  const back=await crvRead(slot); return !!back&&back.every((v,i)=>v===b[i]); }
+async function crvReadAll(){ try{ for(const sl of [0,1,2,3,CRV_G]){ const d=await crvRead(sl); if(!d){ fwCrv=false; return; } crv[sl].set(d); } fwCrv=true; crvDirtyG=false; }catch(e){ fwCrv=false; } }
+
 async function readProfile(p){ const b=new Uint8Array(PROF_SIZE);
   for(let o=0;o<PROF_SIZE;o+=CH){
     if(o>=V6_SIZE&&b[1]===6) break; /* older firmware: a v6 profile, nothing after it */
@@ -1005,6 +1067,7 @@ async function readAll(){
   bulk++;
   try{ $("#pstatus").textContent="reading…";
     for(let p=0;p<4;p++){ const b=await readProfile(p); prof[p]=b[0]===0xA7&&b[1]===PROF_VER?b:emptyProfile(); }
+    await crvReadAll(); if(typeof gyCrvRender==="function") gyCrvRender();
     fwV7=null;
     setDirty(false); render(); $("#pstatus").innerHTML='<span class="ok">profiles loaded from the controller</span>';
   }catch(e){ $("#pstatus").innerHTML=`<span class="err">${e.message}</span>`; }
@@ -1018,6 +1081,8 @@ async function saveSlot(p){ const b=prof[p];
   for(let o=0;o<PROF_SIZE;o+=CH) await send(`sc26re/rmp/${p}/${o.toString(16)}`,0xEE,Array.from(b.slice(o,Math.min(o+CH,PROF_SIZE))));
   await send(`sc26re/rmp/${p}`,0xEF);
   const back=await readProfile(p);
+  /* the profile's response curves (firmware v51.7+) */
+  if(fwCrv&&!await crvWrite(p)) return false;
   return back.every((v,i)=>v===b[i]); }
 $("#write").onclick=async()=>{
   bulk++;
@@ -1132,8 +1197,8 @@ $("#vexport").onclick=()=>{ collect(); saveName(); const r=SteamVDF.exportVDF(pr
   const a=document.createElement("a"); a.href=URL.createObjectURL(new Blob([r.text],{type:"text/plain"})); a.download="sc26re_controller_config.vdf"; a.click();
   $("#pstatus").innerHTML=`<span class="ok">exported 4 profiles as a Steam Input configuration</span>`+(r.dropped.length?` <span class="warn">— no Steam equivalent, left out: ${esc(r.dropped.join(", "))}</span>`:""); };
 $("#clear").onclick=()=>{ if(confirm(`Clear profile ${cur+1}? (Save to controller afterwards.)`)){ prof[cur]=emptyProfile(); sel=null; setDirty(); render(); } };
-$("#export").onclick=()=>{ collect(); const j=JSON.stringify({sc2remap:1,name:nameOf(prof[cur]),data:Array.from(prof[cur])}); const a=document.createElement("a"); a.href=URL.createObjectURL(new Blob([j],{type:"application/json"})); a.download=`sc2-remap-${(nameOf(prof[cur])||"profile"+(cur+1)).replace(/\W+/g,"_")}.json`; a.click(); };
-$("#import").onchange=async e=>{ const f=e.target.files[0]; if(!f) return; try{ const j=JSON.parse(await f.text()); if(!j.data||(j.data.length!==PROF_SIZE&&j.data.length!==V7_SIZE&&j.data.length!==V6_SIZE)) throw new Error("not a profile file for this version"); prof[cur]=upgradeProfile(new Uint8Array(j.data)); setDirty(); render(); $("#pstatus").innerHTML='<span class="ok">imported — press Save to controller</span>'; }catch(err){ $("#pstatus").innerHTML=`<span class="err">${err.message}</span>`; } e.target.value=""; };
+$("#export").onclick=()=>{ collect(); const j=JSON.stringify({sc2remap:1,name:nameOf(prof[cur]),data:Array.from(prof[cur]),...(crv[cur].some(v=>v)?{curves:Array.from(crv[cur])}:{})}); const a=document.createElement("a"); a.href=URL.createObjectURL(new Blob([j],{type:"application/json"})); a.download=`sc2-remap-${(nameOf(prof[cur])||"profile"+(cur+1)).replace(/\W+/g,"_")}.json`; a.click(); };
+$("#import").onchange=async e=>{ const f=e.target.files[0]; if(!f) return; try{ const j=JSON.parse(await f.text()); if(!j.data||(j.data.length!==PROF_SIZE&&j.data.length!==V7_SIZE&&j.data.length!==V6_SIZE)) throw new Error("not a profile file for this version"); prof[cur]=upgradeProfile(new Uint8Array(j.data)); crv[cur].fill(0); if(Array.isArray(j.curves)&&j.curves.length===CRV_SIZE) crv[cur].set(j.curves); setDirty(); render(); $("#pstatus").innerHTML='<span class="ok">imported — press Save to controller</span>'; }catch(err){ $("#pstatus").innerHTML=`<span class="err">${err.message}</span>`; } e.target.value=""; };
 
 /* ---- gyro + gyro as mouse settings (sc26re cfg values, same as the report meter) ---- */
 const BTNOPTS=[[-1,"— none —"],[0,"A"],[1,"B"],[2,"X"],[3,"Y"],[19,"LB"],[9,"RB"],[27,"LT click"],[23,"RT click"],[17,"L4"],[18,"L5"],[7,"R4"],[8,"R5"],[15,"L3"],[5,"R3"],[6,"Menu"],[14,"View"],[13,"D-pad up"],[10,"D-pad down"],[12,"D-pad left"],[11,"D-pad right"],[26,"Left pad click"],[22,"Right pad click"],[25,"Left pad touch"],[21,"Right pad touch"],[24,"Left stick touch"],[20,"Right stick touch"],[29,"Left grip touch"],[28,"Right grip touch"]];
@@ -1223,9 +1288,9 @@ const CARDS=()=>[
    ${one("gm_output","what the gyro controls")}
    <p class="note cardnote"><b>Mouse</b> = real-world sensitivity · <b>joystick camera</b> = turning speed → stick · <b>joystick deflection</b> = tilt → stick (re-centres each time the gyro turns on).</p>
    <div class="sect" style="margin-left:0">Mouse</div>
-   ${one("gm_curve")}${one("gm_smooth")}${one("gm_accel")}${row("Acceleration range","°/s",labRows([["gm_accel_lo","from"],["gm_accel_hi","to"]]))}
+   ${one("gm_curve")}<div id="gmCrv"></div>${one("gm_smooth")}${one("gm_accel")}${row("Acceleration range","°/s",labRows([["gm_accel_lo","from"],["gm_accel_hi","to"]]))}
    <div class="sect" style="margin-left:0">Joystick</div>
-   ${one("gj_max")}${one("gj_tilt")}${one("gj_dz")}${one("gj_anti")}${one("gj_curve")}</div>`,
+   ${one("gj_max")}${one("gj_tilt")}${one("gj_dz")}${one("gj_anti")}${one("gj_curve")}<div id="gjCrv"></div></div>`,
  `<div class="card"><h3>Gyro as mouse — sensitivity</h3>
    ${one("gm_sens")}
    ${row("Per axis","% of the sensitivity",labRows([["gm_scale_p","Pitch"],["gm_scale_y","Yaw"],["gm_scale_r","Roll"]]))}
@@ -1241,6 +1306,23 @@ const CARDS=()=>[
    ${row("Mouse dead bands","°/s, 0 and 0 = off (default)",bandRows([["gmb:p","Pitch"],["gmb:y","Yaw"],["gmb:r","Roll"]]))}</details>`,
 ];
 function gyBuild(){ $("#gyCards").innerHTML=CARDS().join(""); }
+/* custom gyro curves (firmware v51.7+): global (slot g) or, with “this profile only”, the profile's */
+const gyCrvSlot=()=>document.getElementById("gyScope")&&$("#gyScope").value==="p"?cur:CRV_G;
+function gyCrvChanged(){ if(gyCrvSlot()===CRV_G){ crvDirtyG=true; $("#gyStatus").innerHTML='<span class="warn">curve changed — press Apply or Save</span>'; } else setDirty(); }
+function gyCrvRender(){ const gm=document.getElementById("gmCrv"), gj=document.getElementById("gjCrv"); if(!gm||!gj) return;
+  if(!fwCrv){ gm.innerHTML=gj.innerHTML=""; return; }
+  const sl=gyCrvSlot(), mo=crvOn(sl,2), jo=crvOn(sl,3);
+  const sel=(id,on)=>`<select id="${id}"><option value="0">curve exponent (above)</option><option value="1">custom curve — 4 points (as in Steam)</option></select>`;
+  gm.innerHTML=row("Mouse response","the exponent above, or your own curve",sel("gmcm",mo))+(mo?row("Curve range","°/s at the right edge; faster turns follow the last part of the line",`<input type="number" id="gmcmax" min="30" max="4000" step="10" style="width:100px" value="${crvMax(sl)}"> <span class="note">°/s</span>`)+crvHtml("crvGM",sl,2,"controller turn speed","cursor speed"):"");
+  gj.innerHTML=row("Joystick response","the exponent above, or your own curve",sel("gjcm",jo))+(jo?crvHtml("crvGJ",sl,3,"turn speed, dead zone → full speed","stick deflection"):"");
+  $("#gmcm").value=mo?"1":"0"; $("#gjcm").value=jo?"1":"0";
+  $("#gmcm").onchange=e=>{ crvSetOn(sl,2,e.target.value==="1"); gyCrvChanged(); gyCrvRender(); };
+  $("#gjcm").onchange=e=>{ crvSetOn(sl,3,e.target.value==="1"); gyCrvChanged(); gyCrvRender(); };
+  if($("#gmcmax")) $("#gmcmax").onchange=e=>{ const v=Math.max(30,Math.min(4000,Math.round(+e.target.value||360))); e.target.value=v; crvDV(sl).setInt16(2,v===360?0:v,true); gyCrvChanged(); };
+  crvWire("crvGM",sl,2,gyCrvChanged); crvWire("crvGJ",sl,3,gyCrvChanged);
+  /* the exponent does nothing while the custom curve is on */
+  for(const [n,on] of [["gm_curve",mo],["gj_curve",jo]]){ const e=document.getElementById("g_"+n); if(e){ e.closest(".row").classList.toggle("dim",on); e.title=on?"not used: the custom curve below is on":""; } } }
+async function gyCrvSaveG(){ if(!fwCrv||!crvDirtyG) return true; const ok=await crvWrite(CRV_G); if(ok) crvDirtyG=false; return ok; }
 const gyEl=id=>document.getElementById(id);
 /* a profile with its own gyro range different from the global one (v51.6 page): the sensor switches
    range with the remapper, and a calibration measured at one range can be off at the other */
@@ -1265,6 +1347,7 @@ async function gyRead(){
       gyEl("g_"+n).value=scale!==1?(v/scale).toFixed(2):String(v);
     }
     gyGlobFsr=await cfgGet("gyro_fsr"); gyFsrWarn();
+    if(fwCrv){ const d=await crvRead(CRV_G); if(d){ crv[CRV_G].set(d); crvDirtyG=false; } gyCrvRender(); }
     await gmOnRefresh();
     $("#gyStatus").innerHTML='<span class="ok">read</span>';
   }catch(e){ $("#gyStatus").innerHTML=`<span class="err">${e.message}</span>`; }
@@ -1290,7 +1373,7 @@ async function gyWrite(save){
 async function gmOnRefresh(){ const on=await cfgGet("gm_enabled"); $("#gmOn").innerHTML="Gyro mouse <b>"+(on?"ON":"off")+"</b>"; $("#gmOn").className="sw"+(on?" on":""); }
 $("#gyRead").onclick=gyRead; $("#gyApply").onclick=()=>gyWrite(false); $("#gySave").onclick=()=>gyWrite(true);
 $("#gmOn").onclick=async()=>{ try{ const on=await cfgGet("gm_enabled"); await send("sc26re/gm_enabled",0xEE,[on?0:1,0]); await gmOnRefresh(); }catch(e){ $("#gyStatus").innerHTML=`<span class="err">${e.message}</span>`; } };
-gyBuild();
+gyBuild(); gyCrvRender();
 
 /* ---- controller settings (report meter Live settings) ---- */
 const LV=[
@@ -1426,14 +1509,16 @@ function gyScopeShow(){ const p=gyScope()==="p", b=prof[cur];
   $("#gyPflags").hidden=!p; $("#gySave").hidden=p; $("#gyApply").textContent=p?"Put in profile":"Apply"; $("#gyOwn").checked=(b[17]&2)!==0; $("#gyAuto").checked=(b[17]&4)!==0;
   $("#gyScopeNote").innerHTML=p?`Profile ${cur+1}${nameOf(b)?" “"+nameOf(b)+"”":""}: its own gyro range, gyro mouse / joystick, activation, ratchet and quick turns (greyed settings are global). <b>Apply</b> puts the values in the profile — then <b>Save to controller</b> on “Buttons &amp; profiles”.`
     :`Global: used by every profile that has no gyro settings of its own (and when the remapper is off) — the same settings as in the report meter. <b>Apply</b> = until power-off, <b>Save</b> = kept.`;
-  gyInputs(p); if(p){ if(b[17]&2) gyFromProfile(); } gyFsrWarn(); }
+  gyInputs(p); if(p){ if(b[17]&2) gyFromProfile(); } gyFsrWarn(); gyCrvRender(); }
 $("#gyScope").onchange=async()=>{ if(gyScope()==="g") await gyRead(); gyScopeShow(); };
 $("#gyOwn").onchange=e=>{ const b=prof[cur]; if(e.target.checked&&!(b[17]&2)) gyToProfile(); b[17]=(b[17]&~2)|(e.target.checked?2:0); setDirty(); gyScopeShow(); };
 $("#gyAuto").onchange=e=>{ const b=prof[cur]; b[17]=(b[17]&~4)|(e.target.checked?4:0); setDirty(); };
 { const r=$("#gyRead").onclick, a=$("#gyApply").onclick, s2=$("#gySave").onclick;
   $("#gyRead").onclick=()=>gyScope()==="p"?(gyFromProfile(),$("#gyStatus").innerHTML='<span class="ok">profile values shown</span>'):r();
   const toP=()=>{ const b=prof[cur]; gyToProfile(); b[17]|=2; $("#gyOwn").checked=true; setDirty(); gyFsrWarn(); $("#gyStatus").innerHTML='<span class="ok">in the profile — press Save to controller</span>'; };
-  $("#gyApply").onclick=()=>gyScope()==="p"?toP():a(); $("#gySave").onclick=()=>gyScope()==="p"?toP():s2(); }
+  const crvG=async()=>{ try{ if(!await gyCrvSaveG()) $("#gyStatus").innerHTML='<span class="err">the curve did not read back the same — try again</span>'; }catch(e){ $("#gyStatus").innerHTML=`<span class="err">${e.message}</span>`; } };
+  $("#gyApply").onclick=async()=>{ if(gyScope()==="p") return toP(); await a(); await crvG(); };
+  $("#gySave").onclick=async()=>{ if(gyScope()==="p") return toP(); await s2(); await crvG(); }; }
 
 /* ---- output monitor: what the remapper is sending right now ---- */
 let monPrev=null;
