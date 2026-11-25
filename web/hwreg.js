@@ -15,8 +15,8 @@
   }
   async function rd(path) {
     const tag = pathTag(path);
-    for (let n = 0; n < 6; n++) {
-      try { await T(D.sendFeatureReport(1, pathCmd(0xED, path)), 800); } catch (e) { await sleep(60); continue; }
+    for (let n = 0; n < 15; n++) { // another page polling the controller (the meter) can take the reply
+      try { await T(D.sendFeatureReport(1, pathCmd(0xED, path)), 800); } catch (e) { await sleep(60 + 20 * n); continue; }
       for (let k = 0; k < 12; k++) {
         await sleep(20);
         try {
@@ -58,7 +58,7 @@
     if (s.ndps !== want) P.push(`conversion ${s.ndps / 1e6} mdps, set range needs ${want / 1e6}`);
     if ((s.ctrl2 & 15) !== ODR[odr]) P.push(`gyro ODR code ${s.ctrl2 & 15}, set ${ODR[odr]} (${odr} Hz)`);
     if (((s.ctrl2 >> 4) & 7) !== (mode ? 0 : 1)) P.push(`gyro mode bits ${(s.ctrl2 >> 4) & 7}, mode ${mode}`);
-    R.push({ name, ok: !P.length, problems: P, fixes: s.fixes });
+    R.push({ name, ok: !P.length, problems: P, fixes: s.fixes }); window.HWREG.progress = R;
   }
   let profFsr = {};
   async function expectFsr() {
