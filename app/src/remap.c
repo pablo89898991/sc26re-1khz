@@ -28,6 +28,7 @@
 #include "gyro_mouse.h"
 #include "haptics.h"
 #include "remap.h"
+#include "curve.h"
 #if defined(CONFIG_IBEX_HWTEST) || defined(SC26RE_SIM)
 #include "hwtest.h"
 #endif
@@ -1030,7 +1031,10 @@ static void stick_analog(int i, const struct remap_analog *an, const struct rema
 	if(an->mode == REMAP_ANALOG_MOUSE)
 	{
 		/* speed: counts per second at full deflection, squared response */
-		float k = (float)an->speed * dt * powf(mm, an->curve ? (float)an->curve * 0.01f : 2.0f);
+		const uint16_t *crv = remap_curve_stick(i);
+		float k = (float)an->speed * dt *
+		          (crv != NULL ? CLAMP(curve_eval(crv, mm), 0.0f, 1.0f)
+		                       : powf(mm, an->curve ? (float)an->curve * 0.01f : 2.0f));
 
 		mouse_acc[0] += fx * k * sx;
 		mouse_acc[1] -= fy * k * sy;
@@ -1063,14 +1067,15 @@ static void stick_analog(int i, const struct remap_analog *an, const struct rema
 }
 
 /* sticks to Steam: inner / outer dead zones rescaled to the full range */
-static void stick_dead_zones(const struct remap_analog *an, int16_t *x, int16_t *y)
+static void stick_dead_zones(const struct remap_analog *an, const uint16_t *crv, int16_t *x, int16_t *y)
 {
 	float fx = (float)*x / 32767.0f, fy = (float)*y / 32767.0f;
 	float m = sqrtf(fx * fx + fy * fy);
 	float in = (float)an->dz_in * 0.0001f, out = 1.0f - (float)an->dz_out * 0.0001f;
 	float k;
 
-	if(an->dz_in == 0U && an->dz_out == 0U && an->anti_dz == 0U && (an->curve == 0U || an->curve == 100U))
+	if(crv == NULL && an->dz_in == 0U && an->dz_out == 0U && an->anti_dz == 0U &&
+	   (an->curve == 0U || an->curve == 100U))
 	{
 		return;
 	}
@@ -1084,7 +1089,12 @@ static void stick_dead_zones(const struct remap_analog *an, int16_t *x, int16_t 
 		return;
 	}
 	k = MIN((m - in) / (out - in), 1.0f);
-	if(an->curve != 0U && an->curve != 100U)
+	if(crv != NULL)
+	{
+		/* the stick's custom curve (v51.7) replaces the exponent */
+		k = CLAMP(curve_eval(crv, k), 0.0f, 1.0f);
+	}
+	else if(an->curve != 0U && an->curve != 100U)
 	{
 		k = powf(k, (float)an->curve * 0.01f);
 	}
@@ -2911,7 +2921,7 @@ void remap_process(struct controller_report *r, float dt)
 			{
 				int16_t jx = x, jy = y;
 
-				stick_dead_zones(an, &jx, &jy);
+				stick_dead_zones(an, NULL, &jx, &jy);
 				pad_joy[t][0] = (float)jx / 32767.0f;
 				pad_joy[t][1] = (float)jy / 32767.0f;
 			}
@@ -2935,7 +2945,7 @@ void remap_process(struct controller_report *r, float dt)
 			{
 				int16_t jx = x, jy = y;
 
-				stick_dead_zones(an, &jx, &jy);
+				stick_dead_zones(an, NULL, &jx, &jy);
 				xbox_stick[t][0] += (float)jx / 32767.0f;
 				xbox_stick[t][1] += (float)jy / 32767.0f;
 			}
@@ -3391,14 +3401,14 @@ void remap_process(struct controller_report *r, float dt)
 
 		if(an->mode == REMAP_ANALOG_PASS)
 		{
-			stick_dead_zones(an, &x, &y);
+			stick_dead_zones(an, remap_curve_stick(i), &x, &y);
 		}
 		else if(an->mode == REMAP_ANALOG_XBOX)
 		{
 			int t = i ^ ((an->flags & REMAP_AF_OTHER_STICK) ? 1 : 0);
 
 			flick_on[i] = false;
-			stick_dead_zones(an, &x, &y);
+			stick_dead_zones(an, remap_curve_stick(i), &x, &y);
 			xbox_stick[t][0] += (float)x / 32767.0f;
 			xbox_stick[t][1] += (float)y / 32767.0f;
 			x = y = 0;
@@ -3684,6 +3694,115 @@ void remap_process(struct controller_report *r, float dt)
 }
 
 
+/* ---- response curves (v51.7): sc26re/crv/<slot>[/<offset hex>], slot 0..3 or g ---- */
+#define CRV_PREFIX "sc26re/crv/"
+BUILD_ASSERT(sizeof(struct remap_curves) == 68, "curve layout (web/remap.html)");
+static struct remap_curves curves[REMAP_CURVE_SLOTS];
+static struct remap_curves crv_staging;
+static int8_t crv_staging_s = -1;
+
+static int active_index(void)
+{
+	const struct remap_profile *p = active();
+
+	if(!remap_enabled() || p->magic != REMAP_MAGIC || p->version != REMAP_VERSION)
+	{
+		return -1;
+	}
+	return CLAMP(sc26re_cfg_get(SC26RE_CFG_REMAP_PROFILE), 0, REMAP_PROFILES - 1);
+}
+
+const uint16_t *remap_curve_stick(int side)
+{
+	int i = active_index();
+
+	if(i < 0 || side < 0 || side > 1 || !(curves[i].on & BIT(side)))
+	{
+		return NULL;
+	}
+	return curves[i].pt[side];
+}
+
+bool remap_curve_gyro(int which, const uint16_t **pt, float *mouse_max)
+{
+	int i = active_index();
+	const struct remap_curves *c;
+
+	/* a profile with its own gyro settings has its own curves too (or none) */
+	if(i < 0 || !(profiles[i].flags & REMAP_PF_GYRO))
+	{
+		i = REMAP_PROFILES;
+	}
+	c = &curves[i];
+	if(which < REMAP_CURVE_GMOUSE || which > REMAP_CURVE_GJOY || !(c->on & BIT(which)))
+	{
+		return false;
+	}
+	*pt = c->pt[which];
+	*mouse_max = (float)(c->mouse_max > 0 ? c->mouse_max : REMAP_CURVE_MOUSE_MAX);
+	return true;
+}
+
+static int crv_parse(const char *path, int *slot, int *off)
+{
+	if(strncmp(path, CRV_PREFIX, strlen(CRV_PREFIX)) != 0)
+	{
+		return -1;
+	}
+	path += strlen(CRV_PREFIX);
+	if(path[0] == 'g')
+	{
+		*slot = REMAP_PROFILES;
+	}
+	else if(path[0] >= '0' && path[0] < '0' + REMAP_PROFILES)
+	{
+		*slot = path[0] - '0';
+	}
+	else
+	{
+		return -1;
+	}
+	*off = -1;
+	if(path[1] == '/')
+	{
+		*off = (int)strtol(&path[2], NULL, 16);
+		if(*off < 0 || *off >= (int)sizeof(struct remap_curves))
+		{
+			return -1;
+		}
+	}
+	else if(path[1] != '\0')
+	{
+		return -1;
+	}
+	return 0;
+}
+
+static int crv_load_cb(const char *key, size_t len, settings_read_cb read_cb, void *cb_arg, void *param)
+{
+	int s;
+
+	ARG_UNUSED(param);
+	if(key == NULL || key[1] != '\0' || len != sizeof(struct remap_curves))
+	{
+		return 0;
+	}
+	if(key[0] == 'g')
+	{
+		s = REMAP_PROFILES;
+	}
+	else if(key[0] >= '0' && key[0] < '0' + REMAP_PROFILES)
+	{
+		s = key[0] - '0';
+	}
+	else
+	{
+		return 0;
+	}
+	(void)read_cb(cb_arg, &curves[s], len);
+	return 0;
+}
+
 /* ---- storage and report meter access ---- */
 
 static int parse_path(const char *path, int *prof, int *off)
@@ -3718,7 +3837,7 @@ bool remap_path(const char *path)
 {
 	int p, o;
 
-	return parse_path(path, &p, &o) == 0;
+	return parse_path(path, &p, &o) == 0 || crv_parse(path, &p, &o) == 0;
 }
 
 bool remap_read(const char *path, uint8_t *buf, size_t capacity, size_t *len)
@@ -3726,6 +3845,17 @@ bool remap_read(const char *path, uint8_t *buf, size_t capacity, size_t *len)
 	int p, o;
 	size_t n;
 
+	if(crv_parse(path, &p, &o) == 0)
+	{
+		if(o < 0)
+		{
+			return false;
+		}
+		n = MIN(MIN((size_t)CHUNK, capacity), sizeof(struct remap_curves) - (size_t)o);
+		memcpy(buf, (const uint8_t *)&curves[p] + o, n);
+		*len = n;
+		return true;
+	}
 	if(parse_path(path, &p, &o) != 0 || o < 0)
 	{
 		return false;
@@ -3804,6 +3934,20 @@ int remap_stage(const char *path, const uint8_t *value, size_t len)
 {
 	int p, o;
 
+	if(crv_parse(path, &p, &o) == 0)
+	{
+		if(o < 0)
+		{
+			return -EINVAL;
+		}
+		if(crv_staging_s != p)
+		{
+			crv_staging = curves[p];
+			crv_staging_s = (int8_t)p;
+		}
+		memcpy((uint8_t *)&crv_staging + o, value, MIN(len, sizeof(crv_staging) - (size_t)o));
+		return 0;
+	}
 	if(parse_path(path, &p, &o) != 0 || o < 0)
 	{
 		return -EINVAL;
@@ -3829,6 +3973,16 @@ int remap_commit(const char *path)
 	char key[24];
 	int p, o;
 
+	if(crv_parse(path, &p, &o) == 0)
+	{
+		if(crv_staging_s == p)
+		{
+			curves[p] = crv_staging;
+			crv_staging_s = -1;
+		}
+		snprintf(key, sizeof(key), "user/crv/%c", p < REMAP_PROFILES ? '0' + p : 'g');
+		return settings_save_one(key, &curves[p], sizeof(curves[p]));
+	}
 	if(parse_path(path, &p, &o) != 0)
 	{
 		return -EINVAL;
@@ -3902,6 +4056,7 @@ void remap_init(void)
 		src_sidx[sclick_src[k]] = (int8_t)(REMAP_SHIFT_SRC_COUNT + k);
 	}
 	(void)settings_load_subtree_direct("user/remap", load_cb, NULL);
+	(void)settings_load_subtree_direct("user/crv", crv_load_cb, NULL);
 }
 
 #ifdef SC26RE_SIM

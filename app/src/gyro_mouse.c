@@ -26,6 +26,7 @@
 
 #include "controller.h"
 #include "gyro_mouse.h"
+#include "curve.h"
 #include "haptics.h"
 #include "remap.h"
 #include "sc26re_cfg.h"
@@ -595,7 +596,16 @@ void gyro_mouse_feed(const float dps[3], uint32_t buttons, float dt_s)
 				joy_x = joy_y = 0.0f;
 				return;
 			}
-			n = powf(MIN((w - dz) / (mx - dz), 1.0f), (float)gm(SC26RE_CFG_GJ_CURVE) * 0.01f);
+			{
+				const uint16_t *crv;
+				float cmax;
+				float x = MIN((w - dz) / (mx - dz), 1.0f);
+
+				/* custom curve (v51.7): deflection straight from the 4 points */
+				n = remap_curve_gyro(REMAP_CURVE_GJOY, &crv, &cmax)
+				        ? CLAMP(curve_eval(crv, x), 0.0f, 1.0f)
+				        : powf(x, (float)gm(SC26RE_CFG_GJ_CURVE) * 0.01f);
+			}
 			n = anti + (1.0f - anti) * n;
 			joy_x = wx / w * n;
 			joy_y = -wy / w * n; /* stick up = cursor up */
@@ -608,8 +618,19 @@ void gyro_mouse_feed(const float dps[3], uint32_t buttons, float dt_s)
 			float c = (float)gm(SC26RE_CFG_GM_CURVE) * 0.1f;
 			float g = 1.0f;
 			int16_t acc = gm(SC26RE_CFG_GM_ACCEL);
+			const uint16_t *crv;
+			float cmax;
 
-			if(c != 1.0f && w > 0.0f)
+			if(remap_curve_gyro(REMAP_CURVE_GMOUSE, &crv, &cmax))
+			{
+				/* custom curve (v51.7): turn speed (0..cmax deg/s) -> cursor speed in the
+				 * same units, so the diagonal stays 1:1 */
+				if(w > 0.0f)
+				{
+					g = MAX(curve_eval(crv, w / cmax), 0.0f) * cmax / w;
+				}
+			}
+			else if(c != 1.0f && w > 0.0f)
 			{
 				g = powf(MAX(w, 0.5f) / 100.0f, c - 1.0f);
 			}

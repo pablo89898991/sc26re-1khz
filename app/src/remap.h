@@ -272,12 +272,33 @@ struct remap_profile
 #define REMAP_PROFILE_V6_SIZE 2056
 #define REMAP_PROFILE_V7_SIZE 3144
 
+/* response curves (v51.7), kept apart from the profiles (sc26re/crv/<slot>): Steam's custom
+ * 4-point curve. Slots 0..3 belong to the profiles, slot 4 is global (gyro only). */
+#define REMAP_CURVE_LS 0      /* left stick: to Steam / Xbox pad / mouse */
+#define REMAP_CURVE_RS 1      /* right stick */
+#define REMAP_CURVE_GMOUSE 2  /* gyro mouse: turn speed -> cursor speed */
+#define REMAP_CURVE_GJOY 3    /* gyro joystick: turn speed past the dead zone -> deflection */
+#define REMAP_CURVE_SLOTS (REMAP_PROFILES + 1)
+#define REMAP_CURVE_MOUSE_MAX 360 /* default gyro mouse speed at x = 32767, deg/s */
+struct remap_curves
+{
+	uint8_t on;          /* bit per REMAP_CURVE_*: the custom curve replaces the usual response */
+	uint8_t reserved;
+	int16_t mouse_max;   /* gyro mouse: deg/s at x = 32767 (0 = REMAP_CURVE_MOUSE_MAX) */
+	uint16_t pt[4][8];   /* per curve 4 points x, y (0..32767) */
+}; /* 68 bytes, no padding (web/remap.html) */
+
 extern const uint8_t remap_shift_src[REMAP_SHIFT_SRC_COUNT];
 
 void remap_init(void);
 /* power-off is coming: let go of everything (main loop) */
 void remap_power_off(void);
 bool remap_enabled(void);
+/* the custom curve in use for a stick (0 left, 1 right): points, or NULL */
+const uint16_t *remap_curve_stick(int side);
+/* the custom curve for the gyro (REMAP_CURVE_GMOUSE / GJOY): the profile's with its own gyro
+ * settings, else the global one; false = none (the usual curve) */
+bool remap_curve_gyro(int which, const uint16_t **pt, float *mouse_max);
 void remap_set_enabled(bool on);
 /* report loop: outputs keyboard/mouse, rewrites the pad report (dt in s) */
 void remap_process(struct controller_report *r, float dt);
