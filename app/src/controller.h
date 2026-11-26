@@ -162,6 +162,7 @@ bool transport_ble_connected(void);
 bool transport_ble_pairing_window_open(void);
 
 bool transport_usb_attached(void);
+void transport_usb_feature_debug(uint8_t out[28]);
 bool transport_usb_configured(void);
 int transport_set_usb_radio_mode(enum transport_usb_radio_mode mode);
 bool transport_usb_radio_allowed(void);

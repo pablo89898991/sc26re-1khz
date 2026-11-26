@@ -445,9 +445,40 @@ static void usb_msg_cb(struct usbd_context *const usbd_ctx, const struct usbd_ms
 	}
 }
 
+/* feature report diagnostics (v51.8 test 9, sc26re/usbdbg): the page lost every settings reply
+ * for up to 3 minutes while input reports kept coming; do the requests reach the controller? */
+static struct
+{
+	uint32_t n_set, n_get, last_set, gap_set, gap_set_at, max_us;
+} fdbg;
+
+void transport_usb_feature_debug(uint8_t out[28])
+{
+	const uint32_t v[7] = { fdbg.n_set, fdbg.n_get, fdbg.gap_set, fdbg.gap_set_at, fdbg.max_us, fdbg.last_set,
+		                k_uptime_get_32() };
+
+	for(size_t i = 0; i < 7; ++i)
+	{
+		sys_put_le32(v[i], &out[4 * i]);
+	}
+}
+
 static void prepare_feature_response(const uint8_t *request, size_t len)
 {
 	ssize_t inner_len;
+	uint32_t c0 = k_cycle_get_32(), us;
+
+	{
+		uint32_t now = k_uptime_get_32();
+
+		if(fdbg.n_set != 0U && now - fdbg.last_set > fdbg.gap_set)
+		{
+			fdbg.gap_set = now - fdbg.last_set;
+			fdbg.gap_set_at = now;
+		}
+		fdbg.last_set = now;
+		fdbg.n_set++;
+	}
 
 	/*
 	 * USB carries a report-ID byte before the inner response, so the
@@ -455,6 +486,8 @@ static void prepare_feature_response(const uint8_t *request, size_t len)
 	 */
 	inner_len = valve_feature_respond(VALVE_FEATURE_LINK_USB, request, len, &feature_response[1],
 	                                  sizeof(feature_response) - 1);
+	us = k_cyc_to_us_floor32(k_cycle_get_32() - c0);
+	fdbg.max_us = MAX(fdbg.max_us, us);
 	if(inner_len < 0)
 	{
 		memset(feature_response, 0, sizeof(feature_response));
@@ -511,6 +544,7 @@ static int usb_get_report(const struct device *dev, uint8_t type, uint8_t id, ui
 		return -ENOTSUP;
 	}
 
+	fdbg.n_get++;
 	response_len = MIN((size_t)len, sizeof(feature_response));
 	memcpy(data, feature_response, response_len);
 	return (int)response_len;

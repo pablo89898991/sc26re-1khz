@@ -11,6 +11,7 @@
 #include <zephyr/sys/util.h>
 
 #include "analog.h"
+#include "controller.h"
 #include "calibration.h"
 #include "ibex_settings_registry.h"
 #include "imu.h"
@@ -630,6 +631,15 @@ bool valve_settings_read(const char *path, uint8_t *buf, size_t capacity, size_t
 			sys_put_le32(c->lr, &buf[14]);
 			memcpy(&buf[18], c->thread, 10);
 		}
+		*len = 28;
+		return true;
+	}
+	if(strcmp(path, "sc26re/usbdbg") == 0 && capacity >= 28)
+	{
+		/* USB feature reports since power-on (le32): SET count, GET count, the longest pause
+		 * between two SETs and its end (uptime ms), the slowest reply (us), the last SET (uptime
+		 * ms), uptime now */
+		transport_usb_feature_debug(buf);
 		*len = 28;
 		return true;
 	}
@@ -1386,7 +1396,11 @@ int valve_settings_delete(const char *path)
 	return err;
 }
 
+#ifdef CONFIG_IBEX_HWTEST
+#define FACTORY_RESET_MAX_KEYS 46 /* test builds: RAM for the sc26re/usbdbg counters (a subtree holds far fewer) */
+#else
 #define FACTORY_RESET_MAX_KEYS 48
+#endif
 #define FACTORY_RESET_KEY_MAX 64
 
 struct factory_reset_collect
