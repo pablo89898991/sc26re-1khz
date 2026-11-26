@@ -495,9 +495,21 @@ static uint32_t pending_stream_restart(void)
 	return generation;
 }
 
+static volatile uint32_t imu_restart_done_ms;
+
+/* a stream restart (range or bias change) and the 0.4 s after it: the driver's sensor fusion
+ * set-up passes the sensor through other ranges (measured: gyro at 125 dps, accel at 2 or 8 g
+ * for ~0.1 s, twice), so samples in it are not to be trusted for their size */
+bool imu_settling(void)
+{
+	return pending_stream_restart() != 0U || (uint32_t)(k_uptime_get_32() - imu_restart_done_ms) < 400U;
+}
+
 static void complete_stream_restart(uint32_t generation, int result)
 {
 	k_spinlock_key_t key = k_spin_lock(&imu_stream_restart.lock);
+
+	imu_restart_done_ms = k_uptime_get_32();
 
 	imu_stream_restart.completed_generation = generation;
 	imu_stream_restart.result = result;

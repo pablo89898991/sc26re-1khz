@@ -31,6 +31,8 @@ void imu_force_reason(uint8_t reason, bool on);
 /* the last accelerometer sample in report units and axes (1 g = 16393), not cut at the report's
  * +-2 g and also while the gyro mouse hides it from the pad report; false = the IMU is off */
 bool imu_accel(float a[3]);
+/* true during an IMU stream restart and 0.4 s after it (sample sizes not to be trusted) */
+bool imu_settling(void);
 
 /* resting gyro band measurement (dead zones bypassed): 0 idle 1 running 2 done 3 moved */
 void imu_band_measure_start(uint32_t samples);

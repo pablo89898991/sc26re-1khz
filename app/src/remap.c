@@ -4040,7 +4040,22 @@ static void acc_process(int i, const struct controller_report *rs, float dt)
 	ARG_UNUSED(rs);
 	if(acc_gestures_bound(c))
 	{
-		gestures(c, a, dt, k_uptime_get_32());
+#ifdef CONFIG_IBEX_HWTEST
+		bool settling = !hwtest_running() && imu_settling();
+#else
+		bool settling = imu_settling();
+#endif
+		/* while the IMU restarts its sample sizes jump (the driver passes other ranges): measured
+		 * on a still controller, every gyro range change fired "jolt down"; start the gravity
+		 * average again after it instead */
+		if(settling)
+		{
+			acc_gestures_reset();
+		}
+		else
+		{
+			gestures(c, a, dt, k_uptime_get_32());
+		}
 	}
 	m = sqrtf(a[0] * a[0] + a[1] * a[1] + a[2] * a[2]);
 	if(m < 1000.0f)

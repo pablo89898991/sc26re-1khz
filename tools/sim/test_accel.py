@@ -193,6 +193,10 @@ s = gfresh(gblob(flags=0x80)); s.lib.sim_gm_set(1); t = taps(jab(s, "ay", 2.0));
 s.lib.sim_gm_set(0); s.run(600, ax=0, ay=0, az=G); t = taps(jab(s, "ay", 2.0)); check("gyro off: works again", t == [key("w")], t)
 s = gfresh(gblob()); check("IMU kept on for gestures", s.lib.sim_imu_forced() & 2)
 s = gfresh(acc_blob()); check("nothing bound: IMU not forced", not (s.lib.sim_imu_forced() & 2))
+# an IMU restart (gyro range change) makes the sample sizes jump: no gestures while it settles
+s = gfresh(gblob()); s.lib.sim_imu_settling(1); t = taps(jab(s, "ay", 2.0)); check("IMU settling: a jolt is ignored", t == [], t)
+s.run(50, ax=0, ay=int(1.5 * G), az=G); s.lib.sim_imu_settling(0); s.run(400, ax=0, ay=0, az=G)
+t = taps(jab(s, "ay", 2.0)); check("after settling: works, nothing left over", t == [key("w")], t)
 # a slow tilt is not a gesture
 s = gfresh(gblob()); ev = []
 for d in range(0, 61, 2): ev += s.run(30, **tilt(fwd=d)).kbd()

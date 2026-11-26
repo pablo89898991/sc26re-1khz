@@ -49,7 +49,7 @@
     return { ctrl2: b[11], ctrl6: b[15], ctrl8: b[17], haodr: b[18], ndps: v.getUint32(6, true), fixes: v.getUint16(44, true), mode: b[27] };
   }
   // what the sensor must look like for the settings (and the profile's own range, when it has one)
-  async function check(name, R) {
+  async function check(name, R, again = true) {
     await sleep(400); // the fast loop applies within a few ms; the 100 ms range check twice
     const s = await state(), fsr = await expectFsr(), mode = await get('gyro_mode'), odr = await get('gyro_odr');
     const code = FS[fsr], want = 4375000 * (1 << code);
@@ -59,6 +59,9 @@
     if ((s.ctrl2 & 15) !== ODR[odr]) P.push(`gyro ODR code ${s.ctrl2 & 15}, set ${ODR[odr]} (${odr} Hz)`);
     if (((s.ctrl2 >> 4) & 7) !== (mode ? 0 : 1)) P.push(`gyro mode bits ${(s.ctrl2 >> 4) & 7}, mode ${mode}`);
     if (HWREG.accelFs != null && (s.ctrl8 & 3) !== HWREG.accelFs) P.push(`accel range code ${s.ctrl8 & 3}, want ${HWREG.accelFs} (0 = 2 g, 1 = 4 g)`);
+    // a stream restart passes the sensor through other ranges for ~0.1 s (twice, within ~1.3 s): a
+    // register caught in it is looked at again after 1.5 s, and only a lasting difference fails
+    if (P.length && again && s.ndps === want) { await sleep(1500); return check(name + ' (again after 1.5 s)', R, false); }
     R.push({ name, ok: !P.length, problems: P, fixes: s.fixes }); window.HWREG.progress = R;
   }
   let profFsr = {};
