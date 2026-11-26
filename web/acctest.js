@@ -81,16 +81,19 @@
     const bWrite = async (pre, b) => { for (let a = 0; a < 4; a++) { for (let o = 0; o < b.length; o += 40) await snd(pre + '/' + o.toString(16), 0xEE, Array.from(b.slice(o, o + 40))); await snd(pre, 0xEF); const r = await bRead(pre, b.length); if (r && r.every((v, k) => v === b[k])) return true; } return false; };
     const bk = { prof3: await bRead('sc26re/rmp/3', 3232), acc3: await bRead('sc26re/acc/3', 32), rp: await get('remap_profile'), on: await get('remap_on'), fsr: await get('gyro_fsr') };
     const ev = []; const H = e => { if (e.reportId !== 0x42 || e.data.byteLength < 17) return; const d = e.data, v = [9, 11, 13, 15].map(o => d.getInt16(o, true)); if (v.some(x => Math.abs(x) > 30000)) ev.push([Math.round(performance.now()), v]); };
-    const ds = await navigator.hid.getDevices(); let quiet = 0, err = null;
+    const ds = await navigator.hid.getDevices(); let quiet = 0, err = null; const marks = [];
     try {
       const pb = new Uint8Array(3232); pb[0] = 0xA7; pb[1] = 8; pb.set(new TextEncoder().encode('settle'), 2); await bWrite('sc26re/rmp/3', pb);
       const a = new Uint8Array(32), v = new DataView(a.buffer); v.setUint16(10, 200, true); [0xD0, 0xD1, 0xD2, 0xD3, 0xD4, 0xD5, 0xD6].forEach((x, k) => a[12 + 2 * k] = x); await bWrite('sc26re/acc/3', a);
       await set('remap_profile', 3, false); await set('remap_on', 1, false); await sleep(1500);
       ds.forEach(x => x.addEventListener('inputreport', H)); await sleep(5000); quiet = ev.length;
-      for (let i = 0; i < 10; i++) { await set('gyro_fsr', i % 2 ? 250 : 2000, false); await sleep(1500); }
+      for (let i = 0; i < 10; i++) { marks.push(Math.round(performance.now())); await set('gyro_fsr', i % 2 ? 250 : 2000, false); await sleep(1500); }
     } catch (e) { err = e.message; }
     finally { ds.forEach(x => x.removeEventListener('inputreport', H)); try { await set('gyro_fsr', bk.fsr, false); await bWrite('sc26re/acc/3', bk.acc3); await bWrite('sc26re/rmp/3', bk.prof3); await set('remap_profile', bk.rp, false); await set('remap_on', bk.on, false); } catch (e) { err = (err || '') + ' restore: ' + e.message; } }
-    return { quietGestures: quiet, gesturesDuringRangeSwitches: ev.length - quiet, pass: !err && ev.length === 0, err };
+    // reports with a gesture on, grouped into taps (a tap is ~80 reports), each with the ms since the last switch
+    const taps = []; let last = -1e9;
+    for (const [t, v] of ev) { if (t - last > 150) { const m = marks.filter(x => x <= t).pop(); taps.push({ msAfterSwitch: m == null ? null : t - m, sticks: v }); } last = t; }
+    return { taps: taps.length, tapsBeforeSwitching: taps.filter(x => x.msAfterSwitch == null).length, detail: taps, pass: !err && taps.length === 0, err };
   }
   window.ACCTEST = { run, settle };
 })();

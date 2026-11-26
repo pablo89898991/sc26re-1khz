@@ -496,13 +496,15 @@ static uint32_t pending_stream_restart(void)
 }
 
 static volatile uint32_t imu_restart_done_ms;
+static atomic_t imu_bias_programming;
 
 /* a stream restart (range or bias change) and the 0.4 s after it: the driver's sensor fusion
  * set-up passes the sensor through other ranges (measured: gyro at 125 dps, accel at 2 or 8 g
  * for ~0.1 s, twice), so samples in it are not to be trusted for their size */
 bool imu_settling(void)
 {
-	return pending_stream_restart() != 0U || (uint32_t)(k_uptime_get_32() - imu_restart_done_ms) < 400U;
+	return atomic_get(&imu_bias_programming) != 0 || pending_stream_restart() != 0U ||
+	       (uint32_t)(k_uptime_get_32() - imu_restart_done_ms) < 400U;
 }
 
 static void complete_stream_restart(uint32_t generation, int result)
@@ -558,6 +560,7 @@ static int program_gyro_bias(void)
 	}
 
 	k_mutex_lock(&imu_bias_program_lock, K_FOREVER);
+	atomic_inc(&imu_bias_programming); /* imu_settling(): the set-up below changes ranges */
 	k_mutex_lock(&imu_io_lock, K_FOREVER);
 	for(size_t i = 0; i < 3; ++i)
 	{
@@ -574,6 +577,8 @@ static int program_gyro_bias(void)
 	{
 		err = wait_for_stream_restart(restart_generation);
 	}
+	imu_restart_done_ms = k_uptime_get_32();
+	atomic_dec(&imu_bias_programming);
 	k_mutex_unlock(&imu_bias_program_lock);
 
 	return err;

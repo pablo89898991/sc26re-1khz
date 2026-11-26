@@ -180,7 +180,7 @@ ev += s.run(1000, ax=0, ay=0, az=G).kbd()
 for i in range(8): ev += s.run(60, ax=int((2 if i % 2 == 0 else -2) * G), ay=0, az=G).kbd()
 ev += s.run(500, ax=0, ay=0, az=G).kbd()
 t = [inv.get(c, c) for c in taps(ev)]
-check("long shake = 1, then a pause and another shake = 2", t.count("x") == 2, t)
+check("long shake = 1, then a pause and another shake = 2, no directions in between", t == ["d", "x", "d", "x"], t)
 s = gfresh(acc_blob(gest={RIGHT: (key("d"),)})); ev = []
 for i in range(8):
     ev += s.run(60, ax=int((2 if i % 2 == 0 else -2) * G), ay=0, az=G).kbd()

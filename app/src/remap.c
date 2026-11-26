@@ -3980,6 +3980,13 @@ static void gestures(const struct remap_accel *c, const float a[3], float dt, ui
 	{
 		return;
 	}
+	if((int32_t)(now - gest_shake_block) < 0)
+	{
+		/* a shake that goes on: no directions out of it (seen on the controller: a long shake
+		 * fired "left" once the 0.6 s after the shake had passed) */
+		gest_shake_block = now + 600U;
+		return;
+	}
 	/* a jolt soon after the last one: shaking, not a gesture of its own */
 	if((int32_t)(now - gest_dir_ms) < 700)
 	{
