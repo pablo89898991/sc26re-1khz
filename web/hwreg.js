@@ -76,6 +76,7 @@
     D.addEventListener('inputreport', H); await sleep(80); D.removeEventListener('inputreport', H);
     if (m.length < 20) return null;
     m.sort((a, b) => a - b); const med = m[m.length >> 1];
+    if (med < 1000) return null; // the gyro mouse on: the reports carry no motion (by design)
     return m[Math.floor(m.length * 0.9)] - m[Math.floor(m.length * 0.1)] > 2000 ? null : Math.round(med);
   }
   // what the sensor must look like for the settings (and the profile's own range, when it has one)

@@ -215,5 +215,18 @@ s = gfresh(gblob()); ev = []
 for d in range(0, 61, 2): ev += s.run(30, **tilt(fwd=d)).kbd()
 check("slow tilt: no gesture", taps(ev) == [], taps(ev))
 
+# while the IMU settles (range change: the driver passes other ranges), tilt keeps what it had just
+# before: measured on the controller, no sample, half and then 2.8 times gravity, later near zero
+s = fresh(acc_blob(1, btn=1)); s.run(5, **tilt(fwd=22.5)); before = (s.out["lsx"], s.out["lsy"], s.out["buttons"])
+s.lib.sim_imu_settling(1); seen = set()
+for smp in (dict(ax=0, ay=0, az=0), dict(ax=0, ay=-3135, az=7568), dict(ax=-300, ay=-32767, az=32767), dict(ax=0, ay=-50, az=600)):
+    s.run(20, **smp); seen.add((s.out["lsx"], s.out["lsy"], s.out["buttons"]))
+check("settling: tilt stick and tilt presses held", seen == {before}, (before, seen))
+s.lib.sim_imu_settling(0); s.run(5, **tilt(side=45))
+check("after settling: tilt follows again", near(s.out["lsx"], 32767) and near(s.out["lsy"], 0), s.out)
+s = fresh(acc_blob(1)); s.lib.sim_imu_settling(1); s.run(20, ax=0, ay=-32767, az=32767)
+check("settling from the start: nothing", s.out["lsx"] == 0 and s.out["lsy"] == 0, s.out)
+s.lib.sim_imu_settling(0)
+
 print("\n%d passed, %d failed" % (ok, fail))
 raise SystemExit(1 if fail else 0)

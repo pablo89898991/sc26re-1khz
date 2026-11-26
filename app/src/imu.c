@@ -503,8 +503,11 @@ static atomic_t imu_bias_programming;
  * for ~0.1 s, twice), so samples in it are not to be trusted for their size */
 bool imu_settling(void)
 {
+	/* 1.5 s after: the driver's sensor fusion set-up passes other ranges again about 1 s after
+	 * the restart (measured: accelerometer near 0 at 1.02..1.05 s after a gyro range change,
+	 * v51.8 test 10; with 400 ms here a still controller fired "jolt down" there) */
 	return atomic_get(&imu_bias_programming) != 0 || pending_stream_restart() != 0U ||
-	       (uint32_t)(k_uptime_get_32() - imu_restart_done_ms) < 400U;
+	       (uint32_t)(k_uptime_get_32() - imu_restart_done_ms) < 1500U;
 }
 
 static void complete_stream_restart(uint32_t generation, int result)

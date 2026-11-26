@@ -4023,6 +4023,9 @@ static void acc_process(int i, const struct controller_report *rs, float dt)
 	static bool wanted;
 	float a[3], m, fwd, side, full, dz, x, y;
 
+	static float hold_joy[2][2];
+	static uint8_t hold_dirs;
+
 	memset(acc_joy, 0, sizeof(acc_joy));
 	acc_dirs = 0U;
 	if(want != wanted)
@@ -4032,6 +4035,8 @@ static void acc_process(int i, const struct controller_report *rs, float dt)
 		wanted = want;
 		acc_ref_ok = false;
 		acc_gestures_reset();
+		memset(hold_joy, 0, sizeof(hold_joy));
+		hold_dirs = 0U;
 	}
 	if(!want || ((c->flags & REMAP_ACC_GYRO_PAUSE) && gyro_mouse_active()))
 	{
@@ -4052,7 +4057,6 @@ static void acc_process(int i, const struct controller_report *rs, float dt)
 		return;
 	}
 	ARG_UNUSED(rs);
-	if(acc_gestures_bound(c))
 	{
 #ifdef CONFIG_IBEX_HWTEST
 		bool settling = !hwtest_running() && imu_settling();
@@ -4060,13 +4064,17 @@ static void acc_process(int i, const struct controller_report *rs, float dt)
 		bool settling = imu_settling();
 #endif
 		/* while the IMU restarts its sample sizes jump (the driver passes other ranges): measured
-		 * on a still controller, every gyro range change fired "jolt down"; start the gravity
-		 * average again after it instead */
+		 * on a still controller after a gyro range change, at 30..75 ms no sample, half and then
+		 * 2.8 times gravity, and at about 1 s near zero (v51.8 test 10). Gestures start their
+		 * gravity average again after it; tilt keeps what it had just before */
 		if(settling)
 		{
 			acc_gestures_reset();
+			memcpy(acc_joy, hold_joy, sizeof(acc_joy));
+			acc_dirs = hold_dirs;
+			return;
 		}
-		else
+		if(acc_gestures_bound(c))
 		{
 			gestures(c, a, dt, k_uptime_get_32());
 		}
@@ -4107,8 +4115,10 @@ static void acc_process(int i, const struct controller_report *rs, float dt)
 		last = d;
 		acc_dirs = d;
 	}
+	hold_dirs = acc_dirs;
 	if(c->stick == REMAP_ACC_STICK_OFF)
 	{
+		memset(hold_joy, 0, sizeof(hold_joy));
 		return;
 	}
 	full = REMAP_ACC_FULL_DEG * 100.0f / (float)(c->sens ? c->sens : 100U);
@@ -4125,6 +4135,7 @@ static void acc_process(int i, const struct controller_report *rs, float dt)
 	}
 	acc_joy[c->stick == REMAP_ACC_STICK_RIGHT ? 1 : 0][0] = x;
 	acc_joy[c->stick == REMAP_ACC_STICK_RIGHT ? 1 : 0][1] = y;
+	memcpy(hold_joy, acc_joy, sizeof(hold_joy));
 }
 
 static int crv_load_cb(const char *key, size_t len, settings_read_cb read_cb, void *cb_arg, void *param)
