@@ -1516,6 +1516,9 @@ static void imu_stream_thread_main(void *arg1, void *arg2, void *arg3)
 #define IMU_REG_CTRL6 0x15U /* FS_G [3:0], LPF1_G_BW [6:4] */
 #define IMU_REG_CTRL7 0x16U /* LPF1_G_EN bit 0 */
 #define IMU_REG_CTRL8 0x17U /* FS_XL [1:0] */
+/* the accelerometer range from the devicetree (in g): FS_XL code 0..3 = 2, 4, 8, 16 g */
+#define IMU_ACCEL_FS_G DT_PROP(DT_ALIAS(accel0), accel_range)
+#define IMU_ACCEL_FS_CODE (IMU_ACCEL_FS_G >= 16 ? 3U : IMU_ACCEL_FS_G >= 8 ? 2U : IMU_ACCEL_FS_G >= 4 ? 1U : 0U)
 #define IMU_REG_OUTX_L_G 0x22U
 #define IMU_PACE_TIMEOUT_MS 3U
 #define IMU_USB_GAP_TICKS ((uint32_t)k_us_to_ticks_ceil32(1500))
@@ -1767,6 +1770,8 @@ static struct
 	uint8_t regs[9];
 	uint8_t fs_seen;
 	uint16_t fs_fixes;
+	uint16_t accel_ug; /* the accelerometer conversion in use, ug per LSB */
+	uint16_t xl_fixes; /* accelerometer ranges put back */
 } imu_dbg;
 
 void imu_mode_debug(uint8_t out[48])
@@ -1779,6 +1784,8 @@ void imu_mode_debug(uint8_t out[48])
 	sys_put_le32(imu_dbg.ndps_per_lsb, &out[6]);
 	memcpy(&out[10], imu_dbg.regs, sizeof(imu_dbg.regs));
 	out[27] = (uint8_t)sc26re_cfg_get(SC26RE_CFG_GYRO_MODE);
+	sys_put_le16(imu_dbg.accel_ug, &out[28]);
+	sys_put_le16(imu_dbg.xl_fixes, &out[30]);
 	sys_put_le16(imu_dbg.fs_fixes, &out[44]);
 	out[46] = imu_dbg.fs_seen;
 }
@@ -1930,6 +1937,23 @@ static void imu_fast_thread_main(void *arg1, void *arg2, void *arg3)
 							imu_dbg.fs_seen = reg;
 						}
 					}
+					/* the same for the accelerometer: its conversion comes from the devicetree
+					 * range, and a range found different twice in a row is put back */
+					static uint8_t xl_bad;
+
+					if(i2c_reg_read_byte_dt(&imu_i2c, IMU_REG_CTRL8, &reg) == 0)
+					{
+						if((reg & 0x03U) == IMU_ACCEL_FS_CODE)
+						{
+							xl_bad = 0U;
+						}
+						else if(++xl_bad >= 2U &&
+						        i2c_reg_update_byte_dt(&imu_i2c, IMU_REG_CTRL8, 0x03U, IMU_ACCEL_FS_CODE) == 0)
+						{
+							xl_bad = 0U;
+							imu_dbg.xl_fixes++;
+						}
+					}
 					k_mutex_unlock(&imu_io_lock);
 				}
 			}
@@ -1946,13 +1970,12 @@ static void imu_fast_thread_main(void *arg1, void *arg2, void *arg3)
 			gyro_rad_per_lsb = 0.004375f *
 			                   (float)(1U << gyro_fs_shift[gyro_code_set ? gyro_code_set : (reg & 0x0FU)]) *
 			                   (3.14159265f / 180.0f);
-			if(i2c_reg_read_byte_dt(&imu_i2c, IMU_REG_CTRL8, &reg) != 0)
-			{
-				gyro_rad_per_lsb = 0.0f;
-				atomic_inc(&imu_fast_errors);
-				continue;
-			}
-			accel_ms2_per_lsb = 0.000061f * (float)(1U << (reg & 0x03U)) * 9.80665f;
+			/* the accelerometer conversion from the range the devicetree sets, never read
+			 * back: read at the moment the driver's bias set-up had the sensor at 8 g (it
+			 * passes 2 and 8 g, see the range check above), every report afterwards carried
+			 * twice the acceleration (v51.8 test 9, measured: 1 g = 32767, clipped) */
+			accel_ms2_per_lsb = 0.000061f * (float)(1U << IMU_ACCEL_FS_CODE) * 9.80665f;
+			imu_dbg.accel_ug = (uint16_t)(61U << IMU_ACCEL_FS_CODE);
 			LOG_INF("direct IMU path: %d mdps/LSB, %d ug/LSB",
 			        (int)(gyro_rad_per_lsb * 180.0f / 3.14159265f * 1000000.0f) / 1000,
 			        (int)(accel_ms2_per_lsb / 9.80665f * 1000000.0f));

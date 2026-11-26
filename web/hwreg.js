@@ -65,7 +65,18 @@
   async function state() {
     await rd('sc26re/imumode'); await sleep(80);
     const b = await rd('sc26re/imumode'), v = new DataView(b.buffer, b.byteOffset);
-    return { ctrl2: b[11], ctrl6: b[15], ctrl8: b[17], haodr: b[18], ndps: v.getUint32(6, true), fixes: v.getUint16(44, true), mode: b[27] };
+    return { ctrl2: b[11], ctrl6: b[15], ctrl8: b[17], haodr: b[18], ndps: v.getUint32(6, true), fixes: v.getUint16(44, true), mode: b[27],
+      aug: b.length >= 32 ? v.getUint16(28, true) : null, xlFixes: b.length >= 32 ? v.getUint16(30, true) : null, g: await gravity() };
+  }
+  // the accelerometer in the reports, the controller still: 1 g = 16393 (61 ug per unit). Median length
+  // over 60 reports; null when the controller moves (then nothing can be said)
+  async function gravity() {
+    if (!D) return null;
+    const m = []; const H = e => { if (e.reportId !== 0x42 || e.data.byteLength < 39) return; const d = e.data, x = d.getInt16(33, true), y = d.getInt16(35, true), z = d.getInt16(37, true); m.push(Math.hypot(x, y, z)); };
+    D.addEventListener('inputreport', H); await sleep(80); D.removeEventListener('inputreport', H);
+    if (m.length < 20) return null;
+    m.sort((a, b) => a - b); const med = m[m.length >> 1];
+    return m[Math.floor(m.length * 0.9)] - m[Math.floor(m.length * 0.1)] > 2000 ? null : Math.round(med);
   }
   // what the sensor must look like for the settings (and the profile's own range, when it has one)
   async function check(name, R, again = true) {
@@ -78,6 +89,10 @@
     if ((s.ctrl2 & 15) !== ODR[odr]) P.push(`gyro ODR code ${s.ctrl2 & 15}, set ${ODR[odr]} (${odr} Hz)`);
     if (((s.ctrl2 >> 4) & 7) !== (mode ? 0 : 1)) P.push(`gyro mode bits ${(s.ctrl2 >> 4) & 7}, mode ${mode}`);
     if (HWREG.accelFs != null && (s.ctrl8 & 3) !== HWREG.accelFs) P.push(`accel range code ${s.ctrl8 & 3}, want ${HWREG.accelFs} (0 = 2 g, 1 = 4 g)`);
+    // v51.8 test 10+: the accelerometer conversion in use, and gravity in the reports (it came out doubled
+    // when the conversion was read back while the bias set-up had the sensor at 8 g)
+    if (HWREG.accelFs != null && s.aug !== null && s.aug !== 61 << HWREG.accelFs) P.push(`accel conversion ${s.aug} ug/LSB, the range needs ${61 << HWREG.accelFs}`);
+    if (s.g !== null && (s.g < 16393 * 0.85 || s.g > 16393 * 1.15)) P.push(`gravity in the reports ${(s.g / 16393).toFixed(2)} g`);
     // a stream restart passes the sensor through other ranges for ~0.1 s (twice, within ~1.3 s): a
     // register caught in it is looked at again after 1.5 s, and only a lasting difference fails
     if (P.length && again && s.ndps === want) { await sleep(1500); return check(name + ' (again after 1.5 s)', R, false); }
