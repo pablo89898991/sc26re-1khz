@@ -3891,7 +3891,7 @@ static bool gest_grav_ok;
 static uint32_t gest_quiet_until;
 static int8_t gest_last_sign;   /* shake: the last jolt over the threshold, +-(axis + 1) */
 static uint8_t gest_count;
-static uint32_t gest_first_ms, gest_dir_ms;
+static uint32_t gest_first_ms, gest_dir_ms, gest_shake_block;
 static bool gest_armed = true;  /* shake: the jolt dropped below half the threshold since */
 
 static void gestures(const struct remap_accel *c, const float a[3], float dt, uint32_t now)
@@ -3939,6 +3939,13 @@ static void gestures(const struct remap_accel *c, const float a[3], float dt, ui
 		bool counts = gest_armed || sg != gest_last_sign; /* a straight flip counts too */
 
 		gest_armed = false;
+		if(counts && (int32_t)(now - gest_shake_block) < 0)
+		{
+			/* still the same shake: one shake fires once, however long it goes on */
+			gest_shake_block = now + 600U;
+			gest_last_sign = sg;
+			counts = false;
+		}
 		if(counts && (gest_count == 0U || sg != gest_last_sign))
 		{
 			if(gest_count == 0U)
@@ -3956,6 +3963,7 @@ static void gestures(const struct remap_accel *c, const float a[3], float dt, ui
 				gest_until[REMAP_GEST_SHAKE] = now + REMAP_ACC_GEST_MS;
 			}
 			gest_quiet_until = now + 600;
+			gest_shake_block = now + 600U;
 		}
 	}
 	if((int32_t)(now - gest_quiet_until) < 0 || fabsf(best) <= thr)

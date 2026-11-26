@@ -172,7 +172,15 @@ for i in range(8):
     ev += s.run(60, **a).kbd()
 ev += s.run(500, ax=0, ay=0, az=G).kbd()
 t = [inv.get(c, c) for c in taps(ev)]
-check("shake: fires, and at most the first jolt's direction", "x" in t and len([x for x in t if x != "x"]) <= 1, t)
+check("shake: fires once, and at most the first jolt's direction", t.count("x") == 1 and len([x for x in t if x != "x"]) <= 1, t)
+# a long shake is still one shake; a second shake after a pause fires again
+s = gfresh(gblob()); ev = []
+for i in range(16): ev += s.run(60, ax=int((2 if i % 2 == 0 else -2) * G), ay=0, az=G).kbd()
+ev += s.run(1000, ax=0, ay=0, az=G).kbd()
+for i in range(8): ev += s.run(60, ax=int((2 if i % 2 == 0 else -2) * G), ay=0, az=G).kbd()
+ev += s.run(500, ax=0, ay=0, az=G).kbd()
+t = [inv.get(c, c) for c in taps(ev)]
+check("long shake = 1, then a pause and another shake = 2", t.count("x") == 2, t)
 s = gfresh(acc_blob(gest={RIGHT: (key("d"),)})); ev = []
 for i in range(8):
     ev += s.run(60, ax=int((2 if i % 2 == 0 else -2) * G), ay=0, az=G).kbd()
