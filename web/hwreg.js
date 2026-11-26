@@ -4,33 +4,52 @@
 // Nothing is saved that was not there before: every change is put back. Usage: paste, then
 //   HWREG.run().then(r => console.log(r))
 (() => {
-  const T = (p, ms) => Promise.race([p, new Promise((_, j) => setTimeout(() => j(new Error('timeout')), ms))]);
+  // A request given up on while Chrome still has it pending piles up behind the next ones: on the
+  // controller (v51.8 test 9) that stalled every settings reply for up to 3 minutes, while 6 minutes of
+  // the same reads one at a time, each awaited, never stalled. So: one request at a time, and wait for
+  // it (30 s is only for a controller that is gone).
+  const T = (p, ms) => Promise.race([p, new Promise((_, j) => setTimeout(() => j(new Error('timeout')), Math.max(ms, 30000)))]);
+  let chain = Promise.resolve();
+  const locked = f => { const r = chain.then(f, f); chain = r.catch(() => {}); return r; };
   const sleep = ms => new Promise(r => setTimeout(r, ms));
   let D = null;
   async function connect() {
     for (const x of await navigator.hid.getDevices()) {
-      try { if (!x.opened) await T(x.open(), 3000); await T(x.sendFeatureReport(1, pathCmd(0xED, 'sc26re/gm_sens')), 1000); D = x; return true; } catch (e) {}
+      try { if (!x.opened) await T(x.open(), 0); await locked(() => T(x.sendFeatureReport(1, pathCmd(0xED, 'sc26re/gm_sens')), 0)); D = x; keepAlive(); return true; } catch (e) {}
     }
     return false;
   }
-  async function rd(path) {
-    const tag = pathTag(path);
-    for (let n = 0; n < 15; n++) { // another page polling the controller (the meter) can take the reply
-      try { await T(D.sendFeatureReport(1, pathCmd(0xED, path)), 800); } catch (e) { await sleep(60 + 20 * n); continue; }
-      for (let k = 0; k < 12; k++) {
-        await sleep(20);
-        try {
-          const r = new Uint8Array((await T(D.receiveFeatureReport(1), 800)).buffer);
-          const o = r[0] === 0xED ? 0 : (r[1] === 0xED ? 1 : -1); if (o < 0) continue;
-          const x = r.slice(o + 2, o + 2 + r[o + 1]); if (!x.length) return x; if (x[0] !== tag) continue; return x.slice(1);
-        } catch (e) {}
-      }
-    }
-    throw new Error('read failed ' + path);
+  // the page's own polling must be off (devs emptied): HWREG keeps the controller awake itself
+  let ka = null;
+  function keepAlive() {
+    if (ka) return;
+    ka = setInterval(() => { if (!D) return; locked(async () => {
+      const b = new Uint8Array(63); b[0] = 0x87; b[1] = 3; b[2] = 48; b[3] = 0x1C; // gyro on, as the page does
+      try { await T(D.sendFeatureReport(1, b), 0); await T(D.sendFeatureReport(1, pathCmd(0xED, 'sc26re/awake')), 0); await T(D.receiveFeatureReport(1), 0); } catch (e) {}
+    }); }, 2000);
   }
-  async function snd(path, op, data = []) {
-    for (let n = 0; n < 5; n++) { try { await T(D.sendFeatureReport(1, pathCmd(op, path, data)), 800); await sleep(8); return; } catch (e) { await sleep(60); } }
-    throw new Error('send failed ' + path);
+  function rd(path) {
+    const tag = pathTag(path);
+    return locked(async () => {
+      for (let n = 0; n < 5; n++) {
+        try { await T(D.sendFeatureReport(1, pathCmd(0xED, path)), 0); } catch (e) { await sleep(60 + 20 * n); continue; }
+        for (let k = 0; k < 4; k++) {
+          await sleep(5 + 10 * k);
+          try {
+            const r = new Uint8Array((await T(D.receiveFeatureReport(1), 0)).buffer);
+            const o = r[0] === 0xED ? 0 : (r[1] === 0xED ? 1 : -1); if (o < 0) continue;
+            const x = r.slice(o + 2, o + 2 + r[o + 1]); if (!x.length) return x; if (x[0] !== tag) continue; return x.slice(1);
+          } catch (e) {}
+        }
+      }
+      throw new Error('read failed ' + path);
+    });
+  }
+  function snd(path, op, data = []) {
+    return locked(async () => {
+      for (let n = 0; n < 3; n++) { try { await T(D.sendFeatureReport(1, pathCmd(op, path, data)), 0); await sleep(8); return; } catch (e) { await sleep(60); } }
+      throw new Error('send failed ' + path);
+    });
   }
   const s16 = b => (b[0] | b[1] << 8) << 16 >> 16;
   const get = async k => s16(await rd('sc26re/' + k));
