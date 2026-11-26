@@ -3892,7 +3892,7 @@ static bool gest_grav_ok;
 static uint32_t gest_quiet_until;
 static int8_t gest_last_sign;   /* shake: the last jolt over the threshold, +-(axis + 1) */
 static uint8_t gest_count;
-static uint32_t gest_first_ms, gest_dir_ms, gest_shake_block;
+static uint32_t gest_first_ms, gest_dir_ms, gest_shake_block, gest_cross_ms;
 static bool gest_armed = true;  /* shake: the jolt dropped below half the threshold since */
 
 static void acc_gestures_reset(void)
@@ -3900,7 +3900,7 @@ static void acc_gestures_reset(void)
 	gest_grav_ok = false;
 	gest_count = 0U;
 	gest_armed = true;
-	gest_quiet_until = gest_shake_block = gest_dir_ms = gest_first_ms = k_uptime_get_32() - 10000U;
+	gest_quiet_until = gest_shake_block = gest_dir_ms = gest_first_ms = gest_cross_ms = k_uptime_get_32() - 10000U;
 	memset(gest_until, 0, sizeof(gest_until));
 }
 
@@ -3939,8 +3939,11 @@ static void gestures(const struct remap_accel *c, const float a[3], float dt, ui
 	{
 		gest_armed = true;
 	}
-	if((int32_t)(now - gest_first_ms) > 800)
+	if((int32_t)(now - gest_first_ms) > 800 || (int32_t)(now - gest_cross_ms) > 300)
 	{
+		/* a shake is one movement back and forth: a pause of more than 0.3 s between jolts
+		 * ends it (seen on the controller: a jab left, its stop, then a jab right and its stop
+		 * 0.8 s later made 4 jolts and so a shake) */
 		gest_count = 0U;
 	}
 	if(fabsf(best) > thr)
@@ -3955,6 +3958,10 @@ static void gestures(const struct remap_accel *c, const float a[3], float dt, ui
 			gest_shake_block = now + 600U;
 			gest_last_sign = sg;
 			counts = false;
+		}
+		if(counts)
+		{
+			gest_cross_ms = now;
 		}
 		if(counts && (gest_count == 0U || sg != gest_last_sign))
 		{

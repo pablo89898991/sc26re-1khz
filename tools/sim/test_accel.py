@@ -185,6 +185,19 @@ s = gfresh(acc_blob(gest={RIGHT: (key("d"),)})); ev = []
 for i in range(8):
     ev += s.run(60, ax=int((2 if i % 2 == 0 else -2) * G), ay=0, az=G).kbd()
 t = [inv.get(c, c) for c in taps(ev)]; check("shaking with only Right bound: Right once", t == ["d"], t)
+# two jabs (left, then right 0.8 s later): each with its stop is 4 jolts, but not one movement: no shake
+s = gfresh(gblob()); ev = []
+for ax_, g_ in (("ax", -2.0), ("ax", 2.0)):
+    # a hand jab: the push, the stop, and a small rebound past the threshold
+    base = dict(ax=0, ay=0, az=G); a = dict(base); a[ax_] += int(g_ * G); b = dict(base); b[ax_] -= int(g_ * G)
+    r_ = dict(base); r_[ax_] += int(g_ * 0.85 * G)
+    ev += s.run(40, **a).kbd() + s.run(40, **b).kbd() + s.run(40, **r_).kbd() + s.run(680, **base).kbd()
+t = [inv.get(c, c) for c in taps(ev)]; check("jab left, jab right 0.8 s later: left, right, no shake", t == ["a", "d"], t)
+# a slower shake (about 3 per second, 150 ms a side) is still a shake
+s = gfresh(gblob()); ev = []
+for i in range(8): ev += s.run(150, ax=int((2 if i % 2 == 0 else -2) * G), ay=0, az=G).kbd()
+ev += s.run(500, ax=0, ay=0, az=G).kbd()
+t = [inv.get(c, c) for c in taps(ev)]; check("slower shake (150 ms a side): a shake", t.count("x") == 1, t)
 # two actions on one gesture
 s = gfresh(acc_blob(gest={FWD: (0xE1, key("w"))})); k = jab(s, "ay", 2.0)
 check("two actions: shift + w together", any(0xE1 in st and key("w") in st for st in k), k)

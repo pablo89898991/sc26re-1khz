@@ -61,6 +61,9 @@
       const shake = n => { const s = []; for (let i = 0; i < n; i++) s.push({ ms: 60, ax: Math.round((i % 2 ? -2 : 2) * G), ay: 0, az: G }); return s; };
       await gcase('shake of 8 jolts: once (and the first jolt)', { g: GACT }, [...shake(8), { ms: 500, ax: 0, ay: 0, az: G }], ['right', 'shake']);
       await gcase('long shake, pause, shake: twice', { g: GACT }, [...shake(16), { ms: 1000, ax: 0, ay: 0, az: G }, ...shake(8), { ms: 500, ax: 0, ay: 0, az: G }], ['right', 'shake', 'right', 'shake']);
+      // two hand jabs 0.8 s apart (push, stop, small rebound each): left, right, and no shake
+      const hjab = g => { const base = { ax: 0, ay: 0, az: G }; return [{ ms: 40, ...base, ax: Math.round(g * G) }, { ms: 40, ...base, ax: Math.round(-g * G) }, { ms: 40, ...base, ax: Math.round(g * 0.85 * G) }, { ms: 680, ...base }]; };
+      await gcase('jab left, jab right 0.8 s later: no shake', { g: GACT }, [...hjab(-2), ...hjab(2)], ['left', 'right']);
       const slow = []; for (let d = 0; d <= 60; d += 3) slow.push({ ms: 30, ...tilt(d, 0) });
       await gcase('slow tilt: nothing', { g: GACT }, slow, []);
       await set('gm_act_mode', 0, false); await set('gm_enabled', 1, false);
