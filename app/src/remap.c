@@ -46,6 +46,7 @@ static float acc_joy[2][2];
 static uint8_t acc_dirs; /* tilt -> buttons this pass, the gyro_dirs bits */
 static struct remap_accel accs[REMAP_PROFILES];
 static uint32_t gest_until[REMAP_ACC_GESTURES]; /* k_uptime_get_32() until which a gesture taps */
+static void acc_gestures_reset(void);
 
 LOG_MODULE_REGISTER(remap, LOG_LEVEL_INF);
 
@@ -3894,6 +3895,15 @@ static uint8_t gest_count;
 static uint32_t gest_first_ms, gest_dir_ms, gest_shake_block;
 static bool gest_armed = true;  /* shake: the jolt dropped below half the threshold since */
 
+static void acc_gestures_reset(void)
+{
+	gest_grav_ok = false;
+	gest_count = 0U;
+	gest_armed = true;
+	gest_quiet_until = gest_shake_block = gest_dir_ms = gest_first_ms = k_uptime_get_32() - 10000U;
+	memset(gest_until, 0, sizeof(gest_until));
+}
+
 static void gestures(const struct remap_accel *c, const float a[3], float dt, uint32_t now)
 {
 	float lin[3], g, thr, best = 0.0f;
@@ -4007,7 +4017,7 @@ static void acc_process(int i, const struct controller_report *rs, float dt)
 		imu_force_reason(IMU_FORCE_ACCEL, want);
 		wanted = want;
 		acc_ref_ok = false;
-		gest_grav_ok = false;
+		acc_gestures_reset();
 	}
 	if(!want || ((c->flags & REMAP_ACC_GYRO_PAUSE) && gyro_mouse_active()))
 	{
@@ -4235,6 +4245,7 @@ void remap_hwtest_started(void)
 {
 	tilt_ref_ok = false; /* gyro tilt / region centred on the script's first motion sample, not the desk */
 	acc_ref_ok = false;
+	acc_gestures_reset(); /* the gravity average from the script, not from the real sensor before it */
 	gyro_reg[0] = gyro_reg[1] = 0.0f;
 }
 

@@ -88,6 +88,9 @@
       if (b2[0] === 0xA7 && (fl & 2) && f) profFsr[p] = f;
     }
     try {
+      // the IMU loop applies range / ODR / mode only while the sensor is in use (Steam, gyro mouse, the
+      // remapper's accelerometer); with nothing using it the registers stay as they were until it starts
+      await set('gm_enabled', 1, false); await sleep(300);
       await check('as found', R);
       await gyroPageWrite(true); await check('gyro page Save', R);
       await gyroPageWrite(true); await check('gyro page Save again', R);
@@ -101,7 +104,7 @@
       await set('remap_on', 1, false);
       for (const p of [0, 1, 2, 3, keep.remap_profile]) { await set('remap_profile', p, false); await check(`remapper on, profile ${p + 1}${profFsr[p] ? ' (own range ' + profFsr[p] + ')' : ''}`, R); }
       await set('remap_on', keep.remap_on, false);
-      for (const on of [1 - keep.gm_enabled, keep.gm_enabled]) { await set('gm_enabled', on, false); await check(`gyro mouse ${on ? 'on' : 'off'}`, R); }
+      await set('gm_enabled', 0, false); await set('gm_enabled', 1, false); await check('gyro mouse off and on again', R);
       await gyroPageWrite(true); await check('gyro page Save at the end', R);
     } finally {
       for (const [k, v] of Object.entries(keep)) { try { if (await get(k) !== v) await set(k, v, false); } catch (e) {} }
