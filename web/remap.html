@@ -71,7 +71,7 @@
   .live-dot{fill:#4fc98a;stroke:#0d1320;stroke-width:1.5;pointer-events:none} .live-dot.pad{fill:#5fb3ff}
   svg .hit{cursor:pointer} svg .hit:hover .sh,svg .hit.sel .sh{stroke:var(--accent);stroke-width:3}
   svg .hit.on .sh{fill:rgba(79,201,138,.28)} svg .hit.sel .sh,svg .hit:hover .sh{fill:rgba(77,163,255,.12)}
-  .bottom{display:grid;grid-template-columns:repeat(4,1fr);gap:6px 18px;margin-top:8px}
+  .bottom{display:grid;grid-template-columns:repeat(5,1fr);gap:6px 18px;margin-top:8px}
   #editor{margin-top:2px}
   .bottom .item{display:flex;gap:8px;align-items:baseline;padding:3px 6px;border-radius:8px;cursor:pointer} .bottom .item:hover,.bottom .item.sel{background:var(--panel2)}
   .cards{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px}
@@ -116,7 +116,7 @@
 <body>
 <div class="top">
   <div class="topin">
-    <div class="brand">SC2 <span class="hz">Remapper</span> <span class="note" id="pagever" title="page version — if it is older than expected, press Ctrl+F5">p.2026-11-25d</span></div>
+    <div class="brand">SC2 <span class="hz">Remapper</span> <span class="note" id="pagever" title="page version — if it is older than expected, press Ctrl+F5">p.2026-11-27a</span></div>
     <button class="primary" id="connect">Connect controller</button>
     <span id="status" class="chip">not connected</span>
     <span id="batt" class="chip" hidden></span>
@@ -453,7 +453,7 @@ function bindTextO(o){
 const bindText=s=>bindTextO(bOff(s));
 /* is input s one of the stick / pad mode's inputs in the normal (L 0) or shifted (L 1) settings?
  * (a radial slice that exists only in the shifted mode: its normal binding does nothing) */
-function inMode(s,L){ const an=parentOf(s); if(!an||an==="gyp"||!GRP_OF_AN[an]) return true;
+function inMode(s,L){ const an=parentOf(s); if(!an||an==="gyp"||an==="acc"||!GRP_OF_AN[an]) return true;
   if(L===1&&!shBtn(GRP_OF_AN[an])) return false; return subSources(an,L).some(([x])=>x===s); }
 function itemText(s){ const g=SGRP[s], n=inMode(s,0), sh=g!=null&&shBtn(g)&&inMode(s,1);
   let t=n?bindTextO(bOffL(s,0)):"";
@@ -538,7 +538,10 @@ function render(){
     <div><div class="sect">Trackpad touch</div>${item(25,"Left")}${item(21,"Right")}</div>
     <div><div class="sect">Gyro</div><div class="item" data-s="gyro"><span class="k">settings</span><span class="b">${gyroSummary()}</span></div>
       <div class="item${sel==="gyp"?" sel":""}" data-s="gyp"><span class="k">this profile</span><span class="b">${GYMODES[b0[GYX]]||"?"}${b0[GYX+1]?" · "+GYSPACE[b0[GYX+1]]:""}</span></div>
-      ${b0[GYX]===1?[66,67,68,69].map(x=>item(x,["Tilt forward","Tilt back","Tilt left","Tilt right"][x-66])).join(""):""}</div>`;
+      ${b0[GYX]===1?[66,67,68,69].map(x=>item(x,["Tilt forward","Tilt back","Tilt left","Tilt right"][x-66])).join(""):""}</div>
+    <div><div class="sect">Accelerometer</div><div class="item${sel==="acc"?" sel":""}" data-s="acc"><span class="k">this profile</span><span class="b">${accSummary(cur)}</span></div>
+      ${fwAcc&&acc[cur][6]&&b0[GYX]!==1?[66,67,68,69].map(x=>item(x,["Tilt forward","Tilt back","Tilt left","Tilt right"][x-66])).join(""):""}
+      ${fwAcc?ACC_GESTS.map((n,k)=>acc[cur][12+2*k]||acc[cur][13+2*k]?`<div class="item" data-s="acc"><span class="k">${n}</span><span class="b">${[acc[cur][12+2*k],acc[cur][13+2*k]].map(ACTNAME).filter(x=>x).join(" + ")}</span></div>`:"").join(""):""}</div>`;
   $("#pic").innerHTML=picture();
   document.querySelectorAll("#v_map [data-s]").forEach(e=>e.onclick=()=>openSel(e.dataset.s));
   editor();
@@ -547,7 +550,7 @@ function openSel(v){ if(v==="gyro"){ showView("gyro"); return; } sel=isNaN(+v)?v
   /* an input of a stick / pad mode: edit the binding of the mode (normal / shifted) that has it */
   if(typeof sel==="number"){ const n=inMode(sel,0), sh=inMode(sel,1); if(sh&&!n) layer=1; else if(n&&!sh) layer=0; }
   render(); const d=$("#dlg"); if(d.showModal&&!d.open) d.showModal(); }
-const parentOf=s=>{ if(s>=70) return s<74?"ls":"rs"; if(s>=66) return "gyp"; if(s>=64) return s===64?"lp":"rp"; if(s>=60) return ["ls","rs","lp","rp"][s-60]; if(s>=30&&s<38) return s<34?"ls":"rs";
+const parentOf=s=>{ if(s>=70) return s<74?"ls":"rs"; if(s>=66) return prof[cur][GYX]===1||!fwAcc||!acc[cur][6]?"gyp":"acc"; if(s>=64) return s===64?"lp":"rp"; if(s>=60) return ["ls","rs","lp","rp"][s-60]; if(s>=30&&s<38) return s<34?"ls":"rs";
   if(s>=38&&s<58) return ((s>=38&&s<42)||(s>=46&&s<50)||s===54||s===55)?"lp":"rp"; return null; };
 /* slider + exact number box; values in display units. SNAP: the per binding times, which the
  * firmware keeps in 10 ms (turbo 5 ms) steps: the box steps and snaps like the slider */
@@ -610,8 +613,9 @@ function editor(){
         <label class="note"><input type="checkbox" class="gaf" data-f="2"${af&2?" checked":""}> Left stick pushed</label> <label class="note"><input type="checkbox" class="gaf" data-f="4"${af&4?" checked":""}> Right stick pushed</label></div>
         <div class="row2"><label>Needs</label><select id="gaall"><option value="0">any one of them</option><option value="1">all of them</option></select><small>how they act (hold to turn on / off, toggle) is the “… mode” setting of the gyro; none ticked = the single “Gyro moves the mouse with” button (firmware v51 test 62+)</small></div>`;
     }
-    h+=accHtml(cur);
+    h+=fwAcc?`<p class="note wrap">Accelerometer (tilt, tilt presses, gestures): <a href="#" id="toAcc">its own entry under the picture →</a></p>`:"";
     ed.innerHTML=h;
+    if($("#toAcc")) $("#toAcc").onclick=e=>{ e.preventDefault(); openSel("acc"); };
     { const setM=f=>{ let am=(b[GYX+9]|b[GYX+10]<<8|b[GYX+11]<<16|b[GYX+12]<<24)>>>0; am=f(am)>>>0; b[GYX+9]=am&255; b[GYX+10]=am>>>8&255; b[GYX+11]=am>>>16&255; b[GYX+12]=am>>>24; setDirty(); };
       ed.querySelectorAll(".gab").forEach(e=>e.onchange=()=>setM(am=>e.checked?am|(1<<+e.dataset.b):am&~(1<<+e.dataset.b)));
       ed.querySelectorAll(".gaf").forEach(e=>e.onchange=()=>{ b[GYX+13]=(b[GYX+13]&~+e.dataset.f)|(e.checked?+e.dataset.f:0); setDirty(); });
@@ -621,6 +625,12 @@ function editor(){
     wireSl("gtdz",v=>{ b[GYX+2]=Math.round(v); }); if($("#gt8")) $("#gt8").onchange=e=>{ b[GYX+3]=e.target.checked?1:0; setDirty(); };
     ["grgx","grgy","grgw","grgh"].forEach((id,k)=>wireSl(id,v=>{ if(!(b[GYX+4]|b[GYX+5]|b[GYX+6]|b[GYX+7])){ b[GYX+4]=50; b[GYX+5]=50; b[GYX+6]=100; b[GYX+7]=100; } b[GYX+4+k]=Math.round(v); }));
     wireSl("grdeg",v=>{ b[GYX+8]=Math.round(v); });
+    ed.querySelectorAll("[data-sub]").forEach(e=>e.onclick=()=>openSel(e.dataset.sub));
+    return;
+  }
+  if(sel==="acc"){
+    $("#dlgClear").style.display="none";
+    ed.innerHTML=`<h4>Accelerometer in profile ${cur+1}</h4>`+(fwAcc?accHtml(cur):`<p class="note wrap">Needs firmware v51.8 or newer (connect the controller).</p>`);
     accWire(cur);
     ed.querySelectorAll("[data-sub]").forEach(e=>e.onclick=()=>openSel(e.dataset.sub));
     return;
@@ -826,10 +836,10 @@ function editor(){
   const trigLink = s===27||s===23 ? `<p class="note">Full pull = the click at the end of the trigger. <a href="#" id="tlink">Soft pull →</a></p>` : s===58||s===59 ? `<p class="note"><a href="#" id="tlink">Full pull →</a></p>` : "";
   const back = par||(s>=10&&s<=13?"dp":null);
   /* sources the firmware only ever taps: radial slices, scroll wheel steps, swipes */
-  const pm = par&&par!=="gyp"?b[aOff(par)]:-1;
+  const pm = par&&par!=="gyp"&&par!=="acc"?b[aOff(par)]:-1;
   const tapSrc = pm===10?"radial menu slice":isPad(par||"ls")&&pm===4&&s>=54&&s<=57?"scroll wheel step":isPad(par||"ls")&&pm===8&&s>=38&&s<=45?"swipe":"";
-  ed.innerHTML=`${back?`<a href="#" id="back" class="note">← ${back==="dp"?"D-pad":back==="gyp"?"Gyro (this profile)":ANAME[back]}</a>`:""}<h4>${SRCNAME[s]||"input "+s}${useShift(g)?" <em>⇧ shifted</em>":""}<span class="live" id="lvsel"></span></h4>
-    ${par||back==="dp"?"":shiftBar(g)}${par&&par!=="gyp"&&g!=null&&shBtn(g)?(()=>{ const n=inMode(s,0), sh=inMode(s,1);
+  ed.innerHTML=`${back?`<a href="#" id="back" class="note">← ${back==="dp"?"D-pad":back==="gyp"?"Gyro (this profile)":back==="acc"?"Accelerometer":ANAME[back]}</a>`:""}<h4>${SRCNAME[s]||"input "+s}${useShift(g)?" <em>⇧ shifted</em>":""}<span class="live" id="lvsel"></span></h4>
+    ${par||back==="dp"?"":shiftBar(g)}${par&&par!=="gyp"&&par!=="acc"&&g!=null&&shBtn(g)?(()=>{ const n=inMode(s,0), sh=inMode(s,1);
       return `<div class="shiftbar"><span class="note">Binding of the</span><span class="seg"><button data-l="0" class="${layer?"":"on"}"${n?"":" disabled"}>Normal</button><button data-l="1" class="${layer?"on":""}"${sh?"":" disabled"}>Shifted ⇧ ${shName(g)}</button></span>${n&&sh?"":`<span class="note">(only the ${n?"normal":"shifted"} mode has this input)</span>`}</div>`; })():""}
     ${trig}
     ${tapSrc?`<p class="note">A ${tapSrc} is a tap: pressed and let go at once. Long / double press, toggle, turbo and the rest do not apply; “release press” taps its set right after the press set.</p>`:""}
@@ -1081,11 +1091,17 @@ async function accWrite(p){ const b=acc[p];
     const back=await accRead(p); if(back&&back.every((v,i)=>v===b[i])) return true; }
   return false; }
 async function accReadAll(){ try{ for(let p=0;p<4;p++){ const d=await accRead(p); if(!d){ fwAcc=false; return; } acc[p].set(d); } fwAcc=true; }catch(e){ fwAcc=false; } }
-/* the accelerometer part of the profile's gyro editor */
+/* one line under the picture: what the accelerometer does in profile p */
+function accSummary(p){ if(!fwAcc) return devs.length?"needs firmware v51.8+":"—";
+  const a=acc[p], n=ACC_GESTS.filter((_,k)=>a[12+2*k]||a[13+2*k]).length, out=[];
+  if(a[0]) out.push(`tilt → ${a[0]===2?"right":"left"} stick`);
+  if(a[6]) out.push(`tilt presses ${a[6]===2?"8":"4"}-way`);
+  if(n) out.push(`${n} gesture${n>1?"s":""}`);
+  return out.length?out.join(" · ")+(a[1]&128?" · off with the gyro":""):"nothing"; }
+/* the accelerometer editor (its own entry under the picture) */
 function accHtml(p){ if(!fwAcc) return "";
   const v=accDV(p), st=acc[p][0], fl=acc[p][1], sens=v.getUint16(2,true)||100, dz=v.getUint16(4,true)/100;
-  let h=`<div class="sect" style="margin-left:0">Accelerometer</div>
-    <div class="row2"><label>Tilt moves</label><select id="acst"><option value="0">nothing</option><option value="1">the left stick</option><option value="2">the right stick</option></select><small>tilting the controller pushes that stick (to Steam), on top of the stick itself — lean, steer</small></div>`;
+  let h=`<div class="row2"><label>Tilt moves</label><select id="acst"><option value="0">nothing</option><option value="1">the left stick</option><option value="2">the right stick</option></select><small>tilting the controller pushes that stick (to Steam), on top of the stick itself — lean, steer</small></div>`;
   if(st){ h+=`<div class="row2"><label>Sensitivity</label><input type="number" id="acsens" class="num" min="10" max="1000" step="1" value="${sens}" style="width:90px"> <span class="note">%</span><small id="acsensN">full deflection at ${(ACC_FULL*100/sens).toFixed(1)}° of tilt (100 % = ${ACC_FULL}°)</small></div>
     <div class="row2"><label>Dead zone</label><input type="number" id="acdz" class="num" min="0" max="90" step="0.5" value="${dz}" style="width:90px"> <span class="note">%</span><small>of the full deflection, tilt below it does nothing</small></div>
     <div class="row2"><label>Axes</label><span><label class="note"><input type="checkbox" class="acf" data-f="1"${fl&1?" checked":""}> invert X</label> <label class="note"><input type="checkbox" class="acf" data-f="2"${fl&2?" checked":""}> invert Y</label> <label class="note"><input type="checkbox" class="acf" data-f="4"${fl&4?" checked":""}> swap — forward tilt on X</label></span><small>by default sideways tilt is X, forward tilt is up</small></div>`; }
@@ -1112,9 +1128,9 @@ function accWire(p){ if(!fwAcc||!$("#acst")) return; const v=accDV(p);
     /* a gesture taps: profile switches, layers and macros are not offered */
     [...x.options].forEach(o=>{ const n=+o.value; if(n>=0xC0&&n<0xD0) o.remove(); });
     x.value=String(acc[p][12+2*k+j]); if(x.value==="") x.value="0";
-    x.onchange=()=>{ const was=acc[p].slice(12,26).some(b=>b); acc[p][12+2*k+j]=+x.value; if(!was&&+x.value){ if(!v.getUint16(10,true)) v.setUint16(10,100,true); if(!acc[p][0]&&!acc[p][6]) acc[p][1]|=128; } setDirty(); }; });
+    x.onchange=()=>{ const was=acc[p].slice(12,26).some(b=>b); acc[p][12+2*k+j]=+x.value; if(!was&&+x.value){ if(!v.getUint16(10,true)) v.setUint16(10,100,true); if(!acc[p][0]&&!acc[p][6]) acc[p][1]|=128; } setDirty(); render(); }; });
   if($("#acdz")) $("#acdz").onchange=e=>{ const x=Math.max(0,Math.min(90,+e.target.value||0)); e.target.value=x; v.setUint16(4,Math.round(x*100),true); setDirty(); };
-  document.querySelectorAll(".acf").forEach(c=>c.onchange=()=>{ const f=+c.dataset.f; acc[p][1]=(acc[p][1]&~f)|(c.checked?f:0); setDirty(); }); }
+  document.querySelectorAll(".acf").forEach(c=>c.onchange=()=>{ const f=+c.dataset.f; acc[p][1]=(acc[p][1]&~f)|(c.checked?f:0); setDirty(); if(f===128) render(); }); }
 
 async function readProfile(p){ const b=new Uint8Array(PROF_SIZE);
   for(let o=0;o<PROF_SIZE;o+=CH){
