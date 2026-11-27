@@ -1,7 +1,7 @@
 {
   "name": "sc26re-overlay",
   "productName": "SC2 Overlay",
-  "version": "1.4.0",
+  "version": "1.5.0",
   "description": "Steam Controller 2026 (sc26re): see-through on-screen menus and 3D controller over games",
   "main": "main.js",
   "author": "sc26re",

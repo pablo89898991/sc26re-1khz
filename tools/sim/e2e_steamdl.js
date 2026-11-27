@@ -16,7 +16,7 @@ let bad = 0; const check = (n, c, i = '') => { if (!c) bad++; console.log((c ? '
     return { open: d.open, head: d.open ? d.querySelector('p.note b')?.textContent : '', status: document.getElementById('pstatus').textContent }; }, link);
   // 1. no app running: a clear message
   let r = await run('steam://controllerconfig/1286680/3843516937');
-  check('no app: says SC2 Overlay is needed', !r.open && /newest SC2 Overlay/.test(r.status), r.status);
+  check('no app: says SC2 Overlay is needed', !r.open && /SC2 Overlay 1\.5 or newer/.test(r.status), r.status);
   // 2. not a link
   r = await run('hello'); check('not a link: says what to paste', !r.open && /steam:\/\/controllerconfig/.test(r.status), r.status);
   // 3. the app on 127.0.0.1:27150 (stand-in): the id from the link, the import dialog opens

@@ -1253,7 +1253,7 @@ async function steamCfgFetch(id){
   if(window.sc26reApp&&window.sc26reApp.steamConfig) return await window.sc26reApp.steamConfig(id);
   let r;
   try{ r=await fetch(`http://127.0.0.1:${STEAMCFG_PORT}/steam-config?id=${id}`); }
-  catch(e){ throw new Error("downloading needs the newest SC2 Overlay running on this computer (Steam does not let a web page ask for the file) — or open the remapper from the app's tray icon"); }
+  catch(e){ throw new Error("downloading needs SC2 Overlay 1.5 or newer running on this computer (Steam does not let a web page ask for the file) — or open the remapper from the app's tray icon"); }
   const j=await r.json(); if(!r.ok||j.error) throw new Error(j.error||("HTTP "+r.status)); return j; }
 /* the last download, so "Save .vdf" after "Load from Steam" does not ask Steam again */
 let steamCfgLast=null;
