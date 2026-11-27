@@ -22,6 +22,13 @@ This is a fork of [mwdmwd/sc26re](https://github.com/mwdmwd/sc26re), the open-so
 - **Accelerometer**: tilt as a stick or as buttons, and motion gestures (jabs, jolts, shake).
 - **Steam Input layouts**: import a `.vdf` file or a community layout straight from its `steam://controllerconfig/...` link, and export your profiles back to Steam Input.
 
+![The remapper with a Steam Input layout imported](docs/img/remapper.png)
+
+<table><tr>
+<td width="50%"><img src="docs/img/remapper_gyro.png" alt="Gyro and gyro mouse settings"><br><sub>Gyro and gyro mouse settings</sub></td>
+<td width="50%"><img src="docs/img/remapper_accel.png" alt="Accelerometer: tilt and motion gestures"><br><sub>Accelerometer: tilt and motion gestures</sub></td>
+</tr></table>
+
 ## Download and flash
 
 1. **Save your profiles first.** Flashing erases the custom firmware's storage, so remapper profiles are lost on every update. In the [Remapper](https://pablo89898991.github.io/sc26re-1khz/remap.html), press **Export** for each profile, and **Import** them after flashing.
@@ -40,6 +47,8 @@ All the tools run in Chrome or Edge (WebHID) and open offline once you have visi
 - **[Remapper](https://pablo89898991.github.io/sc26re-1khz/remap.html)**: profiles, bindings, gyro mouse and accelerometer settings, laid out like Steam Input's controller page.
 - **[Report Meter](https://pablo89898991.github.io/sc26re-1khz/meter.html)**: report rate, jitter and fresh gyro samples, calibration, and the firmware flasher.
 - **[3D Overlay](https://pablo89898991.github.io/sc26re-1khz/overlay.html)**: a 3D controller that follows your hands, for recordings and streams (capture it in OBS with a chroma key).
+
+  <img src="docs/img/overlay.png" alt="The 3D overlay: the right trackpad touched, A pressed" width="560">
 - **[Firmware Patcher](https://pablo89898991.github.io/sc26re-1khz/patcher.html)**: patches Valve's controller and Puck firmware in the browser (USB 1 kHz, 1 kHz gyro, faster Puck polling).
 
 **[SC2 Overlay](https://github.com/pablo89898991/sc26re-1khz/releases?q=overlay)** is the desktop app for **Windows and Linux**: the 3D overlay next to your game, every tool above in its tray icon (no browser or internet needed), the controller's battery, Steam layout downloads, and a notice when new firmware is out.
