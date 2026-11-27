@@ -9,11 +9,11 @@
     if (!await HWREG.connect()) return 'no controller';
     const bRead = async (pre, size) => { const out = new Uint8Array(size); for (let o = 0; o < size;) { const x = await rd(pre + '/' + o.toString(16)); if (!x.length) return null; out.set(x.slice(0, size - o), o); o += x.length; } return out; };
     const bWrite = async (pre, b) => { for (let a = 0; a < 4; a++) { for (let o = 0; o < b.length; o += 40) await snd(pre + '/' + o.toString(16), 0xEE, Array.from(b.slice(o, o + 40))); await snd(pre, 0xEF); const r = await bRead(pre, b.length); if (r && r.every((v, k) => v === b[k])) return true; } return false; };
-    const bk = { prof3: await bRead('sc26re/rmp/3', 3232), acc3: await bRead('sc26re/acc/3', 32), rp: await get('remap_profile'), on: await get('remap_on'), gm: await get('gm_enabled'), act: await get('gm_act_mode') };
+    const bk = { prof3: await bRead('sc26re/rmp/3', 3232), acc3: await bRead('sc26re/acc/3', 32), rp: await get('remap_profile'), on: await get('remap_on'), gm: await get('gm_enabled'), act: await get('gm_act_mode'), ab: await get('gm_act_button') };
     const res = []; let err = null, restored = false;
     const runScript = async steps => {
       const sb = new Uint8Array(steps.length * 42), v = new DataView(sb.buffer);
-      steps.forEach((s, i) => { const o = i * 42; v.setUint16(o, s.ms, true); v.setInt16(o + 36, s.ax || 0, true); v.setInt16(o + 38, s.ay || 0, true); v.setInt16(o + 40, s.az || 0, true); });
+      steps.forEach((s, i) => { const o = i * 42; v.setUint16(o, s.ms, true); v.setInt16(o + 36, s.ax || 0, true); v.setInt16(o + 38, s.ay || 0, true); v.setInt16(o + 40, s.az || 0, true); v.setUint32(o + 2, s.bt || 0, true); });
       for (let o = 0; o < sb.length; o += 40) await snd('sc26re/hwt', 0xEE, [1, o & 255, o >> 8, ...sb.slice(o, o + 40)]);
       await snd('sc26re/hwt', 0xEE, [2, steps.length, 0]); await sleep(steps.reduce((a, s) => a + s.ms, 0) + 250);
       let st; for (let k = 0; k < 60; k++) { st = await rd('sc26re/hwt_st'); if (st.length && !(st[0] & 6)) break; await sleep(100); }
@@ -69,9 +69,15 @@
       await set('gm_act_mode', 0, false); await set('gm_enabled', 1, false);
       await gcase('gyro on + pause flag: nothing', { g: GACT, fl: 0x80 }, jab('ay', 2), []);
       await gcase('gyro on, no flag: works', { g: GACT }, jab('ay', 2), ['fwd']);
+      // v51.9: the option pauses only while the gyro aims (its activation held), here: touching the right stick
+      const T = 1 << 20, touch = (seq) => seq.map(x => ({ ...x, bt: T }));
+      await set('gm_act_button', 20, false); await set('gm_act_mode', 1, false);
+      await gcase('gyro mouse on, thumb off the stick + pause flag: works', { g: GACT, fl: 0x80 }, jab('ay', 2), ['fwd']);
+      await gcase('thumb on the stick (aiming) + pause flag: nothing', { g: GACT, fl: 0x80 }, [{ ms: 100, ax: 0, ay: 0, az: G, bt: T }, ...touch(jab('ay', 2))], []);
+      await gcase('thumb off again 50 ms: works', { g: GACT, fl: 0x80 }, [{ ms: 100, ax: 0, ay: 0, az: G, bt: T }, ...touch(jab('ay', 2)), { ms: 50, ax: 0, ay: 0, az: G }, ...jab('ay', 2)], ['fwd']);
     } catch (e) { err = e.message; }
     finally {
-      try { await bWrite('sc26re/acc/3', bk.acc3); await bWrite('sc26re/rmp/3', bk.prof3); await set('remap_profile', bk.rp, false); await set('remap_on', bk.on, false); await set('gm_enabled', bk.gm, false); await set('gm_act_mode', bk.act, false); restored = true; } catch (e) { err = (err || '') + ' restore: ' + e.message; }
+      try { await bWrite('sc26re/acc/3', bk.acc3); await bWrite('sc26re/rmp/3', bk.prof3); await set('remap_profile', bk.rp, false); await set('remap_on', bk.on, false); await set('gm_enabled', bk.gm, false); await set('gm_act_mode', bk.act, false); await set('gm_act_button', bk.ab, false); restored = true; } catch (e) { err = (err || '') + ' restore: ' + e.message; }
     }
     return { checks: res.length, failed: res.filter(r => !r.pass).length, err, restored, res };
   }
