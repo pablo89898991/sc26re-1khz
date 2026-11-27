@@ -128,7 +128,9 @@ async function testRates(){
 
 async function testImu(){
   log("— gyro / accelerometer: every range and rate (controller at rest)");
-  const fsr=await cfgRead("gyro_fsr"), odr=await cfgRead("gyro_odr");
+  const fsr=await cfgRead("gyro_fsr"), odr=await cfgRead("gyro_odr"), gm=await cfgRead("gyro_fsr").then(()=>cfgRead("gm_enabled"));
+  /* the gyro mouse takes the motion out of the pad report (by design): off for this part */
+  await stage("gm_enabled",0);
   await imuMode(0x1C); await sleep(500);
   let base=null;
   for(const o of [2000,4000,8000]) for(const f of [250,500,1000,2000]){
@@ -143,7 +145,7 @@ async function testImu(){
     R["imu_"+o+"_"+f]=s;
     await imuMode(0x1C);
   }
-  await stage("gyro_odr",odr.v); await stage("gyro_fsr",fsr.v);
+  await stage("gyro_odr",odr.v); await stage("gyro_fsr",fsr.v); await stage("gm_enabled",gm.v);
 }
 
 async function testLoad(){
@@ -185,7 +187,7 @@ async function testDiag(){
 }
 
 $("#run").onclick=async()=>{
-  $("#run").disabled=true; $("#log").textContent=""; nbad=0; R.checks=[];
+  $("#run").disabled=true; $("#log").textContent=""; nbad=0; R.checks=[]; delete R.error;
   try{
     const f=await read("sc26re/fwid"); R.build=u32(f,0).toString(16);
     const doc=await (await fetch("hwtests.json?"+Date.now())).json();
