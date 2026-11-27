@@ -3892,7 +3892,8 @@ static bool gest_grav_ok;
 static uint32_t gest_quiet_until;
 static int8_t gest_last_sign;   /* shake: the last jolt over the threshold, +-(axis + 1) */
 static uint8_t gest_count;
-static uint32_t gest_first_ms, gest_dir_ms, gest_shake_block, gest_cross_ms;
+static uint32_t gest_first_ms, gest_dir_ms, gest_shake_block, gest_cross_ms, gest_alt_ms;
+static uint8_t gest_pace;       /* shake: 0 not known yet, 1 quick (jolts <= 0.3 s apart), 2 slow */
 static bool gest_armed = true;  /* shake: the jolt dropped below half the threshold since */
 
 static void acc_gestures_reset(void)
@@ -3900,7 +3901,9 @@ static void acc_gestures_reset(void)
 	gest_grav_ok = false;
 	gest_count = 0U;
 	gest_armed = true;
-	gest_quiet_until = gest_shake_block = gest_dir_ms = gest_first_ms = gest_cross_ms = k_uptime_get_32() - 10000U;
+	gest_pace = 0U;
+	gest_quiet_until = gest_shake_block = gest_dir_ms = gest_first_ms = gest_cross_ms = gest_alt_ms =
+		k_uptime_get_32() - 10000U;
 	memset(gest_until, 0, sizeof(gest_until));
 }
 
@@ -3939,12 +3942,17 @@ static void gestures(const struct remap_accel *c, const float a[3], float dt, ui
 	{
 		gest_armed = true;
 	}
-	if((int32_t)(now - gest_first_ms) > 800 || (int32_t)(now - gest_cross_ms) > 300)
+	/* a shake: 4 jolts, each the other way, at one pace: quick (at most 0.3 s apart, within 0.8 s)
+	 * or slow (0.3..1 s apart, within 3 s). Recorded on the controller (v51.8 test 11), a hand
+	 * shake tilting left and right: jolts just over 1.5 g, 0.5..1 s apart, which the quick pace
+	 * alone never saw. A jab is quick (push, stop, sometimes a rebound, 40..150 ms apart) and the
+	 * next jab comes after a pause: the pace changes there and the count starts again, so a jab
+	 * left and a jab right 0.8 s later are no shake (seen on the controller with test 7) */
+	if((int32_t)(now - gest_first_ms) > (gest_pace == 1U ? 800 : 3000) ||
+	   (int32_t)(now - gest_cross_ms) > (gest_pace == 1U ? 300 : 1000))
 	{
-		/* a shake is one movement back and forth: a pause of more than 0.3 s between jolts
-		 * ends it (seen on the controller: a jab left, its stop, then a jab right and its stop
-		 * 0.8 s later made 4 jolts and so a shake) */
 		gest_count = 0U;
+		gest_pace = 0U;
 	}
 	if(fabsf(best) > thr)
 	{
@@ -3965,16 +3973,29 @@ static void gestures(const struct remap_accel *c, const float a[3], float dt, ui
 		}
 		if(counts && (gest_count == 0U || sg != gest_last_sign))
 		{
+			uint8_t pace = (uint32_t)(now - gest_alt_ms) <= 300U ? 1U : 2U;
+
+			if(gest_count != 0U && gest_count >= 2U && pace != gest_pace)
+			{
+				gest_count = 0U; /* another pace: this jolt starts a new series */
+			}
 			if(gest_count == 0U)
 			{
 				gest_first_ms = now;
+				gest_pace = 0U;
+			}
+			else if(gest_count == 1U)
+			{
+				gest_pace = pace;
 			}
 			gest_count++;
 			gest_last_sign = sg;
+			gest_alt_ms = now;
 		}
 		if(gest_count >= 4U)
 		{
 			gest_count = 0U;
+			gest_pace = 0U;
 			if(c->gest[REMAP_GEST_SHAKE][0] || c->gest[REMAP_GEST_SHAKE][1])
 			{
 				gest_until[REMAP_GEST_SHAKE] = now + REMAP_ACC_GEST_MS;
@@ -3994,7 +4015,9 @@ static void gestures(const struct remap_accel *c, const float a[3], float dt, ui
 		gest_shake_block = now + 600U;
 		return;
 	}
-	/* a jolt soon after the last one: shaking, not a gesture of its own */
+	/* a jolt soon after the last one: shaking, not a gesture of its own. Kept at 0.7 s (a jab
+	 * right 0.8 s after a jab left is its own gesture); a slow shake can so give a direction
+	 * between its jolts before it is recognised */
 	if((int32_t)(now - gest_dir_ms) < 700)
 	{
 		gest_dir_ms = now;

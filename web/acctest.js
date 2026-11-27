@@ -64,6 +64,11 @@
       // two hand jabs 0.8 s apart (push, stop, small rebound each): left, right, and no shake
       const hjab = g => { const base = { ax: 0, ay: 0, az: G }; return [{ ms: 40, ...base, ax: Math.round(g * G) }, { ms: 40, ...base, ax: Math.round(-g * G) }, { ms: 40, ...base, ax: Math.round(g * 0.85 * G) }, { ms: 680, ...base }]; };
       await gcase('jab left, jab right 0.8 s later: no shake', { g: GACT }, [...hjab(-2), ...hjab(2)], ['left', 'right']);
+      // a slow hand shake as recorded on the controller (test 11): 1.6 g jolts 0.5..1 s apart -> a shake
+      // (its second jolt the other way can still fire before it is recognised: the expectation allows it)
+      const sshake = []; [513, 969, 682, 578].forEach((gap, i) => { sshake.push({ ms: 60, ax: Math.round((i % 2 ? 1.6 : -1.6) * G), ay: 0, az: G }, { ms: gap - 60, ax: 0, ay: 0, az: G }); });
+      sshake.push({ ms: 60, ax: Math.round(-1.6 * G), ay: 0, az: G }, { ms: 1200, ax: 0, ay: 0, az: G });
+      await gcase('slow shake (0.5..1 s apart): a shake', { g: GACT }, sshake, ['left', 'left', 'shake']);
       const slow = []; for (let d = 0; d <= 60; d += 3) slow.push({ ms: 30, ...tilt(d, 0) });
       await gcase('slow tilt: nothing', { g: GACT }, slow, []);
       await set('gm_act_mode', 0, false); await set('gm_enabled', 1, false);

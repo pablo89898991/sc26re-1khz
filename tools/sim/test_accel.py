@@ -198,6 +198,21 @@ s = gfresh(gblob()); ev = []
 for i in range(8): ev += s.run(150, ax=int((2 if i % 2 == 0 else -2) * G), ay=0, az=G).kbd()
 ev += s.run(500, ax=0, ay=0, az=G).kbd()
 t = [inv.get(c, c) for c in taps(ev)]; check("slower shake (150 ms a side): a shake", t.count("x") == 1, t)
+
+# recorded on the controller (v51.8 test 11): a hand shake tilting left and right is slow, jolts just
+# over the threshold 0.5..1 s apart: a shake. Tilt jolts last ~60 ms and have no quick stop
+s = gfresh(gblob()); ev = []
+for i, gap in enumerate((513, 969, 682, 578, 0)):
+    ev += s.run(60, ax=int((1.6 if i % 2 else -1.6) * G), ay=0, az=G).kbd()
+    if gap: ev += s.run(gap - 60, ax=0, ay=0, az=G).kbd()
+ev += s.run(1200, ax=0, ay=0, az=G).kbd()
+t = [inv.get(c, c) for c in taps(ev)]; check("slow shake (0.5..1 s apart, as recorded): a shake", t.count("x") == 1, t)
+# two slow single jolts and a pause: nothing more than their directions
+s = gfresh(gblob()); ev = []
+for i in range(3):
+    ev += s.run(60, ax=int((1.6 if i % 2 else -1.6) * G), ay=0, az=G).kbd() + s.run(600, ax=0, ay=0, az=G).kbd()
+ev += s.run(1500, ax=0, ay=0, az=G).kbd()
+t = [inv.get(c, c) for c in taps(ev)]; check("three slow jolts: no shake", "x" not in t, t)
 # two actions on one gesture
 s = gfresh(acc_blob(gest={FWD: (0xE1, key("w"))})); k = jab(s, "ay", 2.0)
 check("two actions: shift + w together", any(0xE1 in st and key("w") in st for st in k), k)
