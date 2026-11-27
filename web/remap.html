@@ -116,10 +116,11 @@
 <body>
 <div class="top">
   <div class="topin">
-    <div class="brand">SC2 <span class="hz">Remapper</span> <span class="note" id="pagever" title="page version — if it is older than expected, press Ctrl+F5">p.2026-11-27c</span></div>
+    <div class="brand">SC2 <span class="hz">Remapper</span> <span class="note" id="pagever" title="page version — if it is older than expected, press Ctrl+F5">p.2026-11-27d</span></div>
     <button class="primary" id="connect">Connect controller</button>
     <span id="status" class="chip">not connected</span>
     <span id="batt" class="chip" hidden></span>
+    <label class="note" title="While this page is connected the controller does not switch itself off for inactivity (as in the report meter). Untick to let the Auto power-off setting work while the page is open."><input type="checkbox" id="stayOn"> Keep controller on</label>
     <span class="grow"></span>
     <button id="onoff" class="sw" title="On the controller: Steam + Menu">Remapper <b>?</b></button>
     <button id="gmOn" class="sw" title="On the controller: Steam + View">Gyro mouse <b>?</b></button>
@@ -1609,7 +1610,16 @@ $("#cToCtl").onclick=e=>{ e.preventDefault(); showView("ctl"); };
 /* while this page is connected: gyro on (like Steam does), no auto power-off and no lizard
    mode (the firmware turns it off on each keep-alive and back on 10 s after the page closes) */
 async function imuMode(v){ const b=new Uint8Array(63); b[0]=0x87; b[1]=3; b[2]=48; b[3]=v&255; b[4]=(v>>8)&255; const d=ctl(); if(d) await serial(()=>d.sendFeatureReport(1,b)); }
-setInterval(()=>{ if(!devs.length) return; imuMode(0x1C).catch(()=>{}); read("sc26re/awake").catch(()=>{}); },2000);
+/* "Keep controller on" (as in the report meter), remembered: the keep-alive also keeps lizard mode
+ * off, so unticked the page only keeps the gyro on. The 2 s tick comes from a worker: Chrome slows a
+ * page's own timers to once a minute in a background tab, a worker's it does not */
+{ let on=true; try{ on=localStorage.getItem("sc26re_stayon")!=="0"; }catch(e){}
+  $("#stayOn").checked=on; $("#stayOn").onchange=e=>{ try{ localStorage.setItem("sc26re_stayon",e.target.checked?"1":"0"); }catch(_){} }; }
+function keepAlive(){ if(!devs.length) return; imuMode(0x1C).catch(()=>{}); if($("#stayOn").checked) read("sc26re/awake").catch(()=>{}); }
+{ let ticks=0; const page=()=>{ if(!ticks) setInterval(keepAlive,2000); ticks=-1; };
+  try{ const w=new Worker(URL.createObjectURL(new Blob(["setInterval(()=>postMessage(0),2000)"],{type:"text/javascript"})));
+    w.onmessage=()=>{ if(ticks>=0){ ticks++; keepAlive(); } }; w.onerror=page; setTimeout(()=>{ if(!ticks) page(); },5000); }
+  catch(e){ page(); } }
 window.addEventListener("pagehide",()=>{ if(devs.length) imuMode(0).catch(()=>{}); });
 
 /* ---- per-profile gyro (scope) ---- */
