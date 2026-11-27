@@ -116,7 +116,7 @@
 <body>
 <div class="top">
   <div class="topin">
-    <div class="brand">SC2 <span class="hz">Remapper</span> <span class="note" id="pagever" title="page version — if it is older than expected, press Ctrl+F5">p.2026-11-27h</span></div>
+    <div class="brand">SC2 <span class="hz">Remapper</span> <span class="note" id="pagever" title="page version — if it is older than expected, press Ctrl+F5">p.2026-11-27i</span></div>
     <button class="primary" id="connect">Connect controller</button>
     <span id="status" class="chip">not connected</span>
     <span id="batt" class="chip" hidden></span>
@@ -527,12 +527,14 @@ function render(){
   const b0=prof[cur];
   /* laid out as Steam Input's controller page: sides top to bottom, the sticks, d-pad, motion and
    * face buttons along the bottom; Steam's names in brackets */
-  $("#colL").innerHTML=`<div class="sect">Left trigger (L2)</div>${item(58,`soft pull ${softPct(0)}%`)}${item(27,"full pull")}
-    <div class="sect">Left</div>${item(19,"LB (L1)")}${item(17,"L4")}${item(18,"L5")}${item(14,"View (Select)")}
+  $("#colL").innerHTML=`<div class="sect">Left bumper</div>${item(19,"LB (L1)")}
+    <div class="sect">Left trigger (L2)</div>${item(58,`soft pull ${softPct(0)}%`)}${item(27,"full pull")}
+    <div class="sect">Left</div>${item(17,"L4")}${item(18,"L5")}${item(14,"View (Select)")}
     <div class="sect">Grip touch (gripsense)</div>${item(29,"Left")}
     <div class="sect">Left trackpad</div>${anItem("lp")}${dirItems("lp")}${item(26,"Click")}${item(25,"Touch")}`;
-  $("#colR").innerHTML=`<div class="sect">Right trigger (R2)</div>${item(59,`soft pull ${softPct(1)}%`)}${item(23,"full pull")}
-    <div class="sect">Right</div>${item(9,"RB (R1)")}${item(7,"R4")}${item(8,"R5")}${item(6,"Menu (Start)")}${item(4,"QAM (…)")}
+  $("#colR").innerHTML=`<div class="sect">Right bumper</div>${item(9,"RB (R1)")}
+    <div class="sect">Right trigger (R2)</div>${item(59,`soft pull ${softPct(1)}%`)}${item(23,"full pull")}
+    <div class="sect">Right</div>${item(7,"R4")}${item(8,"R5")}${item(6,"Menu (Start)")}${item(4,"QAM (…)")}
     <div class="sect">Grip touch (gripsense)</div>${item(28,"Right")}
     <div class="sect">Right trackpad</div>${anItem("rp")}${dirItems("rp")}${item(22,"Click")}${item(21,"Touch")}`;
   $("#colB").innerHTML=`<div><div class="sect">Left stick</div>${anItem("ls")}${dirItems("ls")}${item(15,"L3 click")}${item(24,"Stick touch")}</div>
