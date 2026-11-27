@@ -6,7 +6,7 @@ const VDF = fs.readFileSync('/mnt/user-data/uploads/0289a2b4-3737914488_controll
 let bad = 0; const check = (n, c, i = '') => { if (!c) bad++; console.log((c ? 'PASS ' : 'FAIL ') + n + (c ? '' : ' — ' + i)); };
 (async () => {
   const br = await chromium.launch({ executablePath: '/usr/bin/google-chrome', args: ['--no-sandbox'] });
-  const pg = await br.newPage(); const errs = []; pg.on('pageerror', e => errs.push(e.message));
+  const pg = await br.newPage({ acceptDownloads: true }); const errs = []; pg.on('pageerror', e => errs.push(e.message));
   await pg.addInitScript({ path: __dirname + '/webhid_shim.js' });
   await pg.goto('http://127.0.0.1:8766/remap.html');
   await pg.evaluate(() => document.querySelector('#connect').click()); await pg.waitForTimeout(5000);
@@ -28,9 +28,20 @@ let bad = 0; const check = (n, c, i = '') => { if (!c) bad++; console.log((c ? '
   check('browser + app: downloads by the link\'s number and opens the import', r.open && asked === '3843516937' && /downloaded “Deadlock test”/.test(r.status), JSON.stringify(r) + ' asked ' + asked);
   r = await run('3737914488'); check('a bare number works too', r.open && asked === '3737914488', JSON.stringify(r));
   r = await run('https://steamcommunity.com/sharedfiles/filedetails/?id=3725332313'); check('a community page link works too', r.open && asked === '3725332313', JSON.stringify(r));
+  // Save .vdf: the file itself, named as Steam names it; the link after a load saves the same without asking again
+  let n = 0; srv.on('request', () => n++);
+  await pg.evaluate(() => { const d = document.getElementById('vdlg'); if (d.open) d.close(); document.getElementById('vdlid').value = '3843516937'; });
+  let [dl] = await Promise.all([pg.waitForEvent('download'), pg.click('#vdlsave')]);
+  let txt = fs.readFileSync(await dl.path(), 'utf8');
+  check('Save .vdf: the file, with Steam\'s name', dl.suggestedFilename() === '3843516937_controller_config.vdf' && txt === VDF && asked === '3843516937', dl.suggestedFilename());
+  check('Save .vdf: no import dialog', !(await pg.evaluate(() => document.getElementById('vdlg').open)));
+  r = await run('3843516937'); check('Load after Save: no second download', r.open && n === 1, 'requests ' + n);
+  await pg.evaluate(() => document.getElementById('vdlg').close());
+  [dl] = await Promise.all([pg.waitForEvent('download'), pg.click('#vdlfile')]);
+  check('"save the .vdf file" link after a load', fs.readFileSync(await dl.path(), 'utf8') === VDF && n === 1);
   srv.close();
   // 4. inside the app: window.sc26reApp.steamConfig
-  await pg.evaluate(v => { window.sc26reApp = { steamConfig: async id => ({ id, title: 'in app ' + id, filename: '', vdf: v }) }; }, VDF);
+  await pg.evaluate(v => { steamCfgLast = null; window.sc26reApp = { steamConfig: async id => ({ id, title: 'in app ' + id, filename: '', vdf: v }) }; }, VDF);
   r = await run('steam://controllerconfig/1286680/3843516937'); check('inside the app: through window.sc26reApp', r.open && /in app 3843516937/.test(r.status), JSON.stringify(r));
   await pg.evaluate(() => { window.sc26reApp = { steamConfig: async () => { throw new Error('Steam has no layout 1 (or it is private)'); } }; });
   r = await run('1234567'); check('an error from Steam is shown', !r.open && /private/.test(r.status), r.status);

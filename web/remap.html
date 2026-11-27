@@ -149,7 +149,7 @@
         <button id="export" class="ghost">Export</button>
         <label class="ghost btnlike">Import<input type="file" id="import" accept=".json" hidden></label>
         <label class="ghost btnlike" title="Steam Input controller configuration (.vdf, e.g. from Steam’s controller config folder or a community layout)">Import Steam Input<input type="file" id="vimport" accept=".vdf,.txt" hidden></label>
-        <span class="vdlbox" title="a Steam Input community layout: right-click it in Steam → copy the link (steam://controllerconfig/…), or its number"><input id="vdlid" placeholder="steam://controllerconfig/… or layout number" style="width:250px"><button class="ghost" id="vdl">Download Steam Input</button></span>
+        <span class="vdlbox" title="a Steam Input community layout: right-click it in Steam → copy the link (steam://controllerconfig/…), or its number"><input id="vdlid" placeholder="steam://controllerconfig/… or layout number" style="width:250px"><button class="ghost" id="vdl" title="download the layout and load it into the profiles (the import dialog)">Load from Steam</button><button class="ghost" id="vdlsave" title="download the layout and save it as a .vdf file">Save .vdf</button></span>
         <button id="vexport" class="ghost" title="All 4 profiles as one Steam Input configuration (.vdf): profiles become action sets, the ones used as layers become action layers">Export Steam Input</button>
         <button id="clear" class="ghost danger">Clear</button>
       </div>
@@ -285,7 +285,7 @@
       <p>Stick touch (capsense), grip touch (gripsense), trackpad touch and trackpad clicks are bindable like buttons.</p>
       <h3>Profiles</h3>
       <p>4 profiles. Choose the active one with <b>Steam + D-pad</b> on the controller (up = 1, right = 2, down = 3, left = 4; the beep gets higher with the number), at the top of “Buttons &amp; profiles”, or with a “Switch to profile” action bound to any input. Export / Import saves a profile to a file.</p>
-      <p><b>Steam Input layouts</b>: “Download Steam Input” takes a community layout straight from Steam: paste its link (in Steam, right-click the layout → copy the link, <code>steam://controllerconfig/…</code>) or its number; it needs SC2 Overlay running on the computer, or the remapper opened from the app. “Import Steam Input” reads a Steam controller configuration (<code>.vdf</code> — Steam keeps yours in <code>Steam\steamapps\common\Steam Controller Configs\&lt;id&gt;\config\&lt;app&gt;\</code>). Each action set or action layer can go into one of the 4 profiles; mode shifts, long / double / start / release presses, toggle, turbo, delays, haptics, stick and trackpad modes, radial menus, mouse regions, triggers, LED and gyro settings come along. Layouts made for a game’s own Steam Input API use “game actions”: pick the key each one has in the game’s settings (keys the game itself names are filled in). Steam commands (screenshot, overlay, on-screen keyboard) are listed and skipped. “Export Steam Input” writes all 4 profiles as one <code>.vdf</code> for Steam (profiles used as layers become action layers); macros, mouse-move actions, gyro tilt and gyro mouse region have no Steam equivalent and are named when left out.</p>
+      <p><b>Steam Input layouts</b>: Steam Input community layouts straight from Steam: paste the link (in Steam, right-click the layout → copy the link, <code>steam://controllerconfig/…</code>) or its number; “Load from Steam” opens the import, “Save .vdf” saves the file. It needs SC2 Overlay running on the computer, or the remapper opened from the app. “Import Steam Input” reads a Steam controller configuration (<code>.vdf</code> — Steam keeps yours in <code>Steam\steamapps\common\Steam Controller Configs\&lt;id&gt;\config\&lt;app&gt;\</code>). Each action set or action layer can go into one of the 4 profiles; mode shifts, long / double / start / release presses, toggle, turbo, delays, haptics, stick and trackpad modes, radial menus, mouse regions, triggers, LED and gyro settings come along. Layouts made for a game’s own Steam Input API use “game actions”: pick the key each one has in the game’s settings (keys the game itself names are filled in). Steam commands (screenshot, overlay, on-screen keyboard) are listed and skipped. “Export Steam Input” writes all 4 profiles as one <code>.vdf</code> for Steam (profiles used as layers become action layers); macros, mouse-move actions, gyro tilt and gyro mouse region have no Steam equivalent and are named when left out.</p>
       <h3>Gyro</h3>
       <p>Gyro settings, gyro as mouse (on/off: <b>Steam + View</b>) and gyro as a <b>joystick</b> (right or left stick, with dead zone, anti dead zone, full-deflection speed and response curve) are on the “Gyro &amp; gyro mouse” page, the same for every profile. The mouse also has a response curve and acceleration (off by default, so the real-world sensitivity stays 1:1).</p>
     </div>
@@ -1255,11 +1255,22 @@ async function steamCfgFetch(id){
   try{ r=await fetch(`http://127.0.0.1:${STEAMCFG_PORT}/steam-config?id=${id}`); }
   catch(e){ throw new Error("downloading needs the newest SC2 Overlay running on this computer (Steam does not let a web page ask for the file) — or open the remapper from the app's tray icon"); }
   const j=await r.json(); if(!r.ok||j.error) throw new Error(j.error||("HTTP "+r.status)); return j; }
-$("#vdl").onclick=async()=>{
-  const id=steamCfgId($("#vdlid").value); if(!id){ $("#pstatus").innerHTML=`<span class="err">paste a steam://controllerconfig/… link or the layout’s number</span>`; return; }
+/* the last download, so "Save .vdf" after "Load from Steam" does not ask Steam again */
+let steamCfgLast=null;
+function steamCfgSave(j){ const a=document.createElement("a"); a.href=URL.createObjectURL(new Blob([j.vdf],{type:"text/plain"}));
+  a.download=j.filename||`${j.id}_controller_config.vdf`; a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),5000); }
+async function steamCfgGet(){
+  const id=steamCfgId($("#vdlid").value); if(!id){ $("#pstatus").innerHTML=`<span class="err">paste a steam://controllerconfig/… link or the layout’s number</span>`; return null; }
+  if(steamCfgLast&&steamCfgLast.id===id) return steamCfgLast;
   $("#pstatus").textContent=`downloading Steam Input layout ${id}…`;
-  try{ const j=await steamCfgFetch(id); $("#pstatus").innerHTML=`<span class="ok">downloaded “${esc(j.title||id)}” (${j.vdf.length} bytes)</span>`; vdfImport(j.vdf, j.title||j.filename||id); }
-  catch(e){ $("#pstatus").innerHTML=`<span class="err">${esc(e.message)}</span>`; } };
+  try{ const j=await steamCfgFetch(id); j.id=j.id||id; steamCfgLast=j; return j; }
+  catch(e){ $("#pstatus").innerHTML=`<span class="err">${esc(e.message)}</span>`; return null; } }
+$("#vdl").onclick=async()=>{ const j=await steamCfgGet(); if(!j) return;
+  $("#pstatus").innerHTML=`<span class="ok">downloaded “${esc(j.title||j.id)}” (${j.vdf.length} bytes)</span> <a href="#" id="vdlfile">save the .vdf file</a>`;
+  $("#vdlfile").onclick=e=>{ e.preventDefault(); steamCfgSave(j); };
+  vdfImport(j.vdf, j.title||j.filename||j.id); };
+$("#vdlsave").onclick=async()=>{ const j=await steamCfgGet(); if(!j) return; steamCfgSave(j);
+  $("#pstatus").innerHTML=`<span class="ok">saved “${esc(j.title||j.id)}” as ${esc(j.filename||j.id+"_controller_config.vdf")}</span>`; };
 $("#vdlid").onkeydown=e=>{ if(e.key==="Enter") $("#vdl").click(); };
 async function vdfImport(text, fname){
   try{ const tree=SteamVDF.parse(text); const root=SteamVDF.get(tree,"controller_mappings"); if(!root) throw new Error("not a Steam Input configuration (no controller_mappings)");
