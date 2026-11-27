@@ -280,6 +280,53 @@ function runArgs(argv) {
 const recenter = () => modelWin && modelWin.webContents.executeJavaScript(`window.postMessage("sc26re:recenter", location.origin)`).catch(() => {});
 app.on("second-instance", (e, argv) => { if (!runArgs(argv)) openRemap(); });
 
+/* ---------- 1.5: Steam Input community layouts (steam://controllerconfig/<game>/<id>) ----------
+ * The remapper downloads one by its number. Steam's file list (ISteamRemoteStorage/GetPublishedFileDetails,
+ * no key needed) cannot be asked from a web page (no CORS), so the app asks it: the remapper inside the
+ * app through window.sc26reApp.steamConfig, the remapper in the browser on 127.0.0.1:27150 while the app
+ * runs (only for this project's pages). Only Steam controller layouts, only from Steam's own file server. */
+const STEAMCFG_PORT = 27150;
+const STEAMCFG_ORIGINS = ["https://pablo89898991.github.io", ORIGIN];
+async function steamConfig(id) {
+  id = String(id || "");
+  if (!/^\d{6,20}$/.test(id)) throw new Error("not a layout number");
+  const body = new URLSearchParams({ itemcount: "1", "publishedfileids[0]": id }).toString();
+  const r = await net.fetch("https://api.steampowered.com/ISteamRemoteStorage/GetPublishedFileDetails/v1/",
+    { method: "POST", body, headers: { "Content-Type": "application/x-www-form-urlencoded", "User-Agent": "SC2-Overlay" } });
+  if (!r.ok) throw new Error("Steam answered " + r.status);
+  const d = (((await r.json()) || {}).response || {}).publishedfiledetails || [];
+  const f = d[0];
+  if (!f || f.result !== 1) throw new Error("Steam has no layout " + id + " (or it is private)");
+  if (Number(f.consumer_app_id) !== 241100 || !/_controller_config\.vdf$/.test(f.filename || "")) throw new Error("item " + id + " is not a Steam Input layout");
+  const u = new URL(f.file_url || "about:blank");
+  if (u.protocol !== "https:" || !/(^|\.)steamusercontent\.com$/.test(u.hostname)) throw new Error("unexpected file address");
+  if (Number(f.file_size) > 2 * 1024 * 1024) throw new Error("the layout file is too big");
+  const v = await net.fetch(u.toString(), { headers: { "User-Agent": "SC2-Overlay" } });
+  if (!v.ok) throw new Error("download failed: " + v.status);
+  const vdf = await v.text();
+  if (vdf.length > 2 * 1024 * 1024 || !/"controller_mappings"/.test(vdf)) throw new Error("not a Steam Input layout file");
+  return { id, title: String(f.title || ""), filename: String(f.filename || ""), vdf };
+}
+function steamConfigServer() {
+  const http = require("http");
+  const srv = http.createServer(async (req, res) => {
+    const origin = req.headers.origin || "";
+    if (STEAMCFG_ORIGINS.includes(origin)) {
+      res.setHeader("Access-Control-Allow-Origin", origin);
+      res.setHeader("Vary", "Origin");
+      res.setHeader("Access-Control-Allow-Private-Network", "true");
+    }
+    if (req.method === "OPTIONS") { res.writeHead(204, { "Access-Control-Allow-Methods": "GET" }); res.end(); return; }
+    const u = new URL(req.url, "http://127.0.0.1");
+    const send = (code, obj) => { res.writeHead(code, { "Content-Type": "application/json" }); res.end(JSON.stringify(obj)); };
+    if (req.method !== "GET" || u.pathname !== "/steam-config") return send(404, { error: "not found" });
+    if (!STEAMCFG_ORIGINS.includes(origin)) return send(403, { error: "only for the sc26re pages" });
+    try { send(200, await steamConfig(u.searchParams.get("id"))); } catch (e) { send(400, { error: e.message }); }
+  });
+  srv.on("error", e => console.warn("steam-config server:", e.message)); /* the port taken: in-app downloads still work */
+  srv.listen(STEAMCFG_PORT, "127.0.0.1");
+}
+
 app.whenReady().then(() => {
   protocol.handle("app", req => {
     const p = decodeURIComponent(new URL(req.url).pathname), file = path.normalize(path.join(WEB, p));
@@ -304,6 +351,11 @@ app.whenReady().then(() => {
     const d = list.find(x => x.productId === 0x1302) || list[0];
     cb(d ? d.deviceId : "");
   });
+  ipcMain.handle("steamConfig", (e, id) => {
+    if (!String(e.senderFrame && e.senderFrame.url || "").startsWith(ORIGIN)) throw new Error("not allowed");
+    return steamConfig(id);
+  });
+  steamConfigServer();
   ipcMain.on("arrange", () => toggleArrange());
   ipcMain.on("battery", (e, info) => {
     const b = info && typeof info.text === "string" ? { pct: +info.pct || 0, text: info.text.slice(0, 120), charging: !!info.charging } : null;

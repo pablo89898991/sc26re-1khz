@@ -13,4 +13,6 @@ contextBridge.exposeInMainWorld("sc26reApp", {
   modelRect: r => ipcRenderer.send("modelRect", r),
   /* 1.4: the menu window over the whole screen is shown only while a menu / toast / arranging is on it */
   menuShow: on => ipcRenderer.send("menuShow", !!on),
+  /* 1.5: a Steam Input community layout by its number: { id, title, filename, vdf } */
+  steamConfig: id => ipcRenderer.invoke("steamConfig", String(id)),
 });

@@ -116,7 +116,7 @@
 <body>
 <div class="top">
   <div class="topin">
-    <div class="brand">SC2 <span class="hz">Remapper</span> <span class="note" id="pagever" title="page version — if it is older than expected, press Ctrl+F5">p.2026-11-27a</span></div>
+    <div class="brand">SC2 <span class="hz">Remapper</span> <span class="note" id="pagever" title="page version — if it is older than expected, press Ctrl+F5">p.2026-11-27b</span></div>
     <button class="primary" id="connect">Connect controller</button>
     <span id="status" class="chip">not connected</span>
     <span id="batt" class="chip" hidden></span>
@@ -149,6 +149,7 @@
         <button id="export" class="ghost">Export</button>
         <label class="ghost btnlike">Import<input type="file" id="import" accept=".json" hidden></label>
         <label class="ghost btnlike" title="Steam Input controller configuration (.vdf, e.g. from Steam’s controller config folder or a community layout)">Import Steam Input<input type="file" id="vimport" accept=".vdf,.txt" hidden></label>
+        <span class="vdlbox" title="a Steam Input community layout: right-click it in Steam → copy the link (steam://controllerconfig/…), or its number"><input id="vdlid" placeholder="steam://controllerconfig/… or layout number" style="width:250px"><button class="ghost" id="vdl">Download Steam Input</button></span>
         <button id="vexport" class="ghost" title="All 4 profiles as one Steam Input configuration (.vdf): profiles become action sets, the ones used as layers become action layers">Export Steam Input</button>
         <button id="clear" class="ghost danger">Clear</button>
       </div>
@@ -284,7 +285,7 @@
       <p>Stick touch (capsense), grip touch (gripsense), trackpad touch and trackpad clicks are bindable like buttons.</p>
       <h3>Profiles</h3>
       <p>4 profiles. Choose the active one with <b>Steam + D-pad</b> on the controller (up = 1, right = 2, down = 3, left = 4; the beep gets higher with the number), at the top of “Buttons &amp; profiles”, or with a “Switch to profile” action bound to any input. Export / Import saves a profile to a file.</p>
-      <p><b>Steam Input layouts</b>: “Import Steam Input” reads a Steam controller configuration (<code>.vdf</code> — Steam keeps yours in <code>Steam\steamapps\common\Steam Controller Configs\&lt;id&gt;\config\&lt;app&gt;\</code>). Each action set or action layer can go into one of the 4 profiles; mode shifts, long / double / start / release presses, toggle, turbo, delays, haptics, stick and trackpad modes, radial menus, mouse regions, triggers, LED and gyro settings come along. Layouts made for a game’s own Steam Input API use “game actions”: pick the key each one has in the game’s settings (keys the game itself names are filled in). Steam commands (screenshot, overlay, on-screen keyboard) are listed and skipped. “Export Steam Input” writes all 4 profiles as one <code>.vdf</code> for Steam (profiles used as layers become action layers); macros, mouse-move actions, gyro tilt and gyro mouse region have no Steam equivalent and are named when left out.</p>
+      <p><b>Steam Input layouts</b>: “Download Steam Input” takes a community layout straight from Steam: paste its link (in Steam, right-click the layout → copy the link, <code>steam://controllerconfig/…</code>) or its number; it needs SC2 Overlay running on the computer, or the remapper opened from the app. “Import Steam Input” reads a Steam controller configuration (<code>.vdf</code> — Steam keeps yours in <code>Steam\steamapps\common\Steam Controller Configs\&lt;id&gt;\config\&lt;app&gt;\</code>). Each action set or action layer can go into one of the 4 profiles; mode shifts, long / double / start / release presses, toggle, turbo, delays, haptics, stick and trackpad modes, radial menus, mouse regions, triggers, LED and gyro settings come along. Layouts made for a game’s own Steam Input API use “game actions”: pick the key each one has in the game’s settings (keys the game itself names are filled in). Steam commands (screenshot, overlay, on-screen keyboard) are listed and skipped. “Export Steam Input” writes all 4 profiles as one <code>.vdf</code> for Steam (profiles used as layers become action layers); macros, mouse-move actions, gyro tilt and gyro mouse region have no Steam equivalent and are named when left out.</p>
       <h3>Gyro</h3>
       <p>Gyro settings, gyro as mouse (on/off: <b>Steam + View</b>) and gyro as a <b>joystick</b> (right or left stick, with dead zone, anti dead zone, full-deflection speed and response curve) are on the “Gyro &amp; gyro mouse” page, the same for every profile. The mouse also has a response curve and acceleration (off by default, so the real-world sensitivity stays 1:1).</p>
     </div>
@@ -1242,10 +1243,28 @@ function vOpts(){ const slots=[0,1,2,3].map(k=>{ const v=$("#vs"+k).value; retur
   return { slots:slots.map(x=>x==null?-1:x), gameMap, padXbox:$("#vxb").checked }; }
 function vPreview(){ if(!vImp) return null; const o=vOpts(); const im=new SteamVDF.Importer(vImp.tree,o); const r=im.run();
   $("#vnotes").innerHTML=r.notes.length?r.notes.map(n=>`<li>${esc(n)}</li>`).join(""):"<li>everything maps</li>"; return {r,o}; }
-$("#vimport").onchange=async e=>{ const f=e.target.files[0]; e.target.value=""; if(!f) return;
-  try{ const tree=SteamVDF.parse(await f.text()); const root=SteamVDF.get(tree,"controller_mappings"); if(!root) throw new Error("not a Steam Input configuration (no controller_mappings)");
+$("#vimport").onchange=async e=>{ const f=e.target.files[0]; e.target.value=""; if(!f) return; vdfImport(await f.text(), f.name); };
+/* Steam Input community layouts (steam://controllerconfig/<game>/<id>): Steam's file list cannot be
+ * asked from a web page (no CORS), so SC2 Overlay asks it - inside the app, or for this page in
+ * the browser on 127.0.0.1 while the app runs. The file itself is then imported as a .vdf file. */
+const STEAMCFG_PORT=27150;
+function steamCfgId(t){ t=String(t||"").trim(); let m=t.match(/controllerconfig\/\d+\/(\d{6,20})/)||t.match(/[?&]id=(\d{6,20})/)||t.match(/^(\d{6,20})$/); return m?m[1]:null; }
+async function steamCfgFetch(id){
+  if(window.sc26reApp&&window.sc26reApp.steamConfig) return await window.sc26reApp.steamConfig(id);
+  let r;
+  try{ r=await fetch(`http://127.0.0.1:${STEAMCFG_PORT}/steam-config?id=${id}`); }
+  catch(e){ throw new Error("downloading needs the newest SC2 Overlay running on this computer (Steam does not let a web page ask for the file) — or open the remapper from the app's tray icon"); }
+  const j=await r.json(); if(!r.ok||j.error) throw new Error(j.error||("HTTP "+r.status)); return j; }
+$("#vdl").onclick=async()=>{
+  const id=steamCfgId($("#vdlid").value); if(!id){ $("#pstatus").innerHTML=`<span class="err">paste a steam://controllerconfig/… link or the layout’s number</span>`; return; }
+  $("#pstatus").textContent=`downloading Steam Input layout ${id}…`;
+  try{ const j=await steamCfgFetch(id); $("#pstatus").innerHTML=`<span class="ok">downloaded “${esc(j.title||id)}” (${j.vdf.length} bytes)</span>`; vdfImport(j.vdf, j.title||j.filename||id); }
+  catch(e){ $("#pstatus").innerHTML=`<span class="err">${esc(e.message)}</span>`; } };
+$("#vdlid").onkeydown=e=>{ if(e.key==="Enter") $("#vdl").click(); };
+async function vdfImport(text, fname){
+  try{ const tree=SteamVDF.parse(text); const root=SteamVDF.get(tree,"controller_mappings"); if(!root) throw new Error("not a Steam Input configuration (no controller_mappings)");
     const im=new SteamVDF.Importer(tree), lst=im.list(); if(!lst.length) throw new Error("no action sets in this file");
-    vImp={tree}; vName=SteamVDF.get(root,"title")||f.name; const def=im.defaultSlots(), ga=im.gameActions();
+    vImp={tree}; vName=SteamVDF.get(root,"title")||fname; const def=im.defaultSlots(), ga=im.gameActions();
     const ct=SteamVDF.get(root,"controller_type")||"?";
     let h=`<p class="note" style="margin:0 0 8px"><b>${esc(vName)}</b> · made for <code>${esc(ct)}</code>${ct!=="controller_triton"?" (another controller: buttons it lacks are skipped, the rest map by name)":""}</p>`;
     h+=`<div style="display:grid;grid-template-columns:auto 1fr;gap:4px 10px;align-items:center">`;
@@ -1256,7 +1275,7 @@ $("#vimport").onchange=async e=>{ const f=e.target.files[0]; e.target.value=""; 
       h+=`</div></details>`; }
     h+=`<p class="note" style="margin:10px 0 2px"><b>Notes</b></p><ul id="vnotes" class="note" style="margin:0;padding-left:18px;max-height:160px;overflow:auto"></ul>`;
     $("#vbody").innerHTML=h; $("#vbody").querySelectorAll("select,input").forEach(x=>x.onchange=vPreview); vPreview(); $("#vdlg").showModal();
-  }catch(err){ $("#pstatus").innerHTML=`<span class="err">${esc(err.message)}</span>`; } };
+  }catch(err){ $("#pstatus").innerHTML=`<span class="err">${esc(err.message)}</span>`; } }
 /* the screen this page is on, in pixels (Windows scaling included) */
 function screenPx(){ const r=window.devicePixelRatio||1; return [Math.max(320,Math.min(16384,Math.round(screen.width*r))), Math.max(200,Math.min(16384,Math.round(screen.height*r)))]; }
 /* a profile with a mouse region and no screen size: this screen's */
