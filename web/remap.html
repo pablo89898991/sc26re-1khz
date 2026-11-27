@@ -116,7 +116,7 @@
 <body>
 <div class="top">
   <div class="topin">
-    <div class="brand">SC2 <span class="hz">Remapper</span> <span class="note" id="pagever" title="page version — if it is older than expected, press Ctrl+F5">p.2026-11-27f</span></div>
+    <div class="brand">SC2 <span class="hz">Remapper</span> <span class="note" id="pagever" title="page version — if it is older than expected, press Ctrl+F5">p.2026-11-27g</span></div>
     <button class="primary" id="connect">Connect controller</button>
     <span id="status" class="chip">not connected</span>
     <span id="batt" class="chip" hidden></span>
@@ -525,25 +525,28 @@ function render(){
   $("#pname").value=nameOf(prof[cur]); $("#block").checked=(prof[cur][17]&1)!==0;
   { const L=prof[cur].slice(40,43), on=L[0]|L[1]|L[2]; $("#pledOn").checked=!!on; if(on) $("#pled").value="#"+[...L].map(x=>x.toString(16).padStart(2,"0")).join(""); }
   const b0=prof[cur];
-  $("#colL").innerHTML=`<div class="sect">Left</div>${item(19,"LB")}${item(17,"L4")}${item(18,"L5")}${item(14,"View")}${item(15,"L3 click")}
-    <div class="sect">Left trigger</div>${item(58,`soft pull ${softPct(0)}%`)}${item(27,"full pull")}
-    <div class="sect">D-pad</div><div class="item${sel==="dp"?" sel":""}" data-s="dp"><span class="k">layout</span><span class="b">${b0[16]?"4-way":"8-way"}${shBtn(1)?` <em>⇧ ${shName(1)}:</em> ${b0[shOff(1)+1]?"4-way":"8-way"}`:""}</span></div>${item(13,"Up")}${item(10,"Down")}${item(12,"Left")}${item(11,"Right")}
-    <div class="sect">Left stick</div>${anItem("ls")}${dirItems("ls")}
+  /* laid out as Steam Input's controller page: sides top to bottom, the sticks, d-pad, motion and
+   * face buttons along the bottom; Steam's names in brackets */
+  $("#colL").innerHTML=`<div class="sect">Left trigger (L2)</div>${item(58,`soft pull ${softPct(0)}%`)}${item(27,"full pull")}
+    <div class="sect">Left</div>${item(19,"LB (L1)")}${item(17,"L4")}${item(18,"L5")}${item(14,"View (Select)")}
+    <div class="sect">Grip touch (gripsense)</div>${item(29,"Left")}
+    <div class="sect">Trackpad touch</div>${item(25,"Left")}
     <div class="sect">Left trackpad</div>${anItem("lp")}${dirItems("lp")}${item(26,"Click")}`;
-  $("#colR").innerHTML=`<div class="sect">Right</div>${item(9,"RB")}${item(7,"R4")}${item(8,"R5")}${item(6,"Menu")}${item(5,"R3 click")}${item(4,"QAM (…)")}
-    <div class="sect">Right trigger</div>${item(59,`soft pull ${softPct(1)}%`)}${item(23,"full pull")}
-    <div class="sect">Face buttons</div>${item(0,"A")}${item(1,"B")}${item(2,"X")}${item(3,"Y")}
-    <div class="sect">Right stick</div>${anItem("rs")}${dirItems("rs")}
+  $("#colR").innerHTML=`<div class="sect">Right trigger (R2)</div>${item(59,`soft pull ${softPct(1)}%`)}${item(23,"full pull")}
+    <div class="sect">Right</div>${item(9,"RB (R1)")}${item(7,"R4")}${item(8,"R5")}${item(6,"Menu (Start)")}${item(4,"QAM (…)")}
+    <div class="sect">Grip touch (gripsense)</div>${item(28,"Right")}
+    <div class="sect">Trackpad touch</div>${item(21,"Right")}
     <div class="sect">Right trackpad</div>${anItem("rp")}${dirItems("rp")}${item(22,"Click")}`;
-  $("#colB").innerHTML=`<div><div class="sect">Stick touch (capsense)</div>${item(24,"Left")}${item(20,"Right")}</div>
-    <div><div class="sect">Grip touch (gripsense)</div>${item(29,"Left")}${item(28,"Right")}</div>
-    <div><div class="sect">Trackpad touch</div>${item(25,"Left")}${item(21,"Right")}</div>
+  $("#colB").innerHTML=`<div><div class="sect">Left stick</div>${anItem("ls")}${dirItems("ls")}${item(15,"L3 click")}${item(24,"Stick touch")}</div>
+    <div><div class="sect">D-pad</div><div class="item${sel==="dp"?" sel":""}" data-s="dp"><span class="k">layout</span><span class="b">${b0[16]?"4-way":"8-way"}${shBtn(1)?` <em>⇧ ${shName(1)}:</em> ${b0[shOff(1)+1]?"4-way":"8-way"}`:""}</span></div>${item(13,"Up")}${item(10,"Down")}${item(12,"Left")}${item(11,"Right")}</div>
     <div><div class="sect">Gyro</div><div class="item" data-s="gyro"><span class="k">settings</span><span class="b">${gyroSummary()}</span></div>
       <div class="item${sel==="gyp"?" sel":""}" data-s="gyp"><span class="k">this profile</span><span class="b">${GYMODES[b0[GYX]]||"?"}${b0[GYX+1]?" · "+GYSPACE[b0[GYX+1]]:""}</span></div>
-      ${b0[GYX]===1?[66,67,68,69].map(x=>item(x,["Tilt forward","Tilt back","Tilt left","Tilt right"][x-66])).join(""):""}</div>
-    <div><div class="sect">Accelerometer</div><div class="item${sel==="acc"?" sel":""}" data-s="acc"><span class="k">this profile</span><span class="b">${accSummary(cur)}</span></div>
+      ${b0[GYX]===1?[66,67,68,69].map(x=>item(x,["Tilt forward","Tilt back","Tilt left","Tilt right"][x-66])).join(""):""}
+      <div class="sect">Accelerometer</div><div class="item${sel==="acc"?" sel":""}" data-s="acc"><span class="k">this profile</span><span class="b">${accSummary(cur)}</span></div>
       ${fwAcc&&acc[cur][6]&&b0[GYX]!==1?[66,67,68,69].map(x=>item(x,["Tilt forward","Tilt back","Tilt left","Tilt right"][x-66])).join(""):""}
-      ${fwAcc?ACC_GESTS.map((n,k)=>acc[cur][12+2*k]||acc[cur][13+2*k]?`<div class="item" data-s="acc"><span class="k">${n}</span><span class="b">${[acc[cur][12+2*k],acc[cur][13+2*k]].map(ACTNAME).filter(x=>x).join(" + ")}</span></div>`:"").join(""):""}</div>`;
+      ${fwAcc?ACC_GESTS.map((n,k)=>acc[cur][12+2*k]||acc[cur][13+2*k]?`<div class="item" data-s="acc"><span class="k">${n}</span><span class="b">${[acc[cur][12+2*k],acc[cur][13+2*k]].map(ACTNAME).filter(x=>x).join(" + ")}</span></div>`:"").join(""):""}</div>
+    <div><div class="sect">Right stick</div>${anItem("rs")}${dirItems("rs")}${item(5,"R3 click")}${item(20,"Stick touch")}</div>
+    <div><div class="sect">Face buttons</div>${item(0,"A")}${item(1,"B")}${item(2,"X")}${item(3,"Y")}</div>`;
   $("#pic").innerHTML=picture();
   document.querySelectorAll("#v_map [data-s]").forEach(e=>e.onclick=()=>openSel(e.dataset.s));
   editor();
