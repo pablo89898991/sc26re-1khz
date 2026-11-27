@@ -1,8 +1,13 @@
-## SC2 Overlay 1.5 for Windows and Linux
+## SC2 Overlay 1.5.1 for Windows and Linux
 
 Special thanks to **Rhyn0_Rang3r**, our Discord tester, for making the Linux version and for testing.
 
-**New in 1.5**
+**New in 1.5.1: the remapper as in firmware v51.9**
+- **Laid out like Steam Input's controller page**: bumper, trigger, back buttons and View / Menu, grip, trackpad (with its Click and Touch) down the sides; left stick (with L3 click and stick touch), d-pad, gyro and accelerometer, right stick, face buttons along the bottom. Steam's names in brackets: LB (L1), View (Select), Menu (Start)…
+- **Accelerometer "With the gyro"**: always works, off while the gyro aims, or off while it aims but working with activation "always" (needs firmware v51.9).
+- **Keep controller on**: while the remapper is connected, the controller does not switch itself off.
+
+**From 1.5**
 - **Steam Input layouts straight from Steam.** In the remapper, paste a community layout's link (in Steam: right-click the layout → copy the link, `steam://controllerconfig/…`) or its number next to *Import Steam Input*. **Load from Steam** opens the import into your profiles, **Save .vdf** saves the layout as a file. Steam doesn't let a web page ask for the file, so the app does it: in the remapper opened from the tray icon, and in the remapper in your browser while the app is running (Chrome may ask once to allow access to devices on your local network). The app only fetches Steam controller layouts, only from Steam's own file server, and only for this project's pages.
 
 **From 1.4**
@@ -16,7 +21,7 @@ Special thanks to **Rhyn0_Rang3r**, our Discord tester, for making the Linux ver
 
 **From 1.2: update notifications.** At start and every 6 hours the app checks this project's releases and tells you when a new **SC2 Overlay** or a new **firmware** is out (tray → *Updates*). Nothing is downloaded or installed by itself.
 
-Firmware for this app: **[sc26re v51.8](https://github.com/pablo89898991/sc26re-1khz/releases/tag/v51.8)**.
+Firmware for this app: **[sc26re v51.9](https://github.com/pablo89898991/sc26re-1khz/releases/tag/v51.9)**.
 
 A small Windows and Linux app for the **sc26re** firmware (Steam Controller 2026, v51.8 recommended):
 
