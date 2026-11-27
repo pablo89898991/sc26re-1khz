@@ -263,7 +263,7 @@ int sim_led_get(void) { return led.r << 16 | led.g << 8 | led.b; }
 static bool gm_on;
 #ifndef WITH_GM
 bool gyro_mouse_active(void) { return gm_on; }
-bool gyro_mouse_engaged(void) { return gm_on; }
+bool gyro_mouse_engaged(bool count_always) { (void)count_always; return gm_on; }
 void sim_gm_set(int on) { gm_on = on != 0; }
 #endif
 #ifndef WITH_GM

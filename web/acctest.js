@@ -75,6 +75,21 @@
       await gcase('gyro mouse on, thumb off the stick + pause flag: works', { g: GACT, fl: 0x80 }, jab('ay', 2), ['fwd']);
       await gcase('thumb on the stick (aiming) + pause flag: nothing', { g: GACT, fl: 0x80 }, [{ ms: 100, ax: 0, ay: 0, az: G, bt: T }, ...touch(jab('ay', 2))], []);
       await gcase('thumb off again 50 ms: works', { g: GACT, fl: 0x80 }, [{ ms: 100, ax: 0, ay: 0, az: G, bt: T }, ...touch(jab('ay', 2)), { ms: 50, ax: 0, ay: 0, az: G }, ...jab('ay', 2)], ['fwd']);
+      // the three settings: 0 always works, 0x80 off while aiming, 0xC0 the same but works with "always" activation
+      await gcase('setting 1 (always works), thumb on the stick: works', { g: GACT }, [{ ms: 100, ax: 0, ay: 0, az: G, bt: T }, ...touch(jab('ay', 2))], ['fwd']);
+      await gcase('setting 3, thumb on the stick: nothing', { g: GACT, fl: 0xC0 }, [{ ms: 100, ax: 0, ay: 0, az: G, bt: T }, ...touch(jab('ay', 2))], []);
+      await gcase('setting 3, thumb off: works', { g: GACT, fl: 0xC0 }, jab('ay', 2), ['fwd']);
+      { // tilt -> stick off while aiming (setting 2): tilted, thumb on -> centre, thumb off -> back
+        const ok = await bWrite('sc26re/acc/3', blob({ st: 1, fl: 0x80 }));
+        const r = await runScript([{ ms: 150, ...tilt(0, 0) }, { ms: 150, ...tilt(0, 45) }, { ms: 150, ...tilt(0, 45), bt: T }, { ms: 150, ...tilt(0, 45) }]);
+        const got = [300, 450, 600].map(t => { const e = at(r.log, t - 3); return e && e.lsx; });
+        res.push({ name: 'setting 2, tilt -> stick: thumb on the stick centres it', pass: ok && Math.abs(got[0] - 32767) <= 6 && got[1] === 0 && Math.abs(got[2] - 32767) <= 6, got });
+      }
+      await set('gm_act_mode', 0, false);
+      await gcase('activation "always" + setting 3: works', { g: GACT, fl: 0xC0 }, jab('ay', 2), ['fwd']);
+      await gcase('activation "always" + setting 2: nothing', { g: GACT, fl: 0x80 }, jab('ay', 2), []);
+      await set('gm_enabled', 0, false);
+      await gcase('gyro mouse off + setting 2: works', { g: GACT, fl: 0x80 }, jab('ay', 2), ['fwd']);
     } catch (e) { err = e.message; }
     finally {
       try { await bWrite('sc26re/acc/3', bk.acc3); await bWrite('sc26re/rmp/3', bk.prof3); await set('remap_profile', bk.rp, false); await set('remap_on', bk.on, false); await set('gm_enabled', bk.gm, false); await set('gm_act_mode', bk.act, false); await set('gm_act_button', bk.ab, false); restored = true; } catch (e) { err = (err || '') + ' restore: ' + e.message; }

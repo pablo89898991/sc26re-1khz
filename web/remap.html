@@ -116,7 +116,7 @@
 <body>
 <div class="top">
   <div class="topin">
-    <div class="brand">SC2 <span class="hz">Remapper</span> <span class="note" id="pagever" title="page version — if it is older than expected, press Ctrl+F5">p.2026-11-27e</span></div>
+    <div class="brand">SC2 <span class="hz">Remapper</span> <span class="note" id="pagever" title="page version — if it is older than expected, press Ctrl+F5">p.2026-11-27f</span></div>
     <button class="primary" id="connect">Connect controller</button>
     <span id="status" class="chip">not connected</span>
     <span id="batt" class="chip" hidden></span>
@@ -309,7 +309,6 @@ const PROF_SIZE=3232, CH=40, PROF_VER=8, V6_SIZE=2056, V7_SIZE=3144;
 const BT=2056, XBIND=2800, ANX=2968, GYX=3112, TCURVE=3128, SCREEN=3132;
 /* v8 area (struct remap_v8): the shifted clicks of the left / right stick and the left / right trackpad
  * (sources 15, 5, 26, 22) x14, their timing x6 */
-const LEAN=3224; /* v51.9: slow return to centre, 3 bytes per stick: x0.05 s, x0.05 catch-up, axes */
 const SCLICK=3144, SCLICK_BT=3200, SCLICK_SRC=[15,5,26,22], SCLICK_GRP=[2,3,4,5];
 /* a v6 profile (older firmware / files) becomes v7 with an empty v7 area; a v7 one v8 with the shifted
  * clicks the same as the normal ones (as they acted before) */
@@ -463,9 +462,7 @@ function itemText(s){ const g=SGRP[s], n=inMode(s,0), sh=g!=null&&shBtn(g)&&inMo
   if(sh&&(grpTextO(prof[cur],bOffL(s,1),0)||!n)) t+=`${t?" ":""}<em>⇧ ${shName(g)}:</em> ${bindTextO(bOffL(s,1))}`; return t; }
 function item(s,label){ const g=SGRP[s], has=(inMode(s,0)&&grpTextO(prof[cur],bOffL(s,0),0))||(g!=null&&shBtn(g)&&inMode(s,1)&&grpTextO(prof[cur],bOffL(s,1),0));
   return `<div class="item${sel===s?" sel":""}" data-s="${s}"><span class="k">${label}</span><span class="b${has?"":" none"}">${itemText(s)}</span></div>`; }
-function anItem(an){ const k=an==="ls"?0:an==="rs"?1:-1, b=prof[cur], m=b[aOff(an)], lr=k>=0&&(m===0||m===12)?b[LEAN+3*k]:0;
-  return `<div class="item${sel===an?" sel":""}" data-s="${an}"><span class="k">mode</span><span class="b">${modeName(an)}</span></div>`+
-    (lr&&b[LEAN+3*k+2]?`<div class="item" data-s="${an}"><span class="k">slow return</span><span class="b">${(lr*0.05).toFixed(2).replace(/0$/,"")} s · ${["","X","Y","X+Y"][b[LEAN+3*k+2]&3]}</span></div>`:""); }
+function anItem(an){ return `<div class="item${sel===an?" sel":""}" data-s="${an}"><span class="k">mode</span><span class="b">${modeName(an)}</span></div>`; }
 function dirItems(an){ const seen=new Set(), l=[...subSources(an,0)]; if(shBtn(GRP_OF_AN[an])) l.push(...subSources(an,1)); return l.filter(([x])=>!seen.has(x)&&seen.add(x)).map(([x,n])=>item(x,n)).join(""); }
 /* line drawing of the Steam Controller (2026) front, made for this page; centre line x = 281 */
 function smoothPath(pts,closed){
@@ -736,12 +733,6 @@ function editor(){
     if(m===3&&!pad&&!ccust) h+=slider("crv",cv||2,0.5,4,0.05,"Response curve","×","2.0 default · 1.0 linear");
     if(crvMode){ h+=`<div class="row2"><label>Response</label><select id="crvmode"><option value="0">curve exponent (slider)</option><option value="1">custom curve — 4 points (as in Steam)</option></select><small>${ccust?`one curve for the ${cside?"right":"left"} stick, in every mode and layer of this profile`:""}</small></div>`;
       if(ccust) h+=crvHtml("crvS",cur,cside,"stick deflection",m===3?"cursor speed":"to the game"); }
-    if(cside>=0&&(m===0||m===12)){ const lo=LEAN+3*cside, lr=b[lo], lm=b[lo+1]>=20?b[lo+1]:20, lx=b[lo+2];
-      h+=`<div class="sect" style="margin-left:0">Slow return to centre</div>`;
-      h+=slider("lnret",lr*0.05,0,5,0.05,"Back to centre in","s","0 = off · from full deflection, when you let go · pushing out stays instant");
-      if(lr){ h+=slider("lnmul",lm*0.05,1,8,0.05,"Countersteer catch-up","×","how much faster it follows when you push the other way");
-        h+=`<div class="row2"><label>Axes</label><span><label class="note"><input type="checkbox" id="lnx"${lx&1?" checked":""}> X (left / right)</label> <label class="note"><input type="checkbox" id="lny"${lx&2?" checked":""}> Y (up / down)</label></span></div>`; }
-      h+=`<p class="note wrap">For racing and motocross games that dislike a stick snapping back (“Direct Lean”, after UNC THUMBS by u/z50_Jumper): the game sees the stick come back at this speed. Every mode and layer of this stick, in this profile; firmware v51.9 or newer.</p>`; }
     if(m===4&&!pad) h+=slider("asp",sp/100,0.1,50,0.1,"Speed","notches / s","at full tilt");
     if(m===4&&pad) h+=slider("asp",sp,5,180,1,"Step","°","degrees of circle per scroll step");
     if(pad&&[1,2,5,9,10].includes(m)) h+=`<div class="row2"><label>Zone haptics</label><select id="ahap">${HAPT.map(([v,n])=>`<option value="${v}">${n}</option>`).join("")}</select><small>felt every time the finger moves into another ${m===9?"zone":m===5?"gate":"direction"} — so you know where you are without looking</small></div>`;
@@ -810,10 +801,6 @@ function editor(){
     if($("#aact")){ $("#aact").value=String(b[o+1]&0x10?16:b[o+1]&1); $("#aact").onchange=e=>{ b[o+1]=(b[o+1]&~0x11)|+e.target.value; if(+e.target.value===16&&!U16(o+16)) setU16(o+16,3000); setDirty(); render(); }; }
     const W=(id,k,mul=100)=>wireSl(id,v=>setU16(o+k,Math.round(v*mul)));
     W("dzi",2); W("dzo",4); W("anti",14); W("ring",12); W("press",16); W("crv",10);
-    if(cside>=0){ const lo=LEAN+3*cside;
-      wireSl("lnret",v=>{ const was=prof[cur][lo]; prof[cur][lo]=Math.round(v/0.05); if(!was&&prof[cur][lo]&&!prof[cur][lo+2]){ prof[cur][lo+2]=1; if(prof[cur][lo+1]<20) prof[cur][lo+1]=20; } });
-      wireSl("lnmul",v=>{ prof[cur][lo+1]=Math.round(v/0.05); });
-      [["lnx",1],["lny",2]].forEach(([id,bit])=>{ if($("#"+id)) $("#"+id).onchange=e=>{ prof[cur][lo+2]=(prof[cur][lo+2]&~bit)|(e.target.checked?bit:0); setDirty(); render(); }; }); }
     { const xo=anxOff(an);
       wireSl("xsl",v=>{ prof[cur][xo+6]=Math.round(v); });
       ["rgx","rgy","rgw","rgh"].forEach((id,k)=>wireSl(id,v=>{ const P8=prof[cur]; if(!(P8[xo+8]|P8[xo+9]|P8[xo+10]|P8[xo+11])){ P8[xo+8]=50; P8[xo+9]=50; P8[xo+10]=100; P8[xo+11]=100; } P8[xo+8+k]=Math.round(v); if(k>=2&&!P8[xo+8+k]) P8[xo+8+k]=5; }));
@@ -1088,7 +1075,7 @@ async function crvWrite(slot){ const sl=slot===CRV_G?"g":String(slot), b=crv[slo
 async function crvReadAll(){ try{ for(const sl of [0,1,2,3,CRV_G]){ const d=await crvRead(sl); if(!d){ fwCrv=false; return; } crv[sl].set(d); } fwCrv=true; crvDirtyG=false; }catch(e){ fwCrv=false; } }
 
 /* ---- accelerometer (firmware v51.8+), per profile in sc26re/acc/<profile>, 32 bytes: stick (0 off, 1 left,
-   2 right), flags (1 invert X, 2 invert Y, 4 swap, 0x80 off while the gyro is on), sens % (u16, 0 = 100: full
+   2 right), flags (1 invert X, 2 invert Y, 4 swap, 0x80 off while the gyro aims, 0x40 with 0x80: works with “always” activation), sens % (u16, 0 = 100: full
    deflection at 45° × 100 / sens), dead zone (u16, 0.01 % of full), tilt buttons (u8 at 6: 0 off, 1 4-way, 2 8-way),
    their sens % (u16 at 8, 0 = 100: a direction at 20° × 100 / sens), gestures: sens % (u16 at 10, 0 = 100: a jolt of
    1.5 g × 100 / sens), 7 × 2 actions at 12 (jab forward, back, left, right, up, down, shake) */
@@ -1112,7 +1099,7 @@ function accSummary(p){ if(!fwAcc) return devs.length?"needs firmware v51.8+":"�
   if(a[0]) out.push(`tilt → ${a[0]===2?"right":"left"} stick`);
   if(a[6]) out.push(`tilt presses ${a[6]===2?"8":"4"}-way`);
   if(n) out.push(`${n} gesture${n>1?"s":""}`);
-  return out.length?out.join(" · ")+(a[1]&128?" · off with the gyro":""):"nothing"; }
+  return out.length?out.join(" · ")+(a[1]&128?(a[1]&64?" · off while aiming (works with “always”)":" · off while aiming"):""):"nothing"; }
 /* the accelerometer editor (its own entry under the picture) */
 function accHtml(p){ if(!fwAcc) return "";
   const v=accDV(p), st=acc[p][0], fl=acc[p][1], sens=v.getUint16(2,true)||100, dz=v.getUint16(4,true)/100;
@@ -1128,7 +1115,7 @@ function accHtml(p){ if(!fwAcc) return "";
   h+=`<div class="row2"><label>Gestures</label><span class="note">a quick jolt of the controller taps its actions (${ACC_GEST_MS} ms)</span><small>a jab and its stop count once; 4 jolts back and forth within 0.8 s are a shake</small></div>
     <div class="row2"><label>Sensitivity</label><input type="number" id="acgs" class="num" min="10" max="1000" step="1" value="${gs}" style="width:90px"> <span class="note">%</span><small id="acgsN">fires at a jolt of ${(ACC_GEST_G*100/gs).toFixed(2)} g (100 % = ${ACC_GEST_G} g)</small></div>
     ${ACC_GESTS.map((n,k)=>`<div class="grp"><span>${n}</span><select data-ga="${k}:0">${OPTS}</select><select data-ga="${k}:1">${OPTS}</select></div>`).join("")}`;
-  h+=`<div class="row2"><label></label><label class="note"><input type="checkbox" class="acf" data-f="128"${fl&128?" checked":""}> off while the gyro aims</label><small>while the gyro mouse / joystick moves (its activation held, e.g. the stick touched); with activation “always”, all the time it is on. Firmware v51.8 had it off all the time the gyro mouse was on</small></div>
+  h+=`<div class="row2"><label>With the gyro</label><select id="acgy"><option value="0">always works</option><option value="128">off while the gyro aims</option><option value="192">off while the gyro aims, works with “always”</option></select><small>gestures and tilt, with the gyro mouse / joystick on. “Aims”: its activation held (e.g. the stick touched); with activation “always” it aims all the time it is on — the last choice keeps the accelerometer working then. The gyro mouse off or not set: always works</small></div>
     <p class="note wrap">The centre is how you hold the controller when the profile becomes active (switch profiles or turn the remapper off and on to centre it again). It does not drift: it comes from gravity. While something here is on, the motion sensor stays on.</p>`;
   return h; }
 function accWire(p){ if(!fwAcc||!$("#acst")) return; const v=accDV(p);
@@ -1145,7 +1132,9 @@ function accWire(p){ if(!fwAcc||!$("#acst")) return; const v=accDV(p);
     x.value=String(acc[p][12+2*k+j]); if(x.value==="") x.value="0";
     x.onchange=()=>{ const was=acc[p].slice(12,26).some(b=>b); acc[p][12+2*k+j]=+x.value; if(!was&&+x.value){ if(!v.getUint16(10,true)) v.setUint16(10,100,true); if(!acc[p][0]&&!acc[p][6]) acc[p][1]|=128; } setDirty(); render(); }; });
   if($("#acdz")) $("#acdz").onchange=e=>{ const x=Math.max(0,Math.min(90,+e.target.value||0)); e.target.value=x; v.setUint16(4,Math.round(x*100),true); setDirty(); };
-  document.querySelectorAll(".acf").forEach(c=>c.onchange=()=>{ const f=+c.dataset.f; acc[p][1]=(acc[p][1]&~f)|(c.checked?f:0); setDirty(); if(f===128) render(); }); }
+  $("#acgy").value=String(acc[p][1]&128?acc[p][1]&192:0);
+  $("#acgy").onchange=e=>{ acc[p][1]=(acc[p][1]&~192)|+e.target.value; setDirty(); render(); };
+  document.querySelectorAll(".acf").forEach(c=>c.onchange=()=>{ const f=+c.dataset.f; acc[p][1]=(acc[p][1]&~f)|(c.checked?f:0); setDirty(); }); }
 
 async function readProfile(p){ const b=new Uint8Array(PROF_SIZE);
   for(let o=0;o<PROF_SIZE;o+=CH){

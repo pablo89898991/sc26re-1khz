@@ -85,16 +85,17 @@ void gyro_mouse_suspend(bool on)
 	suspended = on;
 }
 
-static bool engaged;
+static bool engaged;        /* the activation is on now (gyro_mouse_feed) */
+static bool engaged_always; /* ... because it is "always" (no activation input, or mode 0) */
 
 bool gyro_mouse_active(void)
 {
 	return gyro_mouse_enabled() && !suspended;
 }
 
-bool gyro_mouse_engaged(void)
+bool gyro_mouse_engaged(bool count_always)
 {
-	return gyro_mouse_active() && engaged;
+	return gyro_mouse_active() && engaged && (count_always || !engaged_always);
 }
 
 bool gyro_mouse_enabled(void)
@@ -216,6 +217,8 @@ static float band(float v, int16_t lo, int16_t hi, bool soft)
 	return v;
 }
 
+static bool act_always; /* the last active() was on with no activation: "always" */
+
 static bool active(uint32_t buttons, uint32_t pressed)
 {
 	int16_t b = gm(SC26RE_CFG_GM_ACT_BUTTON);
@@ -238,7 +241,8 @@ static bool active(uint32_t buttons, uint32_t pressed)
 	{
 		held_prev = false;
 	}
-	if(mask == 0U || mode == 0)
+	act_always = mask == 0U || mode == 0;
+	if(act_always)
 	{
 		return true;
 	}
@@ -480,6 +484,7 @@ void gyro_mouse_feed(const float dps[3], uint32_t buttons, float dt_s)
 	bool ratchet = ratchet_btn >= 0 && ratchet_btn <= 29 && (buttons & BIT(ratchet_btn)) != 0U;
 	bool act_now = gm(SC26RE_CFG_GM_ENABLED) == 1 && active(buttons, pressed) && !ratchet;
 	engaged = act_now;
+	engaged_always = act_now && act_always;
 
 	{
 		/* feedback when the activation button starts moving the cursor */

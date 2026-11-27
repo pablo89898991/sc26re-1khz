@@ -233,23 +233,11 @@ struct remap_ext
  * (a trackpad mode shift used the normal Click binding). Order: left stick, right stick, left
  * pad, right pad (sources 15, 5, 26, 22) */
 #define REMAP_SCLICK_COUNT 4
-/* v51.9: slow return to centre ("Direct Lean", after u/z50_Jumper's UNC THUMBS for motocross
- * games), per stick, on its output to Steam / the Xbox pad. Pushing out follows the stick 1:1,
- * releasing it brings the output back at a set speed, countersteering at mult times that speed.
- * All 0 = off (older profiles) */
-struct remap_lean
-{
-	uint8_t ret;  /* full deflection to centre, x 0.05 s (0 = off, 100 = 5 s) */
-	uint8_t mult; /* catch-up when countersteering, x 0.05 (0 or below 20 = 1.0, 160 = 8.0) */
-	uint8_t axes; /* bit 0: X, bit 1: Y */
-} __packed;
-
 struct remap_v8
 {
 	struct remap_binding sclick[REMAP_SCLICK_COUNT];
 	struct remap_btime sclick_bt[REMAP_SCLICK_COUNT];
-	struct remap_lean lean[2]; /* left, right stick (v51.9) */
-	uint8_t reserved[2];
+	uint8_t reserved[8];
 } __packed;
 
 struct remap_profile
@@ -315,7 +303,11 @@ struct remap_curves
 #define REMAP_ACC_INV_X 0x01U      /* tilt -> stick: X the other way */
 #define REMAP_ACC_INV_Y 0x02U
 #define REMAP_ACC_SWAP 0x04U       /* forward tilt on X, sideways on Y */
-#define REMAP_ACC_GYRO_PAUSE 0x80U /* nothing from the accelerometer while the gyro mouse / joystick is on */
+/* with the gyro mouse / joystick (gestures and tilt): neither bit = always works; GYRO_PAUSE = off
+ * while it aims (activation held; with "always" activation all the time it is on);
+ * GYRO_PAUSE | GYRO_ALWAYS_OK = the same, but works with "always" activation */
+#define REMAP_ACC_GYRO_ALWAYS_OK 0x40U
+#define REMAP_ACC_GYRO_PAUSE 0x80U
 #define REMAP_ACC_FULL_DEG 45.0f   /* tilt for full deflection at 100 % */
 struct remap_accel
 {

@@ -34,8 +34,9 @@ bool gyro_mouse_enabled(void);
 /* enabled and not paused for a gyro calibration */
 bool gyro_mouse_active(void);
 /* on and moving the cursor / stick right now: its activation (button, stick touch, toggle) held,
- * not paused by the ratchet. "Always" activation: whenever it is on */
-bool gyro_mouse_engaged(void);
+ * not paused by the ratchet. "Always" activation (no activation input, or mode "always"):
+ * whenever it is on if count_always, never otherwise */
+bool gyro_mouse_engaged(bool count_always);
 void gyro_mouse_suspend(bool on);
 void gyro_mouse_set_enabled(bool on);
 int32_t gyro_mouse_counts_per_360(void);

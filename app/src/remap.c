@@ -29,7 +29,6 @@
 #include "haptics.h"
 #include "remap.h"
 #include "curve.h"
-#include "lean.h"
 #if defined(CONFIG_IBEX_HWTEST) || defined(SC26RE_SIM)
 #include "hwtest.h"
 #endif
@@ -1078,38 +1077,6 @@ static void stick_analog(int i, const struct remap_analog *an, const struct rema
 }
 
 /* sticks to Steam: inner / outer dead zones rescaled to the full range */
-/* slow return to centre (lean.h), per stick and axis, after the dead zones and the curve. Starts
- * from the stick as it is when switched on, a profile change or a mode without it */
-static float lean_v[2][2], lean_pp[2][2];
-static uint8_t lean_run[2];
-static int8_t lean_prof = -1;
-
-static void stick_lean(int i, const struct remap_lean *L, int16_t *x, int16_t *y, float dt)
-{
-	for(int k = 0; k < 2; ++k)
-	{
-		int16_t *c = k ? y : x;
-		uint8_t bit = (uint8_t)(1U << k);
-		float pv = (float)*c / 32767.0f;
-
-		if(L->ret == 0U || !(L->axes & bit))
-		{
-			lean_run[i] &= (uint8_t)~bit;
-			continue;
-		}
-		if(!(lean_run[i] & bit))
-		{
-			lean_v[i][k] = lean_pp[i][k] = pv;
-			lean_run[i] |= bit;
-			continue;
-		}
-		lean_v[i][k] = lean_filter(pv, lean_pp[i][k], lean_v[i][k], dt, (float)L->ret * 0.05f,
-		                           L->mult >= 20U ? (float)L->mult * 0.05f : 1.0f);
-		lean_pp[i][k] = pv;
-		*c = (int16_t)lroundf(lean_v[i][k] * 32767.0f);
-	}
-}
-
 static void stick_dead_zones(const struct remap_analog *an, const uint16_t *crv, int16_t *x, int16_t *y)
 {
 	float fx = (float)*x / 32767.0f, fy = (float)*y / 32767.0f;
@@ -3450,11 +3417,6 @@ void remap_process(struct controller_report *r, float dt)
 	}
 
 	PERF_MARK(7);
-	if(active_index() != lean_prof)
-	{
-		lean_prof = (int8_t)active_index();
-		lean_run[0] = lean_run[1] = 0U;
-	}
 	/* sticks: mouse / scroll, or to Steam with the dead zones applied */
 	for(int i = 0; i < 2; ++i)
 	{
@@ -3465,7 +3427,6 @@ void remap_process(struct controller_report *r, float dt)
 		if(an->mode == REMAP_ANALOG_PASS)
 		{
 			stick_dead_zones(an, remap_curve_stick(i), &x, &y);
-			stick_lean(i, &p->v8.lean[i], &x, &y, dt);
 		}
 		else if(an->mode == REMAP_ANALOG_XBOX)
 		{
@@ -3473,14 +3434,12 @@ void remap_process(struct controller_report *r, float dt)
 
 			flick_on[i] = false;
 			stick_dead_zones(an, remap_curve_stick(i), &x, &y);
-			stick_lean(i, &p->v8.lean[i], &x, &y, dt);
 			xbox_stick[t][0] += (float)x / 32767.0f;
 			xbox_stick[t][1] += (float)y / 32767.0f;
 			x = y = 0;
 		}
 		else
 		{
-			lean_run[i] = 0U;
 			if(an->mode == REMAP_ANALOG_FLICK)
 			{
 				flick(i, an, true, (float)x / 32767.0f, (float)y / 32767.0f);
@@ -4079,7 +4038,8 @@ static void acc_process(int i, const struct controller_report *rs, float dt)
 		memset(hold_joy, 0, sizeof(hold_joy));
 		hold_dirs = 0U;
 	}
-	if(!want || ((c->flags & REMAP_ACC_GYRO_PAUSE) && gyro_mouse_engaged()))
+	if(!want || ((c->flags & REMAP_ACC_GYRO_PAUSE) &&
+	                 gyro_mouse_engaged((c->flags & REMAP_ACC_GYRO_ALWAYS_OK) == 0U)))
 	{
 		gest_grav_ok = false; /* the slow gravity average starts again afterwards */
 		return;
