@@ -116,7 +116,7 @@
 <body>
 <div class="top">
   <div class="topin">
-    <div class="brand">SC2 <span class="hz">Remapper</span> <span class="note" id="pagever" title="page version — if it is older than expected, press Ctrl+F5">p.2026-11-27b</span></div>
+    <div class="brand">SC2 <span class="hz">Remapper</span> <span class="note" id="pagever" title="page version — if it is older than expected, press Ctrl+F5">p.2026-11-27c</span></div>
     <button class="primary" id="connect">Connect controller</button>
     <span id="status" class="chip">not connected</span>
     <span id="batt" class="chip" hidden></span>
@@ -308,6 +308,7 @@ const PROF_SIZE=3232, CH=40, PROF_VER=8, V6_SIZE=2056, V7_SIZE=3144;
 const BT=2056, XBIND=2800, ANX=2968, GYX=3112, TCURVE=3128, SCREEN=3132;
 /* v8 area (struct remap_v8): the shifted clicks of the left / right stick and the left / right trackpad
  * (sources 15, 5, 26, 22) x14, their timing x6 */
+const LEAN=3224; /* v51.9: slow return to centre, 3 bytes per stick: x0.05 s, x0.05 catch-up, axes */
 const SCLICK=3144, SCLICK_BT=3200, SCLICK_SRC=[15,5,26,22], SCLICK_GRP=[2,3,4,5];
 /* a v6 profile (older firmware / files) becomes v7 with an empty v7 area; a v7 one v8 with the shifted
  * clicks the same as the normal ones (as they acted before) */
@@ -461,7 +462,9 @@ function itemText(s){ const g=SGRP[s], n=inMode(s,0), sh=g!=null&&shBtn(g)&&inMo
   if(sh&&(grpTextO(prof[cur],bOffL(s,1),0)||!n)) t+=`${t?" ":""}<em>⇧ ${shName(g)}:</em> ${bindTextO(bOffL(s,1))}`; return t; }
 function item(s,label){ const g=SGRP[s], has=(inMode(s,0)&&grpTextO(prof[cur],bOffL(s,0),0))||(g!=null&&shBtn(g)&&inMode(s,1)&&grpTextO(prof[cur],bOffL(s,1),0));
   return `<div class="item${sel===s?" sel":""}" data-s="${s}"><span class="k">${label}</span><span class="b${has?"":" none"}">${itemText(s)}</span></div>`; }
-function anItem(an){ return `<div class="item${sel===an?" sel":""}" data-s="${an}"><span class="k">mode</span><span class="b">${modeName(an)}</span></div>`; }
+function anItem(an){ const k=an==="ls"?0:an==="rs"?1:-1, b=prof[cur], m=b[aOff(an)], lr=k>=0&&(m===0||m===12)?b[LEAN+3*k]:0;
+  return `<div class="item${sel===an?" sel":""}" data-s="${an}"><span class="k">mode</span><span class="b">${modeName(an)}</span></div>`+
+    (lr&&b[LEAN+3*k+2]?`<div class="item" data-s="${an}"><span class="k">slow return</span><span class="b">${(lr*0.05).toFixed(2).replace(/0$/,"")} s · ${["","X","Y","X+Y"][b[LEAN+3*k+2]&3]}</span></div>`:""); }
 function dirItems(an){ const seen=new Set(), l=[...subSources(an,0)]; if(shBtn(GRP_OF_AN[an])) l.push(...subSources(an,1)); return l.filter(([x])=>!seen.has(x)&&seen.add(x)).map(([x,n])=>item(x,n)).join(""); }
 /* line drawing of the Steam Controller (2026) front, made for this page; centre line x = 281 */
 function smoothPath(pts,closed){
@@ -732,6 +735,12 @@ function editor(){
     if(m===3&&!pad&&!ccust) h+=slider("crv",cv||2,0.5,4,0.05,"Response curve","×","2.0 default · 1.0 linear");
     if(crvMode){ h+=`<div class="row2"><label>Response</label><select id="crvmode"><option value="0">curve exponent (slider)</option><option value="1">custom curve — 4 points (as in Steam)</option></select><small>${ccust?`one curve for the ${cside?"right":"left"} stick, in every mode and layer of this profile`:""}</small></div>`;
       if(ccust) h+=crvHtml("crvS",cur,cside,"stick deflection",m===3?"cursor speed":"to the game"); }
+    if(cside>=0&&(m===0||m===12)){ const lo=LEAN+3*cside, lr=b[lo], lm=b[lo+1]>=20?b[lo+1]:20, lx=b[lo+2];
+      h+=`<div class="sect" style="margin-left:0">Slow return to centre</div>`;
+      h+=slider("lnret",lr*0.05,0,5,0.05,"Back to centre in","s","0 = off · from full deflection, when you let go · pushing out stays instant");
+      if(lr){ h+=slider("lnmul",lm*0.05,1,8,0.05,"Countersteer catch-up","×","how much faster it follows when you push the other way");
+        h+=`<div class="row2"><label>Axes</label><span><label class="note"><input type="checkbox" id="lnx"${lx&1?" checked":""}> X (left / right)</label> <label class="note"><input type="checkbox" id="lny"${lx&2?" checked":""}> Y (up / down)</label></span></div>`; }
+      h+=`<p class="note wrap">For racing and motocross games that dislike a stick snapping back (“Direct Lean”, after UNC THUMBS by u/z50_Jumper): the game sees the stick come back at this speed. Every mode and layer of this stick, in this profile; firmware v51.9 or newer.</p>`; }
     if(m===4&&!pad) h+=slider("asp",sp/100,0.1,50,0.1,"Speed","notches / s","at full tilt");
     if(m===4&&pad) h+=slider("asp",sp,5,180,1,"Step","°","degrees of circle per scroll step");
     if(pad&&[1,2,5,9,10].includes(m)) h+=`<div class="row2"><label>Zone haptics</label><select id="ahap">${HAPT.map(([v,n])=>`<option value="${v}">${n}</option>`).join("")}</select><small>felt every time the finger moves into another ${m===9?"zone":m===5?"gate":"direction"} — so you know where you are without looking</small></div>`;
@@ -800,6 +809,10 @@ function editor(){
     if($("#aact")){ $("#aact").value=String(b[o+1]&0x10?16:b[o+1]&1); $("#aact").onchange=e=>{ b[o+1]=(b[o+1]&~0x11)|+e.target.value; if(+e.target.value===16&&!U16(o+16)) setU16(o+16,3000); setDirty(); render(); }; }
     const W=(id,k,mul=100)=>wireSl(id,v=>setU16(o+k,Math.round(v*mul)));
     W("dzi",2); W("dzo",4); W("anti",14); W("ring",12); W("press",16); W("crv",10);
+    if(cside>=0){ const lo=LEAN+3*cside;
+      wireSl("lnret",v=>{ const was=prof[cur][lo]; prof[cur][lo]=Math.round(v/0.05); if(!was&&prof[cur][lo]&&!prof[cur][lo+2]){ prof[cur][lo+2]=1; if(prof[cur][lo+1]<20) prof[cur][lo+1]=20; } });
+      wireSl("lnmul",v=>{ prof[cur][lo+1]=Math.round(v/0.05); });
+      [["lnx",1],["lny",2]].forEach(([id,bit])=>{ if($("#"+id)) $("#"+id).onchange=e=>{ prof[cur][lo+2]=(prof[cur][lo+2]&~bit)|(e.target.checked?bit:0); setDirty(); render(); }; }); }
     { const xo=anxOff(an);
       wireSl("xsl",v=>{ prof[cur][xo+6]=Math.round(v); });
       ["rgx","rgy","rgw","rgh"].forEach((id,k)=>wireSl(id,v=>{ const P8=prof[cur]; if(!(P8[xo+8]|P8[xo+9]|P8[xo+10]|P8[xo+11])){ P8[xo+8]=50; P8[xo+9]=50; P8[xo+10]=100; P8[xo+11]=100; } P8[xo+8+k]=Math.round(v); if(k>=2&&!P8[xo+8+k]) P8[xo+8+k]=5; }));

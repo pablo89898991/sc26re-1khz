@@ -591,6 +591,20 @@ def _():
         need(abs(l[5]["rsx"]) > 3000 and abs(l[5]["rsy"]) < 1500, "rotate 90: up becomes sideways (%d, %d)" % (l[5]["rsx"], l[5]["rsy"]), P)
     return p, [N(50), S(60, lsx=2500), S(60, lsx=4000), S(60, lsx=31000), S(60, lsy=20000), S(60, rsy=16384), N(60)], o
 
+@case("stick_lean", "LS slow return to centre (v51.9): 1 s, countersteer 3x, X only", snap=True)
+def _():
+    p = Profile(); p.analog(0, PASS); p.b[3224:3227] = bytes([20, 60, 1])
+    def o(l, P):
+        need(l[1]["lsx"] == 32767, "pushed out: full at once (got %d)" % l[1]["lsx"], P)
+        need(21500 <= l[2]["lsx"] <= 27500, "let go 250 ms: ~3/4 back (got %d)" % l[2]["lsx"], P)
+        need(13000 <= l[3]["lsx"] <= 19500, "500 ms: ~half (got %d)" % l[3]["lsx"], P)
+        need(l[4]["lsx"] == 0, "1.1 s: centred (got %d)" % l[4]["lsx"], P)
+        need(3000 <= l[6]["lsx"] <= 10500, "countersteer to -1/2 for 100 ms: ~0.5 - 0.3 (got %d)" % l[6]["lsx"], P)
+        need(-17000 <= l[8]["lsx"] <= -15500, "then out to the stick at 3x (got %d)" % l[8]["lsx"], P)
+        need(l[9]["lsy"] > 32000 and l[10]["lsy"] == 0, "Y not slowed (%d, %d)" % (l[9]["lsy"], l[10]["lsy"]), P)
+    return p, [N(50), S(60, lsx=32767), N(250), N(250), N(600), S(60, lsx=32767), S(100, lsx=-16384), S(200, lsx=-16384),
+               S(300, lsx=-16384), S(60, lsy=32767), N(60)], o
+
 @case("stick_mouse", "RS mouse 1000/s, scale y 200 %")
 def _():
     p = Profile(); p.analog(1, MOUSE, speed=1000); p.anx(1, scale_y=200)
