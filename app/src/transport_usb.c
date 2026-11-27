@@ -164,7 +164,13 @@ static void usb_input_queue_reset(void)
 
 static bool state_ready_locked(void)
 {
-	return pending_state_valid && !(imu_paces_usb() && pending_imu_ts == submitted_imu_ts);
+	/* while the IMU paces USB a pad report waits for a new IMU sample, so none goes out twice.
+	 * Only when the host asked for motion: the gyro mouse or accelerometer bindings keep the IMU
+	 * running without it, the pad reports then carry no sample and their time never changed, so
+	 * at a report rate under 1000 (sent by the report loop, not the IMU) none went out at all
+	 * (v51.8 test 11, measured without Steam: 0 reports in 2 s at 250 and 500 with the gyro
+	 * mouse on, 250 / 500 with it off) */
+	return pending_state_valid && !(imu_paces_usb() && imu_in_reports() && pending_imu_ts == submitted_imu_ts);
 }
 
 static int usb_submit_next_input(void)

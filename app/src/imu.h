@@ -59,6 +59,9 @@ void imu_usb_sof(void);
 void imu_fast_stats(uint32_t out[5]);
 /* true while the IMU is read once per USB frame (USB reports wait for each new sample) */
 bool imu_paces_usb(void);
+/* the host asked for motion in the pad report (a gyro mode other than off): only then does a pad
+ * report carry an IMU sample of its own */
+bool imu_in_reports(void);
 
 bool imu_settings_read(const char *path, uint8_t *buf, size_t capacity, size_t *len);
 int imu_settings_stage(const char *path, const uint8_t *value, size_t len);

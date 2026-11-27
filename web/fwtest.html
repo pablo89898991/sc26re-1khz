@@ -114,7 +114,16 @@ async function testRates(){
     const s=stats(await capture(2000));
     check(`report rate ${r}/s`, Math.abs(s.rate-r)<r*0.06 && s.seqgap===0, `${s.rate.toFixed(0)}/s, sequence gaps ${s.seqgap}`);
   }
-  await stage("report_rate",o.v);
+  /* without Steam (no gyro mode from the host) while the gyro mouse keeps the IMU running: under
+   * 1000/s no pad report went out at all (v51.8 test 11); the same for the accelerometer bindings */
+  const gm=await cfgRead("gm_enabled");
+  await imuMode(0);
+  for(const g of [1,0]) for(const r of [250,500,1000]){
+    await stage("gm_enabled",g); await stage("report_rate",r); await sleep(500);
+    const s=stats(await capture(2000));
+    check(`report rate ${r}/s, no host gyro mode, gyro mouse ${g?"on":"off"}: reports keep coming`, (s.rate||0)>(g?r*0.9:50), `${(s.rate||0).toFixed(0)}/s`);
+  }
+  await stage("gm_enabled",gm.v); await stage("report_rate",o.v);
 }
 
 async function testImu(){

@@ -1563,6 +1563,11 @@ static int16_t imu_pace_mode(void)
 	return sc26re_cfg_get(SC26RE_CFG_IMU_PACE);
 }
 
+bool imu_in_reports(void)
+{
+	return *(volatile uint16_t *)&imu_mode != SETTING_GYRO_MODE_OFF;
+}
+
 bool imu_paces_usb(void)
 {
 	uint32_t now = k_uptime_get_32();
@@ -2146,6 +2151,11 @@ void imu_fast_stats(uint32_t out[5])
 bool imu_paces_usb(void)
 {
 	return false;
+}
+
+bool imu_in_reports(void)
+{
+	return *(volatile uint16_t *)&imu_mode != SETTING_GYRO_MODE_OFF;
 }
 #endif
 
