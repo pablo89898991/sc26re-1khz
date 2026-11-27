@@ -116,7 +116,7 @@
 <body>
 <div class="top">
   <div class="topin">
-    <div class="brand">SC2 <span class="hz">Remapper</span> <span class="note" id="pagever" title="page version — if it is older than expected, press Ctrl+F5">p.2026-11-27d</span></div>
+    <div class="brand">SC2 <span class="hz">Remapper</span> <span class="note" id="pagever" title="page version — if it is older than expected, press Ctrl+F5">p.2026-11-27e</span></div>
     <button class="primary" id="connect">Connect controller</button>
     <span id="status" class="chip">not connected</span>
     <span id="batt" class="chip" hidden></span>
@@ -1128,7 +1128,7 @@ function accHtml(p){ if(!fwAcc) return "";
   h+=`<div class="row2"><label>Gestures</label><span class="note">a quick jolt of the controller taps its actions (${ACC_GEST_MS} ms)</span><small>a jab and its stop count once; 4 jolts back and forth within 0.8 s are a shake</small></div>
     <div class="row2"><label>Sensitivity</label><input type="number" id="acgs" class="num" min="10" max="1000" step="1" value="${gs}" style="width:90px"> <span class="note">%</span><small id="acgsN">fires at a jolt of ${(ACC_GEST_G*100/gs).toFixed(2)} g (100 % = ${ACC_GEST_G} g)</small></div>
     ${ACC_GESTS.map((n,k)=>`<div class="grp"><span>${n}</span><select data-ga="${k}:0">${OPTS}</select><select data-ga="${k}:1">${OPTS}</select></div>`).join("")}`;
-  h+=`<div class="row2"><label></label><label class="note"><input type="checkbox" class="acf" data-f="128"${fl&128?" checked":""}> off while the gyro mouse / joystick is on</label></div>
+  h+=`<div class="row2"><label></label><label class="note"><input type="checkbox" class="acf" data-f="128"${fl&128?" checked":""}> off while the gyro aims</label><small>while the gyro mouse / joystick moves (its activation held, e.g. the stick touched); with activation “always”, all the time it is on. Firmware v51.8 had it off all the time the gyro mouse was on</small></div>
     <p class="note wrap">The centre is how you hold the controller when the profile becomes active (switch profiles or turn the remapper off and on to centre it again). It does not drift: it comes from gravity. While something here is on, the motion sensor stays on.</p>`;
   return h; }
 function accWire(p){ if(!fwAcc||!$("#acst")) return; const v=accDV(p);

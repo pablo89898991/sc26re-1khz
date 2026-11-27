@@ -4079,7 +4079,7 @@ static void acc_process(int i, const struct controller_report *rs, float dt)
 		memset(hold_joy, 0, sizeof(hold_joy));
 		hold_dirs = 0U;
 	}
-	if(!want || ((c->flags & REMAP_ACC_GYRO_PAUSE) && gyro_mouse_active()))
+	if(!want || ((c->flags & REMAP_ACC_GYRO_PAUSE) && gyro_mouse_engaged()))
 	{
 		gest_grav_ok = false; /* the slow gravity average starts again afterwards */
 		return;

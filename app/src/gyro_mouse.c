@@ -85,9 +85,16 @@ void gyro_mouse_suspend(bool on)
 	suspended = on;
 }
 
+static bool engaged;
+
 bool gyro_mouse_active(void)
 {
 	return gyro_mouse_enabled() && !suspended;
+}
+
+bool gyro_mouse_engaged(void)
+{
+	return gyro_mouse_active() && engaged;
 }
 
 bool gyro_mouse_enabled(void)
@@ -472,6 +479,7 @@ void gyro_mouse_feed(const float dps[3], uint32_t buttons, float dt_s)
 	/* ratchet: holding it pauses the gyro output, e.g. to re-centre the hands */
 	bool ratchet = ratchet_btn >= 0 && ratchet_btn <= 29 && (buttons & BIT(ratchet_btn)) != 0U;
 	bool act_now = gm(SC26RE_CFG_GM_ENABLED) == 1 && active(buttons, pressed) && !ratchet;
+	engaged = act_now;
 
 	{
 		/* feedback when the activation button starts moving the cursor */
